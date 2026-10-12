@@ -1,0 +1,18 @@
+# Credentials
+cdse_credentials.sh
+
+# Downloaded and generated data (lives on cluster scratch, next to the code)
+data/tiles/
+data/work/
+data/tile_log.csv
+data/product_log.csv
+data/manifests/biogoship_tile_manifest.csv
+logs/*
+!logs/.gitkeep
+.cache/
+
+# Python / OS
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/

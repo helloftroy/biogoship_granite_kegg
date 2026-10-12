@@ -1,0 +1,6 @@
+# Satellite pipeline (search, download, tiling)
+numpy
+h5py
+certifi
+# Sample manifest builder only
+pandas

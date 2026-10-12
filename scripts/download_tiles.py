@@ -157,7 +157,7 @@ class TileWorker:
         if not missing:
             return
         dest_dir.mkdir(parents=True, exist_ok=True)
-        if self.args.download_mode == "zip":
+        if self.args.download_mode == "zip" or self.local_zip(product_name) is not None:
             self._fetch_from_zip(product_id, product_name, missing, dest_dir)
             return
         sizes = cdse.list_files(product_id, product_name)
@@ -181,8 +181,15 @@ class TileWorker:
         with ThreadPoolExecutor(max_workers=self.args.connections) as pool:
             list(pool.map(fetch_one, missing))
 
+    def local_zip(self, product_name: str) -> Path | None:
+        """Archive already fetched by download_products.py, if there is one."""
+        if self.args.products_dir is None:
+            return None
+        matches = list(self.args.products_dir.glob(f"*/{product_name}.zip"))
+        return matches[0] if matches else None
+
     def _fetch_from_zip(self, product_id: str, product_name: str, filenames: list[str], dest_dir: Path) -> None:
-        zip_path = self.work_dir / f"{product_name}.zip"
+        zip_path = self.local_zip(product_name) or self.work_dir / f"{product_name}.zip"
         if not zip_path.exists():
             print("  downloading whole product archive", flush=True)
             cdse.download(
@@ -232,8 +239,8 @@ class TileWorker:
 
     def _sst_filename(self, sst_id: str, sst_name: str) -> str:
         """Name of the single GHRSST L2P data file inside an SST product."""
-        if self.args.download_mode == "zip":
-            zip_path = self.work_dir / f"{sst_name}.zip"
+        if self.args.download_mode == "zip" or self.local_zip(sst_name) is not None:
+            zip_path = self.local_zip(sst_name) or self.work_dir / f"{sst_name}.zip"
             if not zip_path.exists():
                 cdse.download(
                     cdse.product_zip_url(sst_id),
@@ -344,6 +351,12 @@ def parse_args() -> argparse.Namespace:
         choices=["files", "zip"],
         default="files",
         help="'files' fetches only the files needed; 'zip' fetches whole product archives.",
+    )
+    parser.add_argument(
+        "--products-dir",
+        type=Path,
+        default=DATA_DIR / "products",
+        help="Archives from download_products.py; used instead of downloading when present.",
     )
     parser.add_argument("--no-sst", action="store_true", help="Skip SST; the 17th channel is NaN.")
     parser.add_argument("--connections", type=int, default=4, help="Parallel downloads (CDSE allows 4 per account).")

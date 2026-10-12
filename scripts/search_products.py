@@ -12,7 +12,7 @@ No credentials are needed: the catalogue is public. Outputs in data/manifests/:
 
 Usage:
     python scripts/search_products.py
-    python scripts/search_products.py --max-days 5
+    python scripts/search_products.py --max-days 3 --section-max-days I09N=10
 """
 
 from __future__ import annotations
@@ -53,14 +53,19 @@ PRODUCT_FIELDS = [
 def main() -> None:
     args = parse_args()
     sites = read_csv(args.sites_csv)
-    window = timedelta(days=args.max_days)
-    queryable = [site for site in sites if parse_utc(site["time_utc"]) + window >= SENTINEL3_LAUNCH]
-    print(f"Sites: {len(sites):,} total, {len(queryable):,} sampled within {args.max_days:g} days of the Sentinel-3 era")
+    section_days = dict(args.section_max_days)
+
+    def window(site: dict[str, str]) -> timedelta:
+        return timedelta(days=section_days.get(site["section"], args.max_days))
+
+    queryable = [site for site in sites if parse_utc(site["time_utc"]) + window(site) >= SENTINEL3_LAUNCH]
+    print(f"Sites: {len(sites):,} total, {len(queryable):,} sampled close enough to the Sentinel-3 era to query")
+    print(f"Window: +/-{args.max_days:g} days" + "".join(f"; {name} +/-{days:g}" for name, days in section_days.items()))
 
     def search_site(site: dict[str, str]) -> list[dict[str, str]]:
         when = parse_utc(site["time_utc"])
         return cdse.search_products(
-            cdse.OLCI_WFR, when - window, when + window, point=(float(site["lon"]), float(site["lat"]))
+            cdse.OLCI_WFR, when - window(site), when + window(site), point=(float(site["lon"]), float(site["lat"]))
         )
 
     site_products: list[dict] = []
@@ -147,12 +152,25 @@ def summarise(sites: list[dict], site_products: list[dict], products: list[dict]
     print(f"Wrote {args.out_dir / 'products.csv'}")
 
 
+def section_days_arg(text: str) -> tuple[str, float]:
+    section, _, days = text.partition("=")
+    return section, float(days)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--sites-csv", type=Path, default=MANIFEST_DIR / "biogoship_sites.csv")
     parser.add_argument("--out-dir", type=Path, default=MANIFEST_DIR)
     parser.add_argument(
         "--max-days", type=float, default=3.0, help="Largest gap between sampling and overpass. Default 3 days."
+    )
+    parser.add_argument(
+        "--section-max-days",
+        action="append",
+        default=[],
+        type=section_days_arg,
+        metavar="SECTION=DAYS",
+        help="Wider (or narrower) window for one section, e.g. I09N=10. May be repeated.",
     )
     parser.add_argument("--workers", type=int, default=4, help="Parallel catalogue requests.")
     return parser.parse_args()

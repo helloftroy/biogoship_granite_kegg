@@ -6,93 +6,79 @@ colour and sea surface temperature, and the
 [IBM Granite Geospatial Ocean](https://huggingface.co/ibm-granite/granite-geospatial-ocean)
 foundation model.
 
-Planned pipeline:
+This file is the how-to: what each step does and how to run it. The reasoning
+behind the choices, and the results so far, are in
+[METHODS_RESULTS.md](METHODS_RESULTS.md).
 
-1. **Samples to satellite tiles** (this repo, working): match every Bio-GO-SHIP sample
-   to Sentinel-3 overpasses and cut a Granite-ready tile around it.
-2. Tiles to Granite embeddings (to come).
-3. Embeddings to NMF communities and KEGG profiles with CatBoost (to come).
+## Pipeline
 
-## Data
+| Step | What it does | Script | Status |
+|---|---|---|---|
+| 1 | Build the sample and site manifests from public metadata | `scripts/build_sample_manifest.py` | done, output committed |
+| 2 | Find the Sentinel-3 scenes covering each site | `scripts/search_products.py` | done, output committed |
+| 3 | Download those scenes (OLCI + SST) | `scripts/download_products.py` | ready to run on the cluster |
+| 4 | Cut Granite-ready tiles around each site | `scripts/download_tiles.py`, `scripts/build_tile_manifest.py` | written, not run yet |
+| 5 | Water-mass back-trajectories from each site | | planned |
+| 6 | Tiles to Granite embeddings | | planned |
+| 7 | Embeddings to NMF communities and KEGG profiles (CatBoost) | | planned |
 
-**Bio-GO-SHIP** ([Larkin et al. 2021](https://doi.org/10.1038/s41597-021-00889-9),
-BioProject [PRJNA656268](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA656268)):
-996 surface-ocean samples from eight cruises, 971 with a metagenome and 975 with
-amplicon sequencing. Sample positions and times come from the ENA run report;
-depth, sampling method, temperature and nutrients come from the curated table in
-[merenlab/public-marine-omics-metadata](https://github.com/merenlab/public-marine-omics-metadata).
-
-**Sentinel-3** (Copernicus Data Space): OLCI level-2 water reflectance
-(`OL_2_WFR`, 300 m) and SLSTR sea surface temperature (`SL_2_WST`).
-
-Only cruises after Sentinel-3A began delivering data (late April 2016) can be matched:
-
-| Section | Dates | Samples | Sites | Sites with a candidate overpass (±3 days) |
-|---|---|---:|---:|---:|
-| C13.5/A13.5 (Atlantic) | Mar-Apr 2020 | 263 | 234 | 234 |
-| I07N (Indian) | Apr-Jun 2018 | 261 | 259 | 259 |
-| P18 (Pacific) | Nov 2016-Jan 2017 | 104 | 104 | 104 |
-| AMT28 (Atlantic) | Sep-Oct 2018 | 63 | 63 | 63 |
-| I09N (Indian) | Mar-Apr 2016 | 242 | 242 | 7 |
-| NH1418, AE1319, BVAL46 | 2011-2014 | 63 | 52 | 0 |
-
-A *site* is a unique position and time; replicate samples share a site. The 667
-matchable sites are covered by 407 OLCI scenes. How many sites end up with a
-*cloud-free* tile is only known after the download.
-
-## Layout
+## Repository layout
 
 ```
 biogoship/            library code
-  cdse.py             Copernicus login, catalogue search, per-file downloads
+  cdse.py             Copernicus login, catalogue search, downloads
   tiles.py            Sentinel-3 readers, quality masks, Granite normalisation
   tables.py           CSV, time and distance helpers
-scripts/
-  build_sample_manifest.py   ENA + curated metadata -> samples and sites
-  search_products.py         sites -> candidate OLCI scenes + paired SST
-  download_tiles.py          scenes -> one tile per (site, clear overpass)
-  build_tile_manifest.py     samples x tiles table for modelling
-cluster/              SLURM jobs for the morrill cluster
+scripts/              one script per pipeline step (see table above)
+cluster/              SLURM job scripts and shared environment setup
 data/manifests/       small tables, committed
-tests/                offline tests (python -m unittest discover -s tests)
+tests/                offline tests
+METHODS_RESULTS.md    methods notes and results log
 ```
 
-Committed manifests:
+Committed manifests in `data/manifests/`:
 
-| File | Rows | Contents |
+| File | One row per | Contents |
 |---|---|---|
-| `biogoship_samples.csv` | one per BioSample | position, time, section, depth, run accessions, `site_id` |
-| `biogoship_sites.csv` | one per site | the unit matched to satellite data |
-| `site_products.csv` | one per (site, OLCI scene) | candidate overpasses and time gap in hours |
-| `products.csv` | one per OLCI scene | scene and its paired SST orbit file |
+| `biogoship_samples.csv` | BioSample | position, time, section, depth, run accessions, `site_id` |
+| `biogoship_sites.csv` | site (unique position and time) | the unit matched to satellite data |
+| `site_products.csv` | (site, OLCI scene) | every candidate overpass and its time gap in hours |
+| `products.csv` | OLCI scene | the scene and its paired SST orbit file |
 
-## How a tile is made
+## Requirements
 
-For each OLCI scene that covers at least one site within ±3 days of sampling:
+Python 3.9 or newer with `numpy`, `h5py`, `certifi` and (for step 1 only) `pandas`:
 
-1. Download only `geo_coordinates.nc` and `wqsf.nc` (about 60 MB) and find each
-   site's nearest pixel.
-2. Take the 42x42 pixel window (12.6 km) centred on that pixel. Keep it if at least
-   80% of its pixels are clear open ocean (water, and not land, cloud, cloud
-   margin, ice, coastline, suspect, saturated or failed atmospheric correction).
-3. Only if some site passes, download the 16 reflectance bands (about 280 MB) and
-   the paired SST orbit file (about 600 MB, cached while neighbouring scenes share it).
-4. Save `data/tiles/YYYY/MM/tile_<satellite>_<sensing time>_<site_id>.npz` with
-   `data` of shape `(17, 42, 42)`: 16 OLCI bands (Oa01-Oa12, Oa16, Oa17, Oa18, Oa21)
-   and SST, z-scored with the Granite pretraining statistics. SST is NaN where
-   SLSTR has no acceptable-quality pixel.
+```bash
+pip install -r requirements.txt
+python -m unittest discover -s tests     # offline tests, no network needed
+```
 
-Every clear overpass is kept, so a site can have several tiles;
-`build_tile_manifest.py` flags the one closest in time as `is_best`.
+Downloading needs a free [Copernicus Data Space](https://dataspace.copernicus.eu)
+account. Searching does not.
 
-Checking for cloud before fetching the bands means cloudy scenes cost 60 MB
-instead of 300-600 MB each. If per-file downloads misbehave, `--download-mode zip`
-falls back to whole product archives.
+## Steps 1 and 2: manifests and scene search
 
-## Running on the cluster
+Already run; the outputs are committed. To rebuild them (any machine with
+internet, no credentials, about five minutes):
 
-Jobs that need internet run on the `service` partition. Always `cd` into the repo
-before `sbatch`: the job scripts locate the repo through `$SLURM_SUBMIT_DIR`.
+```bash
+python scripts/build_sample_manifest.py
+python scripts/search_products.py --max-days 3 --section-max-days I09N=10
+```
+
+`--max-days` is the largest allowed gap between sampling and a satellite overpass.
+`--section-max-days` widens it for one section.
+
+## Step 3: download the Sentinel-3 scenes
+
+Downloads every candidate scene, not just the closest in time, so that a cloudy
+overpass can be replaced by a clear one: 414 OLCI scenes and 218 SST orbit files,
+about 300 GB, as complete product archives under `data/products/`.
+
+On the cluster (SLURM). Jobs that need internet use the `service` partition.
+Always `cd` into the repo before `sbatch`; the job scripts find the repo through
+`$SLURM_SUBMIT_DIR`.
 
 ```bash
 # once, on the login node
@@ -101,43 +87,63 @@ git clone https://github.com/helloftroy/biogoship_granite_kegg.git
 cd biogoship_granite_kegg
 cp cdse_credentials.sh.example cdse_credentials.sh    # then edit: Copernicus login
 chmod 600 cdse_credentials.sh
+df -h .                                               # needs about 300 GB free
 
-# smoke test: three scenes
-sbatch --account=<allocation> --export=ALL,MAX_PRODUCTS=3 cluster/download_tiles.sbatch
-tail -f logs/bgs_tiles_<jobid>.out
+# smoke test: the first two scenes and their SST files (about 2 GB)
+sbatch --account=<allocation> --export=ALL,MAX_PRODUCTS=2 cluster/download_products.sbatch
+tail -f logs/bgs_products_<jobid>.out
 
-# full run (resubmit the same command to resume or to retry failed scenes)
+# everything; resubmit the same command to resume or to retry failures
+sbatch --account=<allocation> cluster/download_products.sbatch
+```
+
+Outputs:
+
+- `data/products/olci/<product>.zip` and `data/products/sst/<product>.zip`
+- `data/download_log.csv`, one line per download attempt
+
+Options, passed with `--export=ALL,NAME=value`:
+
+| Name | Default | Meaning |
+|---|---|---|
+| `MAX_PRODUCTS` | 0 (all) | only the first N OLCI scenes |
+| `NO_SST` | 0 | set to 1 to skip the SST files |
+| `CONNECTIONS` | 4 | parallel downloads; 4 is the Copernicus per-account limit |
+| `BGS_CONDA_ENV` | `/scratch/morrill/users/$USER/conda_envs/faire-agent` | conda environment, by full path |
+
+Anywhere else:
+
+```bash
+source cdse_credentials.sh
+python scripts/download_products.py --dry-run     # counts and sizes only
+python scripts/download_products.py
+```
+
+`cluster/env.sh` is shared by all jobs. It keeps caches off `$HOME`, activates the
+conda environment by full path and checks that the activation took effect, and
+installs `numpy`/`h5py` into the environment if they are missing.
+
+## Step 4: cut tiles (not run yet)
+
+For each site and each clear overpass, writes a `(17, 42, 42)` array centred on
+the site: 16 OLCI bands plus SST, normalised for Granite. It reads the archives
+from step 3 when they are on disk, and otherwise downloads just the files it needs.
+
+```bash
 sbatch --account=<allocation> cluster/download_tiles.sbatch
 ```
 
-Outputs, all under the repo on scratch:
+Outputs: `data/tiles/YYYY/MM/*.npz`, `data/tile_log.csv` (outcome for every site
+and scene) and `data/manifests/biogoship_tile_manifest.csv` (samples joined to
+tiles, with `is_best` marking the tile closest in time).
 
-- `data/tiles/` the tiles
-- `data/tile_log.csv` outcome for every (site, scene): `valid`, `cloudy`, `edge` or `out_of_swath`
-- `data/product_log.csv` one line per processed scene
-- `data/manifests/biogoship_tile_manifest.csv` samples joined to tiles, with a coverage summary printed at the end of the job log
+## Data sources and citation
 
-`cluster/env.sh` activates the conda environment by full path
-(`/scratch/morrill/users/$USER/conda_envs/faire-agent` by default) and installs
-`numpy`/`h5py` into it if they are missing. Point it elsewhere with
-`--export=ALL,BGS_CONDA_ENV=/path/to/env`.
-
-Settings, passed the same way: `MIN_VALID` (default 0.8), `DOWNLOAD_MODE`
-(`files` or `zip`), `NO_SST=1`, `CONNECTIONS` (default 4, the Copernicus limit).
-
-## Rebuilding the manifests
-
-The search needs no credentials and runs anywhere with internet:
-
-```bash
-python scripts/build_sample_manifest.py
-python scripts/search_products.py --max-days 3
-```
-
-## Provenance
-
-The Sentinel-3 handling (band selection, quality flags, normalisation, SST
-pairing and resampling) is carried over from the Florida eDNA/fish project,
-[helloftroy/multimodal_eDNA](https://github.com/helloftroy/multimodal_eDNA). That
-project tiled whole scenes over one region; here each site gets its own centred
-tile, since the samples are spread along global transects.
+- Bio-GO-SHIP metagenomes and amplicons: Larkin et al. 2021, *Scientific Data* 8, 107,
+  [doi:10.1038/s41597-021-00889-9](https://doi.org/10.1038/s41597-021-00889-9);
+  BioProject [PRJNA656268](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA656268).
+- Curated sample metadata:
+  [merenlab/public-marine-omics-metadata](https://github.com/merenlab/public-marine-omics-metadata).
+- Sentinel-3 OLCI and SLSTR level-2 products: Copernicus Data Space Ecosystem.
+- The Sentinel-3 handling is carried over from
+  [helloftroy/multimodal_eDNA](https://github.com/helloftroy/multimodal_eDNA).

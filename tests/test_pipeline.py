@@ -129,7 +129,7 @@ class EndToEndTests(unittest.TestCase):
             data_dir = Path(tmp)
             args = argparse.Namespace(
                 data_dir=data_dir, download_mode="files", no_sst=False, min_valid=0.8, keep_products=False,
-                sst_cache=2, connections=1, timeout=1, retries=1, retry_sleep=0,
+                sst_cache=2, connections=1, products_dir=None, timeout=1, retries=1, retry_sleep=0,
             )  # fmt: skip
             worker = download_tiles.TileWorker(args)
             write_olci(worker.product_dir(OLCI_NAME), cloudy_cols=slice(110, 160))

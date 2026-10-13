@@ -92,11 +92,17 @@ def main() -> None:
                     }
                 )
         full = sum(1 for start, end in ends if start <= -max_hours + 1 and end >= max_hours - 1)
+        short_back = sorted(-start / 24 for start, _end in ends if start > -max_hours + 1)
+        short_fwd = sorted(end / 24 for _start, end in ends if end < max_hours - 1)
         print(
             f"{box['section']:12s} {len(releases):4d} sites tracked +/-{max_hours / 24:.1f} days; "
             f"{full:4d} tracks complete in both directions ({time.time() - started:.0f}s)",
             flush=True,
         )
+        for label, short in (("backward", short_back), ("forward", short_fwd)):
+            if short:
+                print(f"{'':12s} {len(short):4d} {label} tracks stop early, after {short[0]:.1f} to {short[-1]:.1f} days "
+                      "(ran out of currents in time or space)")  # fmt: skip
 
     write_csv(args.out_dir / "trajectories.csv", trajectories, TRAJECTORY_FIELDS)
     positions = advection.advected_position_rows(sites, site_products, tracks)

@@ -192,7 +192,33 @@ gives 43.2 km in both directions (expected 43.2 km), and a full synthetic run
 over all 3,727 site x scene pairs matched the expected drift to within 0.2%.
 This checks the tracking code, not the realism of the currents.
 
-**Result:** not run yet on real currents.
+**Result (2026-10-13): first run on real currents** (15 m level, daily means).
+All 3,727 site x scene pairs resolved (`ok`).
+
+Straight-line distance between the sampling position and the advected position
+at overpass time:
+
+| Section | Pairs | Median | Maximum |
+|---|---:|---:|---:|
+| AMT28 | 431 | 9.0 km | 79.7 km |
+| P18 | 472 | 9.5 km | 273.5 km |
+| C13.5/A13.5 | 1,495 | 14.0 km | 308.0 km |
+| I07N | 1,159 | 23.3 km | 153.7 km |
+| I09N (overpasses 2 to 10 days after sampling) | 170 | 121.6 km | 223.3 km |
+
+For comparison, a tile is 12.6 km across: the typical displacement within +/-3
+days is about one tile width, and for a sizeable share of pairs it is several.
+For I09N the advected position is, in the median, about ten tile widths from the
+sampling position.
+
+Caveat on this run: the currents files on disk had been downloaded with only 2
+days of padding, before the tracks were lengthened to 7 days, so tracks for sites
+sampled near the start or end of a cruise stop early (for example 50 of 63 AMT28
+tracks ran the full 7 days both ways; none of the I09N tracks ran the full 10).
+This does not affect the pairs above, which all lie within the covered span, but
+it would limit the wider search along the track. `download_currents.py` now
+checks that a file on disk covers the requested span and re-downloads it if not.
+To be confirmed on the next run.
 
 ## 6. Tiles and cloud screening (written, not run)
 
@@ -268,7 +294,12 @@ So about one overpass in five is clear at a given site, and having four to six
 overpasses per site lifts coverage to about half. Every candidate scene was
 already tried; the misses are sites cloudy in all of them.
 
-**Yield report (2026-10-13, `scripts/cloud_report.py`, fixed position).**
+**Re-test with the 20 km rule (2026-10-13).** The 3,053 cloudy or edge
+combinations at the fixed position were re-tested allowing the nearest clear tile
+within 20 km: 1,018 of them now give a tile (on top of the 674 centred ones).
+Per-site and per-section totals to be added from `build_tile_manifest.py`.
+
+**Yield report (2026-10-13, `scripts/cloud_report.py`, fixed position, before the 20 km rule).**
 
 Sites with a tile, of 721, as the required clear fraction is lowered:
 

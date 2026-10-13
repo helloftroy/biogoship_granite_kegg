@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import search_products  # noqa: E402
 from biogoship import advection, cdse  # noqa: E402
-from biogoship.tables import MANIFEST_DIR, REPO_ROOT, latest_tile_log_rows, parse_utc, read_csv, write_csv  # noqa: E402
+from biogoship.tables import MANIFEST_DIR, REPO_ROOT, latest_tile_log_rows, read_tile_log, parse_utc, read_csv, write_csv  # noqa: E402
 
 SITE_PRODUCT_FIELDS = [*search_products.SITE_PRODUCT_FIELDS, "source"]
 
@@ -119,7 +119,7 @@ def sites_to_search(sites, site_products, tracks, args) -> list[dict[str, str]]:
             f"{args.tile_log} not found. Tile the scenes already downloaded first (download_tiles.py), so that only "
             "sites still missing an advected tile are searched; or pass --all-sites."
         )
-    log = latest_tile_log_rows(read_csv(args.tile_log))
+    log = latest_tile_log_rows(read_tile_log(args.tile_log))
     advected = [row for row in log if row["position"] == "advected"]
     if not advected:
         raise SystemExit(

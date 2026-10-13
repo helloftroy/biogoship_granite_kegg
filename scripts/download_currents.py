@@ -33,13 +33,16 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for box in boxes:
         dest = args.out_dir / advection.section_filename(box["section"])
+        state = "to download"
+        if dest.exists():
+            state = "on disk, covers the request" if covers(dest, box) else "on disk but too short: downloading again"
         print(
             f"{box['section']:12s} {len(box['sites']):4d} sites | lon {box['lon_min']:.1f} to {box['lon_max']:.1f}, "
             f"lat {box['lat_min']:.1f} to {box['lat_max']:.1f} | {box['start']:%Y-%m-%d} to {box['end']:%Y-%m-%d} "
-            f"-> {dest.name}{' (exists)' if dest.exists() else ''}",
+            f"-> {dest.name} ({state})",
             flush=True,
         )
-        if args.dry_run or (dest.exists() and not args.overwrite):
+        if args.dry_run or (state == "on disk, covers the request" and not args.overwrite):
             continue
         import copernicusmarine
 
@@ -58,6 +61,27 @@ def main() -> None:
             disable_progress_bar=True,
         )
     print(f"Currents in {args.out_dir}")
+
+
+def covers(path: Path, box: dict) -> bool:
+    """Does an existing currents file span the box in time and space (to within one grid step)?"""
+    import numpy as np
+    import xarray as xr
+
+    with xr.open_dataset(path) as ds:
+        times = ds["time"].values
+        lat, lon = ds["latitude"].values, ds["longitude"].values
+    day = np.timedelta64(1, "D")
+    start = np.datetime64(box["start"].replace(tzinfo=None), "ns")
+    end = np.datetime64(box["end"].replace(tzinfo=None), "ns")
+    return bool(
+        times.min() <= start + day
+        and times.max() >= end - day
+        and lat.min() <= box["lat_min"] + 0.5
+        and lat.max() >= box["lat_max"] - 0.5
+        and lon.min() <= box["lon_min"] + 0.5
+        and lon.max() >= box["lon_max"] - 0.5
+    )
 
 
 def load_boxes(manifest_dir: Path, margin_deg: float, pad_days: float) -> list[dict]:

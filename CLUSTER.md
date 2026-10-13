@@ -88,8 +88,8 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 |---|---|---|---|---|
 | 1 | `download_products.sbatch` | service | all candidate OLCI scenes and SST files, about 300 GB, to `data/products/` | completed |
 | 2 | `setup_env.sbatch` | service | creates the `biogoship` environment | built 2026-10-13 with venv + pip (the first, conda, attempt failed on the `$HOME` quota). Needs one re-run to pick up the xarray pin below |
-| 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | not run |
-| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 (674 clear tiles, 376 of 721 sites); advected not run |
+| 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | ran 2026-10-13 on real currents, all pairs resolved; re-run once to refresh currents files that are too short for 7-day tracks |
+| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 (674 centred clear tiles, 376 of 721 sites), then re-tested with the 20 km rule (+1,018 tiles); advected not run |
 | 4b | `extend_search.sbatch` | service | for sites without a clear advected tile, finds scenes further out along the water's track; then rerun 1 and 4 | not run |
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | not run |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
@@ -123,10 +123,23 @@ To bring result tables back to the local copy, commit the small CSVs from the
 cluster (`git add data/manifests && git commit && git push`) or copy them with
 `scp`. Tiles, products, currents and embeddings are gitignored and stay on scratch.
 
+## Lessons from this project
+
+- A log file that is appended to across code versions must tolerate its own
+  history. `data/tile_log.csv` gained columns twice; rows appended under an older
+  header were misread. It is now read by field count and rewritten in the current
+  layout automatically (`biogoship/tables.py`), with the original kept once as
+  `tile_log.before_layout_update.csv`.
+- A job that skips work because "the file exists" must check the file is still
+  what is needed. The currents files were kept from a run with a shorter time
+  span; `download_currents.py` now checks coverage.
+
 ## Not yet verified on this cluster
 
 - Authenticated Sentinel-3 download: verified (job 1 completed).
-- Environment creation, the Copernicus Marine download, OceanParcels on
-  real currents, reading real Sentinel-3 archives in the tile step, and loading
-  Granite through TerraTorch in this environment have only been tested offline
-  with synthetic data or carried over from the Florida project.
+- Verified since: environment creation (venv), the Copernicus Marine download,
+  OceanParcels on real currents, and reading real Sentinel-3 archives in the
+  tile step.
+- Still only tested offline or carried over from the Florida project: loading
+  Granite through TerraTorch in this environment, and the wider scene search
+  along tracks at full scale.

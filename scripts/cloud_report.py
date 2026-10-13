@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from biogoship import tiles  # noqa: E402
-from biogoship.tables import MANIFEST_DIR, REPO_ROOT, latest_tile_log_rows, read_csv  # noqa: E402
+from biogoship.tables import MANIFEST_DIR, REPO_ROOT, latest_tile_log_rows, read_tile_log, read_csv  # noqa: E402
 
 THRESHOLDS = [0.9, 0.8, 0.7, 0.6, 0.5, 0.3, 0.1]
 WINDOWS_H = [6, 12, 24, 48, 72, 240]
@@ -34,7 +34,7 @@ WINDOWS_H = [6, 12, 24, 48, 72, 240]
 def main() -> None:
     args = parse_args()
     section = {site["site_id"]: site["section"] for site in read_csv(args.manifest_dir / "biogoship_sites.csv")}
-    log = latest_tile_log_rows(read_csv(args.tile_log))
+    log = latest_tile_log_rows(read_tile_log(args.tile_log))
     for position in sorted({row["position"] for row in log}):
         rows = [row for row in log if row["position"] == position and row["status"] in ("valid", "cloudy")]
         by_site: dict[str, list[tuple[float, float]]] = defaultdict(list)  # site -> [(clear fraction, |gap| hours)]

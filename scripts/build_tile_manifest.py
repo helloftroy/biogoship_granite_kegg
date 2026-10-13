@@ -33,6 +33,8 @@ from biogoship.tables import (  # noqa: E402
     from_repo,
     haversine_km,
     latest_tile_log_rows,
+    read_tile_log,
+    repair_tile_log,
     read_csv,
     write_csv,
 )
@@ -77,7 +79,9 @@ def main() -> None:
     args = parse_args()
     samples = read_csv(args.manifest_dir / "biogoship_samples.csv")
     products = {row["product_id"]: row for row in read_csv(args.manifest_dir / "products.csv")}
-    log = latest_tile_log_rows(read_csv(args.tile_log))
+    if repair_tile_log(args.tile_log):
+        print("Rewrote the tile log in the current column layout (rows from older versions were kept).")
+    log = latest_tile_log_rows(read_tile_log(args.tile_log))
 
     tiles_by_site: dict[str, list[dict[str, str]]] = defaultdict(list)
     missing = 0

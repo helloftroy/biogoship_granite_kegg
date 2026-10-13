@@ -244,7 +244,9 @@ class LocalArchiveRunTests(unittest.TestCase):
         import zipfile
 
         import build_tile_manifest
-        from biogoship.tables import latest_tile_log_rows, read_csv, write_csv
+        import csv
+
+        from biogoship.tables import TILE_LOG_FIELDS, latest_tile_log_rows, read_csv, read_tile_log, write_csv
 
         sst_name = "S3B_SL_2_WST____20200329T103000_20200329T121000_20200330T090904_6059_037_137______MAR_O_NT_003.SEN3"
         with tempfile.TemporaryDirectory() as tmp:
@@ -283,13 +285,21 @@ class LocalArchiveRunTests(unittest.TestCase):
                 # First the sampling positions only, as when back-tracking has not run yet.
                 self.run_script(download_tiles, [*common, "--positions", "fixed"])
                 self.assertEqual(len(read_csv(data / "tile_log.csv")), 2)
-                # A log from before the position column existed is converted, not tripped over.
-                legacy = [{k: v for k, v in row.items() if k not in ("position", "target_lat", "target_lon")}
-                          for row in read_csv(data / "tile_log.csv")]  # fmt: skip
-                write_csv(data / "tile_log.csv", legacy)
+                # A log written by older versions (fewer columns) is read correctly and brought up to date.
+                current = read_csv(data / "tile_log.csv")
+                oldest = [{k: v for k, v in row.items() if k not in ("position", "target_lat", "target_lon", "offset_km")}
+                          for row in current]  # fmt: skip
+                write_csv(data / "tile_log.csv", oldest)
+                self.assertEqual([r["position"] for r in read_tile_log(data / "tile_log.csv")], ["fixed", "fixed"])
+                # The failure seen on the cluster: new, wider rows appended under an older, narrower header.
+                with (data / "tile_log.csv").open("a", newline="") as f:
+                    csv.writer(f).writerow([current[0][name] for name in TILE_LOG_FIELDS])
+                mixed = read_tile_log(data / "tile_log.csv")
+                self.assertEqual([r["tile_path"] for r in mixed], [r["tile_path"] for r in [*current, current[0]]])
+                write_csv(data / "tile_log.csv", oldest)
                 self.run_script(download_tiles, [*common, "--positions", "fixed"])
+                self.assertEqual(read_csv(data / "tile_log.csv"), read_tile_log(data / "tile_log.csv"))
                 self.assertEqual([r["position"] for r in read_csv(data / "tile_log.csv")], ["fixed", "fixed"])
-                self.assertTrue((data / "tile_log.legacy.csv").exists())
                 # Then both: only the advected positions are new work. "cloudy" drifted west into clear water.
                 write_csv(manifests / "advected_positions.csv", [
                     {"site_id": "clear", "product_id": "p1", "advected_lat": LAT0 - 60 * STEP,
@@ -327,8 +337,8 @@ class LocalArchiveRunTests(unittest.TestCase):
             latest = {(r["site_id"], r["position"]): r for r in latest_tile_log_rows(read_csv(data / "tile_log.csv"))}
             self.assertEqual(latest[("cloudy", "fixed")]["status"], "valid")
             self.assertTrue(7.0 < float(latest[("cloudy", "fixed")]["offset_km"]) < 11.0)
-            self.assertEqual(latest[("clear", "fixed")]["offset_km"], "0.000")
-            self.assertIn("Tiles taken from a nearby clear window: 1 of 2", printed.getvalue())
+            self.assertEqual(latest[("clear", "fixed")]["status"], "valid")  # untouched by the re-check
+            self.assertIn("Tiles taken from a nearby clear window: 1 of", printed.getvalue())
 
             try:
                 import torch

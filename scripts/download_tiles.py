@@ -57,7 +57,10 @@ from biogoship.tables import (  # noqa: E402
     append_csv,
     format_utc,
     haversine_km,
+    append_tile_log,
     latest_tile_log_rows,
+    read_tile_log,
+    repair_tile_log,
     parse_utc,
     read_csv,
     repo_relative,
@@ -67,26 +70,6 @@ DATA_DIR = REPO_ROOT / "data"
 MAX_PIXEL_KM = 1.0  # a site farther than this from its nearest pixel is outside the swath
 
 POSITIONS = ["fixed", "advected"]
-TILE_LOG_FIELDS = [
-    "site_id",
-    "product_id",
-    "product_name",
-    "position",  # fixed | advected
-    "target_lat",
-    "target_lon",
-    "status",  # valid | cloudy | edge | out_of_swath | no_position
-    "offset_km",  # distance from the target position to the tile centre; 0 unless a nearby clear window was used
-    "valid_fraction",
-    "reject_flags",
-    "time_gap_hours",
-    "pixel_km",
-    "row",
-    "col",
-    "tile_lat",
-    "tile_lon",
-    "sst_valid_fraction",
-    "tile_path",
-]
 PRODUCT_LOG_FIELDS = ["product_id", "product_name", "status", "n_targets", "n_valid", "seconds", "message"]
 
 
@@ -104,10 +87,11 @@ def main() -> None:
     # Resume per (site, scene, position): a later run can add the advected tiles to scenes already done for fixed.
     tile_log = args.data_dir / "tile_log.csv"
     product_log = args.data_dir / "product_log.csv"
-    migrate_legacy_tile_log(tile_log)
+    if repair_tile_log(tile_log):
+        print("Rewrote the tile log in the current column layout (rows from older versions were kept).")
     logged = {}
     if tile_log.exists():
-        logged = {(r["site_id"], r["product_id"], r["position"]): r["status"] for r in latest_tile_log_rows(read_csv(tile_log))}
+        logged = {(r["site_id"], r["product_id"], r["position"]): r["status"] for r in latest_tile_log_rows(read_tile_log(tile_log))}
     todo = []
     for product in products:
         product_sites = [(sites[link["site_id"]], link) for link in links[product["product_id"]]]
@@ -138,7 +122,7 @@ def main() -> None:
             log_product(product_log, product, "error", len(targets), 0, started, str(exc)[:300])
             worker.cleanup(product)
             continue
-        append_csv(tile_log, rows, TILE_LOG_FIELDS)
+        append_tile_log(tile_log, rows)
         n_valid = sum(1 for row in rows if row["status"] == "valid")
         totals["valid"] += n_valid
         log_product(product_log, product, "done", len(targets), n_valid, started, "")
@@ -153,19 +137,6 @@ def main() -> None:
     print(f"Tiles: {args.data_dir / 'tiles'}\nLog:   {args.data_dir / 'tile_log.csv'}")
     if totals["errors"] and totals["errors"] == len(todo):
         raise SystemExit("Every scene failed; check credentials and network before re-running.")
-
-
-def migrate_legacy_tile_log(tile_log: Path) -> None:
-    """Bring a log written before positions existed up to date: its rows were all at the sampling position."""
-    if not tile_log.exists():
-        return
-    rows = read_csv(tile_log)
-    if not rows or "position" in rows[0]:
-        return
-    backup = tile_log.with_name("tile_log.legacy.csv")
-    tile_log.replace(backup)
-    append_csv(tile_log, [{**row, "position": "fixed"} for row in rows], TILE_LOG_FIELDS)
-    print(f"Converted {len(rows):,} rows of an older tile log to the current format (original kept as {backup.name}).")
 
 
 def load_advected(args: argparse.Namespace) -> dict[tuple[str, str], tuple[float, float]]:

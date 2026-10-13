@@ -22,7 +22,8 @@ substitute your own.
 | 2 | Find the Sentinel-3 scenes covering each site | `scripts/search_products.py` | done, output committed |
 | 3 | Download those scenes (OLCI + SST) | `scripts/download_products.py` | done on the cluster |
 | 4 | Back-track each site's water to the time of every overpass | `scripts/download_currents.py`, `scripts/backtrack_sites.py` | ready to run on the cluster |
-| 5 | Cut Granite-ready tiles at the sampling position and at the back-tracked position | `scripts/download_tiles.py`, `scripts/build_tile_manifest.py` | written, not run yet |
+| 5 | Cut Granite-ready tiles at the sampling position and at the back-tracked position | `scripts/download_tiles.py`, `scripts/build_tile_manifest.py` | fixed position run; advected pending |
+| 5b | For sites still without an advected tile, search further out along the water's track | `scripts/search_trajectory_products.py` | ready to run on the cluster |
 | 6 | Tiles to Granite embeddings, for both positions | `scripts/embed_tiles.py` | written, not run yet |
 | 7 | Embeddings to NMF communities and KEGG profiles (CatBoost) | | planned |
 
@@ -167,8 +168,11 @@ Outputs:
 - `data/manifests/advected_positions.csv` one row per (site, scene): advected
   position, straight-line displacement and path length in km, and a `status`
 
+Each site is tracked 7 days backward and forward, longer than the +/-3 day overpass
+window, so that step 5b can look for overpasses further out along the track.
+
 Options (`--export=ALL,NAME=value`): `DEPTH_M` (15, or 0 for the surface level),
-`MARGIN_DEG` (5; room around the sites for water to drift into).
+`MARGIN_DEG` (5; room around the sites for water to drift into), `TRACK_DAYS` (7).
 
 Anywhere else:
 
@@ -178,7 +182,7 @@ python scripts/download_currents.py
 python scripts/backtrack_sites.py --depth-m 15
 ```
 
-## Step 5: cut tiles (not run yet)
+## Step 5: cut tiles
 
 For each site and each clear overpass, writes a `(17, 42, 42)` array: 16 OLCI
 bands plus SST, normalised for Granite. Two versions are cut from the same scene:
@@ -186,11 +190,12 @@ bands plus SST, normalised for Granite. Two versions are cut from the same scene
 - `fixed`: centred on the sampling position, as in the Florida project
 - `advected`: centred on where the sampled water was at the scene's sensing time (step 4)
 
-Cloud cover is checked here. Every candidate scene is tested at every position: a
-tile is written only if at least 80% of its pixels are clear open ocean, so a site
-whose closest overpass is cloudy falls back to the next closest clear one. A site
-and position with no clear scene gets no tile and is flagged in
-`site_tile_status.csv`.
+Cloud cover is checked here. Every candidate scene is tested at every position. A
+tile must be at least 80% clear open ocean; if the tile centred on the position is
+not, the nearest clear one within 20 km is used and its offset recorded
+(`MAX_OFFSET_KM`, default 20; 0 for centred tiles only). A site whose closest
+overpass is cloudy falls back to the next closest clear one. A site and position
+with no clear scene gets no tile and is flagged in `site_tile_status.csv`.
 
 Roughly one overpass in five is clear at a given site. To see what limits the
 yield, and what a lower clear fraction or a different time window would give:
@@ -199,11 +204,11 @@ yield, and what a lower clear fraction or a different time window would give:
 python scripts/cloud_report.py        # reads data/tile_log.csv; instant
 ```
 
-To accept the nearest clear window within 20 km when the centred one is cloudy,
-and re-test only the combinations that failed:
+Combinations already tested are not re-tested unless asked. After changing
+`MAX_OFFSET_KM` or `MIN_VALID`, re-test the ones that failed:
 
 ```bash
-sbatch --account=191001-364393 --export=ALL,POSITIONS=fixed,MAX_OFFSET_KM=20,RECHECK="cloudy edge" cluster/download_tiles.sbatch
+sbatch --account=191001-364393 --export=ALL,POSITIONS=fixed,RECHECK="cloudy edge" cluster/download_tiles.sbatch
 ```
 
 It reads the archives from step 3 when they are on disk, and otherwise downloads
@@ -226,6 +231,24 @@ Outputs:
 - `data/manifests/site_tile_status.csv` per site and position: counts of clear,
   cloudy and not-covered scenes, and a `flag` (`ok`, `all_cloudy`,
   `outside_all_scenes`, `cloudy_or_outside`, `no_position`).
+
+## Step 5b: more scenes along the track, for sites without an advected tile
+
+About one overpass in five is clear, so many sites have no clear tile within +/-3
+days. For the advected position the window can be widened, because the tile
+follows the water: this step takes each site that still has no clear advected
+tile and looks for scenes covering the water's position on each further day, out
+to `MAX_DAYS` (default 6) before and after sampling.
+
+```bash
+sbatch --account=191001-364393 cluster/extend_search.sbatch       # search; prints how much there is to download
+sbatch --account=191001-364393 cluster/download_products.sbatch   # fetches only the new scenes
+sbatch --account=191001-364393 cluster/download_tiles.sbatch      # tiles them, at the advected position only
+```
+
+The three can be repeated with a larger `MAX_DAYS` (up to the 7-day track
+length); each round only searches the sites still missing. The fixed position is
+not affected: it keeps to overpasses within the original window.
 
 ## Step 6: Granite embeddings (not run yet)
 

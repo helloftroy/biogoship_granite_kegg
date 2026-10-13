@@ -173,3 +173,72 @@ def path_length_km(track: np.ndarray, hours: float) -> float:
         return float("nan")
     points = [ends[0], *[(row[1], row[2]) for row in inside], ends[1]]
     return sum(haversine_km(a[0], a[1], b[0], b[1]) for a, b in zip(points[:-1], points[1:]))
+
+
+# ----------------------------------------------------------------------------
+# Tracks on disk, and positions at overpass times
+# ----------------------------------------------------------------------------
+POSITION_FIELDS = [
+    "site_id",
+    "product_id",
+    "time_gap_hours",
+    "site_lat",
+    "site_lon",
+    "advected_lat",
+    "advected_lon",
+    "displacement_km",
+    "path_km",
+    "status",
+]
+
+
+def load_tracks(trajectories_csv: Path) -> dict[str, np.ndarray]:
+    """site_id -> rows (hours_from_sample, lat, lon), from the file backtrack_sites.py writes."""
+    import csv
+
+    rows: dict[str, list[tuple[float, float, float]]] = {}
+    with Path(trajectories_csv).open(newline="") as f:
+        for row in csv.DictReader(f):
+            rows.setdefault(row["site_id"], []).append(
+                (float(row["hours_from_sample"]), float(row["lat"]), float(row["lon"]))
+            )
+    return {site_id: np.array(sorted(track), dtype=float) for site_id, track in rows.items()}
+
+
+def advected_position_row(site: dict[str, str], link: dict[str, str], track: np.ndarray | None) -> dict:
+    """Where the site's water was at one scene's sensing time.
+
+    status: ok | stalled (never moved: no current data at the site) | left_domain (track
+    ends before the overpass time) | no_track (the site was not tracked).
+    """
+    lat, lon, hours = float(site["lat"]), float(site["lon"]), float(link["time_gap_hours"])
+    row = {
+        "site_id": site["site_id"],
+        "product_id": link["product_id"],
+        "time_gap_hours": link["time_gap_hours"],
+        "site_lat": site["lat"],
+        "site_lon": site["lon"],
+        "status": "no_track",
+    }
+    if track is None:
+        return row
+    where = position_at(track, hours)
+    if where is None:
+        row["status"] = "left_domain"
+        return row
+    displacement = haversine_km(lat, lon, where[0], where[1])
+    row.update(
+        advected_lat=f"{where[0]:.6f}",
+        advected_lon=f"{where[1]:.6f}",
+        displacement_km=f"{displacement:.3f}",
+        path_km=f"{path_length_km(track, hours):.3f}",
+        status="stalled" if displacement == 0.0 and abs(hours) >= 1.0 else "ok",
+    )
+    return row
+
+
+def advected_position_rows(
+    sites: list[dict[str, str]], site_products: list[dict[str, str]], tracks: dict[str, np.ndarray]
+) -> list[dict]:
+    by_site = {site["site_id"]: site for site in sites}
+    return [advected_position_row(by_site[link["site_id"]], link, tracks.get(link["site_id"])) for link in site_products]

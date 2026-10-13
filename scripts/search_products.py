@@ -6,6 +6,9 @@ scenes whose footprint contains the site and whose sensing time is within
 --max-days of sampling. Each OLCI scene is then paired with the SLSTR sea surface
 temperature (SL_2_WST) orbit file of the same overpass.
 
+Re-running this rewrites both output files from scratch, which drops any pairs
+added later by search_trajectory_products.py; re-run that afterwards if needed.
+
 No credentials are needed: the catalogue is public. Outputs in data/manifests/:
   site_products.csv   one row per (site, candidate OLCI scene), with the time gap
   products.csv        one row per unique OLCI scene, with its paired SST product

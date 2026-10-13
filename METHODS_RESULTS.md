@@ -153,16 +153,16 @@ total velocity `uo`, `vo` combining altimeter-derived geostrophic currents and
 modelled wind-driven Ekman currents, 0.25 degree, global. Dataset
 `cmems_obs-mob_glo_phy-cur_my_0.25deg_P1D-m` (multi-year reprocessing, daily
 means). Levels: 0 m and 15 m; **15 m is used by default** (see choices below).
-One subset per section: site extent plus 5 degrees, from 2 days before the
-first to 2 days after the last sampling or overpass time.
+One subset per section: site extent plus 5 degrees, from 8 days before the
+first to 8 days after the last sampling or overpass time (to cover 7-day tracks).
 
 **Tracking** (`biogoship/advection.py`, `scripts/backtrack_sites.py`).
 
 - OceanParcels 3.x, one particle per site, released at the sampling position
   and time.
 - Fourth-order Runge-Kutta, 20-minute time step, positions recorded hourly.
-- Run once backward and once forward, each for the largest sampling-to-overpass
-  gap in that section (72 h; 237 h for I09N).
+- Run once backward and once forward, each for 7 days (or the largest
+  sampling-to-overpass gap in the section if longer: 237 h for I09N).
 - Deterministic: no diffusion, no ensemble, horizontal motion only.
 - For each (site, scene) pair the track is linearly interpolated to the scene's
   sensing start. A scene earlier than sampling uses the backward track ("where
@@ -296,6 +296,28 @@ Sites with a tile (80% clear), of the 660 outside I09N, by largest time gap allo
   matchable site. Averaging 3 to 5 clear views per sample would therefore need
   roughly four times as many overpasses per site, i.e. a window of about +/-10
   to 15 days along the trajectory.
+
+**Decision (2026-10-13).** The two cases to compare are now defined as:
+
+- **fixed**: sampling position, overpasses within +/-3 days of sampling (I09N
+  +/-10), tile 80% clear, nearest clear tile within 20 km accepted. This is the
+  Florida project's rule.
+- **advected**: position of the sampled water at overpass time, same 80% and
+  20 km rule, and the time window widened along the track for sites that have no
+  clear tile within +/-3 days (out to 6 days to start with, in stages).
+
+The aim for now is one good tile per sample in each case; averaging several
+views along the track is set aside. Both cases then go through Granite.
+
+**Widening along the track** (`scripts/search_trajectory_products.py`). Each site
+is tracked 7 days each way. For every site still without a clear advected tile,
+and for every day between the window already searched and the new limit, the
+catalogue is queried for OLCI scenes covering the water's position at the middle
+of that day. New (site, scene) pairs are marked `source=trajectory` in
+`site_products.csv` and are tiled at the advected position only. The exact
+advected position at each scene's sensing time comes from the hourly track. In a
+test on AMT28 (all 63 sites, days 3 to 5), 53 sites gained candidate scenes: 282
+new pairs from 64 new scenes.
 
 **Ways to raise the yield** (`scripts/cloud_report.py` quantifies the second and
 third from the existing log):

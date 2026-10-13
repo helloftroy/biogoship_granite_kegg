@@ -276,7 +276,8 @@ class LocalArchiveRunTests(unittest.TestCase):
             write_csv(manifests / "site_products.csv", [
                 {"site_id": s, "product_id": "p1", "time_gap_hours": "5.69"} for s in ("clear", "cloudy")
             ])  # fmt: skip
-            common = ["--manifest-dir", str(manifests), "--data-dir", str(data), "--products-dir", str(data / "products")]
+            paths = ["--manifest-dir", str(manifests), "--data-dir", str(data), "--products-dir", str(data / "products")]
+            common = [*paths, "--max-offset-km", "0"]  # centred windows only, to begin with
 
             with contextlib.redirect_stdout(io.StringIO()):
                 # First the sampling positions only, as when back-tracking has not run yet.
@@ -321,7 +322,7 @@ class LocalArchiveRunTests(unittest.TestCase):
             import cloud_report
 
             with contextlib.redirect_stdout(io.StringIO()) as printed:
-                self.run_script(download_tiles, [*common, "--max-offset-km", "20", "--recheck", "cloudy", "edge"])
+                self.run_script(download_tiles, [*paths, "--recheck", "cloudy", "edge"])  # default: within 20 km
                 self.run_script(cloud_report, ["--manifest-dir", str(manifests), "--tile-log", str(data / "tile_log.csv")])
             latest = {(r["site_id"], r["position"]): r for r in latest_tile_log_rows(read_csv(data / "tile_log.csv"))}
             self.assertEqual(latest[("cloudy", "fixed")]["status"], "valid")

@@ -73,7 +73,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "currents")
     parser.add_argument("--dataset-id", default=advection.CURRENTS_DATASET)
     parser.add_argument("--margin-deg", type=float, default=5.0, help="Room around the sites for water to drift into.")
-    parser.add_argument("--pad-days", type=float, default=2.0, help="Extra days of currents before and after.")
+    parser.add_argument(
+        "--pad-days",
+        type=float,
+        default=8.0,
+        help="Days of currents before the first and after the last sampling or overpass time. "
+        "Must exceed backtrack_sites.py --track-days (7). Default 8.",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Re-download subsets that already exist.")
     parser.add_argument("--dry-run", action="store_true", help="Print the subsets; download nothing.")
     return parser.parse_args()

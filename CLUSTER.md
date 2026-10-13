@@ -90,12 +90,18 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 2 | `setup_env.sbatch` | service | creates the `biogoship` environment | built 2026-10-13 with venv + pip (the first, conda, attempt failed on the `$HOME` quota). Needs one re-run to pick up the xarray pin below |
 | 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | not run |
 | 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 (674 clear tiles, 376 of 721 sites); advected not run |
+| 4b | `extend_search.sbatch` | service | for sites without a clear advected tile, finds scenes further out along the water's track; then rerun 1 and 4 | not run |
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | not run |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
 
+Current plan (2026-10-13): finish the fixed case (4 with `RECHECK="cloudy edge"`,
+to apply the 20 km rule to combinations tested before it existed), then 3, then 4
+for the advected position, then 4b -> 1 -> 4 to widen the window for sites still
+missing an advected tile, then 5 and 6.
+
 Dependencies: 3 needs 2. 4 needs 1, and 3 for the advected tiles (it can run with
 `POSITIONS=fixed` before 3, then again later to add the advected ones). 5 needs 2.
-6 needs 4 and 5. `search_products.sbatch` is optional; its outputs are committed.
+4b needs 3 and an advected run of 4. 6 needs 4 and 5. `search_products.sbatch` is optional; its outputs are committed.
 
 Every job resumes when resubmitted: finished downloads, finished (site, scene,
 position) checks and existing currents files are skipped.

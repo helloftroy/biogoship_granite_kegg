@@ -187,6 +187,10 @@ def targets_for(product_sites: list[tuple[dict, dict]], product_id: str, positio
     targets = []
     for site, link in product_sites:
         for position in positions:
+            # Scenes found by following the water's track are for the advected position only;
+            # the fixed position keeps to overpasses within the original window around sampling.
+            if position == "fixed" and link.get("source") == "trajectory":
+                continue
             where = (float(site["lat"]), float(site["lon"]))
             if position == "advected":
                 where = advected.get((site["site_id"], product_id))
@@ -449,9 +453,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-offset-km",
         type=float,
-        default=0.0,
+        default=20.0,
         help="If the window centred on the target is not clear, use the nearest clear window within this "
-        "distance. Default 0: centred window only.",
+        "distance. Default 20 km, the tolerance of the Florida project. 0 = centred window only.",
     )
     parser.add_argument(
         "--recheck",

@@ -14,7 +14,7 @@
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
 #   sbatch --account=191001-364393 cluster/backtrack.sbatch
 #
-# Overrides: DEPTH_M=15 (or 0), MARGIN_DEG=5.
+# Overrides: DEPTH_M=15 (or 0), MARGIN_DEG=5, TRACK_DAYS=7 (days tracked each way).
 
 set -euo pipefail
 export BGS_CONDA_ENV="${BGS_CONDA_ENV:-/scratch/morrill/users/${USER}/conda_envs/biogoship}"
@@ -33,6 +33,7 @@ export COPERNICUSMARINE_CACHE_DIRECTORY="${REPO_ROOT}/.cache/copernicusmarine"
 mkdir -p "${COPERNICUSMARINE_CREDENTIALS_DIRECTORY}"
 
 echo "Job started: $(date)"
-python scripts/download_currents.py --margin-deg "${MARGIN_DEG:-5}"
-python scripts/backtrack_sites.py --depth-m "${DEPTH_M:-15}"
+TRACK_DAYS="${TRACK_DAYS:-7}"
+python scripts/download_currents.py --margin-deg "${MARGIN_DEG:-5}" --pad-days "$((TRACK_DAYS + 1))"
+python scripts/backtrack_sites.py --depth-m "${DEPTH_M:-15}" --track-days "${TRACK_DAYS}"
 echo "Job finished: $(date)"

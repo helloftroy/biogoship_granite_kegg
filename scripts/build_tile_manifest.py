@@ -27,7 +27,15 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from biogoship.tables import MANIFEST_DIR, REPO_ROOT, from_repo, haversine_km, read_csv, write_csv  # noqa: E402
+from biogoship.tables import (  # noqa: E402
+    MANIFEST_DIR,
+    REPO_ROOT,
+    from_repo,
+    haversine_km,
+    latest_tile_log_rows,
+    read_csv,
+    write_csv,
+)
 
 SAMPLE_COLUMNS = [
     "biosample",
@@ -54,6 +62,7 @@ FIELDS = [
     "match_day_gap",
     "match_hour_gap",
     "match_distance_km",
+    "offset_km",
     "valid_fraction",
     "sst_valid_fraction",
     "is_best",
@@ -68,7 +77,7 @@ def main() -> None:
     args = parse_args()
     samples = read_csv(args.manifest_dir / "biogoship_samples.csv")
     products = {row["product_id"]: row for row in read_csv(args.manifest_dir / "products.csv")}
-    log = read_csv(args.tile_log)
+    log = latest_tile_log_rows(read_csv(args.tile_log))
 
     tiles_by_site: dict[str, list[dict[str, str]]] = defaultdict(list)
     missing = 0
@@ -111,6 +120,7 @@ def main() -> None:
                     "match_day_gap": f"{abs(gap_hours) / 24:.3f}",
                     "match_hour_gap": f"{gap_hours:.2f}",
                     "match_distance_km": f"{distance_km:.3f}",
+                    "offset_km": tile.get("offset_km") or "0.000",
                     "valid_fraction": tile["valid_fraction"],
                     "sst_valid_fraction": tile["sst_valid_fraction"],
                     "is_best": tile["is_best"],

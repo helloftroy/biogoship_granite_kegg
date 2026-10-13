@@ -17,6 +17,7 @@ import numpy as np
 from .tables import wrap_lon_delta
 
 TILE_SIZE = 42  # pixels; 12.6 km at OLCI full resolution
+PIXEL_KM = 0.3  # nominal OLCI full-resolution pixel spacing
 HALF = TILE_SIZE // 2
 
 OLCI_BANDS = [
@@ -122,6 +123,35 @@ def window_origin(row: int, col: int, shape: tuple[int, int]) -> tuple[int, int]
     if r0 < 0 or c0 < 0 or r0 + TILE_SIZE > shape[0] or c0 + TILE_SIZE > shape[1]:
         return None
     return r0, c0
+
+
+def find_clear_window(
+    valid: np.ndarray, row: int, col: int, max_offset_px: int, min_valid: float
+) -> tuple[int, int, float] | None:
+    """Nearest TILE_SIZE window to (row, col) that is at least min_valid clear.
+
+    Searches every window whose centre is within max_offset_px pixels and lies fully
+    inside the scene. Returns (r0, c0, clear fraction) of the closest one, or None.
+    """
+    centre_r0, centre_c0 = row - HALF, col - HALF
+    r_lo, r_hi = max(centre_r0 - max_offset_px, 0), min(centre_r0 + max_offset_px, valid.shape[0] - TILE_SIZE)
+    c_lo, c_hi = max(centre_c0 - max_offset_px, 0), min(centre_c0 + max_offset_px, valid.shape[1] - TILE_SIZE)
+    if r_lo > r_hi or c_lo > c_hi:
+        return None
+    region = valid[r_lo : r_hi + TILE_SIZE, c_lo : c_hi + TILE_SIZE]
+    total = np.pad(region.astype(np.int32).cumsum(axis=0).cumsum(axis=1), ((1, 0), (1, 0)))  # summed-area table
+    sums = total[TILE_SIZE:, TILE_SIZE:] - total[:-TILE_SIZE, TILE_SIZE:] - total[TILE_SIZE:, :-TILE_SIZE] + total[:-TILE_SIZE, :-TILE_SIZE]
+    fraction = sums / float(TILE_SIZE * TILE_SIZE)
+    rows, cols = np.mgrid[r_lo : r_hi + 1, c_lo : c_hi + 1]
+    distance2 = (rows - centre_r0) ** 2 + (cols - centre_c0) ** 2
+    usable = (fraction >= min_valid) & (distance2 <= max_offset_px**2)
+    if not usable.any():
+        return None
+    # Closest first; among equally close windows, the clearest.
+    order = np.lexsort((-fraction[usable], distance2[usable]))
+    best = np.flatnonzero(usable)[order[0]]
+    i, j = np.unravel_index(best, fraction.shape)
+    return int(r_lo + i), int(c_lo + j), float(fraction[i, j])
 
 
 def read_olci_window(product_dir: Path, r0: int, c0: int) -> np.ndarray:

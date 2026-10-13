@@ -19,6 +19,10 @@
 #   # 2. everything
 #   sbatch --account=191001-364393 cluster/download_tiles.sbatch
 #
+# To allow the nearest clear window within 20 km when the centred one is cloudy, and
+# re-test the combinations that were cloudy or at a scene edge:
+#   sbatch --account=191001-364393 --export=ALL,POSITIONS=fixed,MAX_OFFSET_KM=20,RECHECK="cloudy edge" cluster/download_tiles.sbatch
+#
 # Other overrides: POSITIONS="fixed advected" (or just "fixed"), MIN_VALID=0.8,
 # DOWNLOAD_MODE=files|zip, NO_SST=1, CONNECTIONS=4.
 
@@ -38,6 +42,10 @@ export CDSE_TOKEN_TIMEOUT="${CDSE_TOKEN_TIMEOUT:-600}"
 export CDSE_CONNECT_TIMEOUT="${CDSE_CONNECT_TIMEOUT:-300}"
 
 EXTRA_ARGS=()
+if [ -n "${RECHECK:-}" ]; then
+  # shellcheck disable=SC2206  # RECHECK is a space-separated list
+  EXTRA_ARGS+=(--recheck ${RECHECK})
+fi
 if [ "${NO_SST:-0}" = "1" ]; then
   EXTRA_ARGS+=(--no-sst)
 fi
@@ -48,6 +56,7 @@ df -h "${REPO_ROOT}" | tail -1
 python scripts/download_tiles.py \
   --positions ${POSITIONS:-fixed advected} \
   --min-valid "${MIN_VALID:-0.8}" \
+  --max-offset-km "${MAX_OFFSET_KM:-0}" \
   --max-products "${MAX_PRODUCTS:-0}" \
   --download-mode "${DOWNLOAD_MODE:-files}" \
   --connections "${CONNECTIONS:-4}" \

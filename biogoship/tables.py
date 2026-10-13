@@ -42,6 +42,12 @@ def append_csv(path: Path, rows: list[dict], fieldnames: list[str]) -> None:
         f.flush()
 
 
+def latest_tile_log_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """One row per (site, scene, position): the most recent, since a re-check appends a new row."""
+    latest = {(row["site_id"], row["product_id"], row["position"]): row for row in rows}
+    return list(latest.values())
+
+
 def parse_utc(value: str) -> datetime:
     return datetime.fromisoformat(value.strip().replace("Z", "+00:00")).astimezone(timezone.utc)
 

@@ -56,6 +56,8 @@ from biogoship.tables import (  # noqa: E402
     REPO_ROOT,
     append_csv,
     format_utc,
+    haversine_km,
+    latest_tile_log_rows,
     parse_utc,
     read_csv,
     repo_relative,
@@ -73,6 +75,7 @@ TILE_LOG_FIELDS = [
     "target_lat",
     "target_lon",
     "status",  # valid | cloudy | edge | out_of_swath | no_position
+    "offset_km",  # distance from the target position to the tile centre; 0 unless a nearby clear window was used
     "valid_fraction",
     "reject_flags",
     "time_gap_hours",
@@ -102,18 +105,25 @@ def main() -> None:
     tile_log = args.data_dir / "tile_log.csv"
     product_log = args.data_dir / "product_log.csv"
     migrate_legacy_tile_log(tile_log)
-    logged = {(r["site_id"], r["product_id"], r["position"]) for r in read_csv(tile_log)} if tile_log.exists() else set()
+    logged = {}
+    if tile_log.exists():
+        logged = {(r["site_id"], r["product_id"], r["position"]): r["status"] for r in latest_tile_log_rows(read_csv(tile_log))}
     todo = []
     for product in products:
         product_sites = [(sites[link["site_id"]], link) for link in links[product["product_id"]]]
         targets = targets_for(product_sites, product["product_id"], args.positions, advected)
-        targets = [t for t in targets if (t["site"]["site_id"], product["product_id"], t["position"]) not in logged]
+        targets = [
+            t
+            for t in targets
+            if logged.get((t["site"]["site_id"], product["product_id"], t["position"]), "new") in ("new", *args.recheck)
+        ]
         if targets:
             todo.append((product, targets))
     if args.max_products:
         todo = todo[: args.max_products]
     print(f"OLCI scenes: {len(products):,} in catalogue, {len(todo):,} with positions still to check")
     print(f"Download mode: {args.download_mode}; min valid fraction: {args.min_valid}; SST: {'off' if args.no_sst else 'on'}")
+    print(f"Nearby clear window search: {'off' if not args.max_offset_km else f'within {args.max_offset_km:g} km'}")
 
     worker = TileWorker(args)
     totals = {"valid": 0, "errors": 0}
@@ -332,6 +342,8 @@ class TileWorker:
         self.fetch(product_id, product_name, tiles.OLCI_CHECK_FILES, product_dir)
         lat, lon = tiles.load_geo(product_dir / "geo_coordinates.nc")
         wqsf = tiles.load_wqsf(product_dir / "wqsf.nc")
+        scene_valid = None  # whole-scene clear mask, computed only if a nearby-window search needs it
+        max_offset_px = int(round(self.args.max_offset_km / tiles.PIXEL_KM))
 
         rows, passing = [], []
         for target in targets:
@@ -355,18 +367,32 @@ class TileWorker:
                 row["status"] = "out_of_swath"
                 continue
             row["row"], row["col"] = pixel_row, pixel_col
+            # First choice: the window centred on the target.
             origin = tiles.window_origin(pixel_row, pixel_col, lat.shape)
-            if origin is None:
-                row["status"] = "edge"
+            status = "edge"
+            if origin is not None:
+                window = (slice(origin[0], origin[0] + tiles.TILE_SIZE), slice(origin[1], origin[1] + tiles.TILE_SIZE))
+                valid = tiles.ocean_mask(wqsf[window])
+                row["valid_fraction"] = f"{valid.mean():.4f}"
+                status = "valid" if valid.mean() >= self.args.min_valid else "cloudy"
+                if status == "cloudy":
+                    row["reject_flags"] = tiles.dominant_reject_flags(wqsf[window])
+            # Otherwise, the nearest clear window within --max-offset-km, if allowed.
+            if status != "valid" and max_offset_px > 0:
+                if scene_valid is None:
+                    scene_valid = tiles.ocean_mask(wqsf)
+                found = tiles.find_clear_window(scene_valid, pixel_row, pixel_col, max_offset_px, self.args.min_valid)
+                if found is not None:
+                    origin, status = found[:2], "valid"
+                    window = (slice(origin[0], origin[0] + tiles.TILE_SIZE), slice(origin[1], origin[1] + tiles.TILE_SIZE))
+                    valid = scene_valid[window]
+                    row["valid_fraction"] = f"{valid.mean():.4f}"
+                    row["reject_flags"] = ""
+            if status != "valid":
+                row["status"] = status
                 continue
-            r0, c0 = origin
-            window = (slice(r0, r0 + tiles.TILE_SIZE), slice(c0, c0 + tiles.TILE_SIZE))
-            valid = tiles.ocean_mask(wqsf[window])
-            row["valid_fraction"] = f"{valid.mean():.4f}"
-            if valid.mean() < self.args.min_valid:
-                row["status"] = "cloudy"
-                row["reject_flags"] = tiles.dominant_reject_flags(wqsf[window])
-                continue
+            centre = (origin[0] + tiles.HALF, origin[1] + tiles.HALF)
+            row["offset_km"] = f"{haversine_km(target_lat, target_lon, float(lat[centre]), float(lon[centre])):.3f}"
             passing.append((site, position, row, origin, valid, lat[window], lon[window]))
 
         if not passing:
@@ -395,6 +421,7 @@ class TileWorker:
                 site_time=np.array(site["time_utc"]),
                 position=np.array(position),
                 time_gap_hours=np.array(float(row["time_gap_hours"]), dtype=np.float32),
+                offset_km=np.array(float(row["offset_km"]), dtype=np.float32),
                 valid_fraction=np.array(valid.mean(), dtype=np.float32),
                 sst_valid_fraction=np.array(np.isfinite(data[-1]).mean(), dtype=np.float32),
             )
@@ -418,6 +445,21 @@ def parse_args() -> argparse.Namespace:
         choices=POSITIONS,
         default=POSITIONS,
         help="Which positions to tile. 'advected' needs data/manifests/advected_positions.csv.",
+    )
+    parser.add_argument(
+        "--max-offset-km",
+        type=float,
+        default=0.0,
+        help="If the window centred on the target is not clear, use the nearest clear window within this "
+        "distance. Default 0: centred window only.",
+    )
+    parser.add_argument(
+        "--recheck",
+        nargs="*",
+        default=[],
+        choices=["cloudy", "edge", "out_of_swath", "no_position"],
+        help="Re-test (site, scene, position) combinations that ended with these outcomes, e.g. after "
+        "changing --max-offset-km or --min-valid.",
     )
     parser.add_argument("--min-valid", type=float, default=0.8, help="Minimum clear open-ocean fraction of a tile.")
     parser.add_argument("--max-products", type=int, default=0, help="Stop after this many scenes (0 = all).")

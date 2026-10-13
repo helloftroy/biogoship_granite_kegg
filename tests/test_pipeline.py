@@ -89,6 +89,15 @@ class TileGeometryTests(unittest.TestCase):
         self.assertEqual(tiles.locate_pixel(lat, lon, 0.0, -179.9995)[:2], (0, 1))
         self.assertLess(haversine_km(0, 179.999, 0, -179.999), 0.3)
 
+    def test_find_nearest_clear_window(self):
+        valid = np.ones(SHAPE, dtype=bool)
+        valid[:, 110:] = False  # cloud bank over the eastern columns
+        # Target at column 125 is under cloud; a window is 80% clear once it starts at column 76 or less.
+        self.assertEqual(tiles.find_clear_window(valid, 60, 125, 60, 0.8)[:2], (39, 76))
+        self.assertIsNone(tiles.find_clear_window(valid, 60, 125, 20, 0.8))  # nothing clear within 20 pixels
+        self.assertEqual(tiles.find_clear_window(valid, 60, 60, 60, 0.8), (39, 39, 1.0))  # already clear: stays centred
+        self.assertEqual(tiles.find_clear_window(valid, 5, 60, 60, 0.8)[:2], (0, 39))  # near the top edge: shifted inside
+
     def test_reject_mask_matches_florida_pipeline(self):
         self.assertEqual(
             int(tiles.WQSF_REJECT), 1 | 4 | 8 | 16 | 32 | 64 | 512 | 2048 | 8388608 | 16777216 | 262144
@@ -167,7 +176,7 @@ class EndToEndTests(unittest.TestCase):
             data_dir = Path(tmp)
             args = argparse.Namespace(
                 data_dir=data_dir, download_mode="files", no_sst=False, min_valid=0.8, keep_products=False,
-                sst_cache=2, connections=1, products_dir=None, timeout=1, retries=1, retry_sleep=0,
+                sst_cache=2, connections=1, products_dir=None, max_offset_km=0.0, timeout=1, retries=1, retry_sleep=0,
             )  # fmt: skip
             worker = download_tiles.TileWorker(args)
             write_olci(worker.product_dir(OLCI_NAME), cloudy_cols=slice(110, 160))
@@ -235,7 +244,7 @@ class LocalArchiveRunTests(unittest.TestCase):
         import zipfile
 
         import build_tile_manifest
-        from biogoship.tables import read_csv, write_csv
+        from biogoship.tables import latest_tile_log_rows, read_csv, write_csv
 
         sst_name = "S3B_SL_2_WST____20200329T103000_20200329T121000_20200330T090904_6059_037_137______MAR_O_NT_003.SEN3"
         with tempfile.TemporaryDirectory() as tmp:
@@ -307,6 +316,18 @@ class LocalArchiveRunTests(unittest.TestCase):
             flags = {(r["site_id"], r["position"]): r["flag"] for r in read_csv(manifests / "site_tile_status.csv")}
             self.assertEqual(flags, {("clear", "fixed"): "ok", ("clear", "advected"): "outside_all_scenes",
                                      ("cloudy", "fixed"): "all_cloudy", ("cloudy", "advected"): "ok"})  # fmt: skip
+
+            # Allowing a nearby clear window rescues the cloudy sampling position, about 9 km west of it.
+            import cloud_report
+
+            with contextlib.redirect_stdout(io.StringIO()) as printed:
+                self.run_script(download_tiles, [*common, "--max-offset-km", "20", "--recheck", "cloudy", "edge"])
+                self.run_script(cloud_report, ["--manifest-dir", str(manifests), "--tile-log", str(data / "tile_log.csv")])
+            latest = {(r["site_id"], r["position"]): r for r in latest_tile_log_rows(read_csv(data / "tile_log.csv"))}
+            self.assertEqual(latest[("cloudy", "fixed")]["status"], "valid")
+            self.assertTrue(7.0 < float(latest[("cloudy", "fixed")]["offset_km"]) < 11.0)
+            self.assertEqual(latest[("clear", "fixed")]["offset_km"], "0.000")
+            self.assertIn("Tiles taken from a nearby clear window: 1 of 2", printed.getvalue())
 
             try:
                 import torch

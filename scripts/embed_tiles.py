@@ -44,6 +44,7 @@ TILE_COLUMNS = [
     "tile_lat",
     "tile_lon",
     "match_hour_gap",
+    "offset_km",
     "valid_fraction",
     "sst_valid_fraction",
     "is_best",

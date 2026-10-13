@@ -88,8 +88,8 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 |---|---|---|---|---|
 | 1 | `download_products.sbatch` | service | all candidate OLCI scenes and SST files, about 300 GB, to `data/products/` | completed |
 | 2 | `setup_env.sbatch` | service | creates the `biogoship` environment | built 2026-10-13 with venv + pip (the first, conda, attempt failed on the `$HOME` quota). Needs one re-run to pick up the xarray pin below |
-| 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | ran 2026-10-13 on real currents, all pairs resolved; re-run once to refresh currents files that are too short for 7-day tracks |
-| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 (674 centred clear tiles, 376 of 721 sites), then re-tested with the 20 km rule (+1,018 tiles); advected not run |
+| 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | done 2026-10-13 on real currents: all 3,727 pairs resolved, 7-day tracks complete |
+| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 fixed case done 2026-10-13: 1,692 clear tiles, 586 of 721 sites, 614 of 996 samples; advected not run |
 | 4b | `extend_search.sbatch` | service | for sites without a clear advected tile, finds scenes further out along the water's track; then rerun 1 and 4 | not run |
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | not run |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |

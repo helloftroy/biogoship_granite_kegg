@@ -11,6 +11,10 @@ from the same overpass as the best fixed tile, for a like-for-like comparison. T
 Florida project (tile_path, tile_date, tile_lat, tile_lon, match_day_gap,
 match_distance_km), so the Granite embedding step can read it unchanged.
 
+Also writes data/manifests/site_tile_status.csv: per site and position, how many
+candidate scenes were clear, cloudy or did not cover the position, and a `flag`
+naming the problem for sites left without a tile.
+
 Usage:
     python scripts/build_tile_manifest.py
 """
@@ -117,7 +121,73 @@ def main() -> None:
                 }
             )
     write_csv(args.out_csv, rows, FIELDS)
+    write_csv(args.out_csv.with_name("site_tile_status.csv"), site_status(samples, log), STATUS_FIELDS)
     summarise(samples, log, tiles_by_site, rows, missing, args)
+
+
+STATUS_FIELDS = [
+    "site_id",
+    "section",
+    "position",
+    "flag",
+    "n_scenes",
+    "n_valid",
+    "n_cloudy",
+    "n_edge",
+    "n_out_of_swath",
+    "n_no_position",
+    "best_valid_gap_hours",
+    "best_cloudy_valid_fraction",
+]
+
+
+def site_status(samples: list[dict[str, str]], log: list[dict[str, str]]) -> list[dict]:
+    """Per site and position: how its candidate scenes turned out, and a flag saying what to do about it.
+
+    flag: ok                  at least one clear tile
+          all_cloudy          every scene covers the position but none is clear enough
+          outside_all_scenes  the position is off the edge of, or outside, every scene
+          cloudy_or_outside   a mix of the two above
+          no_position         back-tracking gave no advected position for any scene
+    """
+    section = {sample["site_id"]: sample["section"] for sample in samples}
+    groups: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    for row in log:
+        groups[(row["site_id"], row["position"])].append(row)
+    out = []
+    for (site_id, position), rows in sorted(groups.items()):
+        n = {status: sum(1 for row in rows if row["status"] == status) for status in
+             ("valid", "cloudy", "edge", "out_of_swath", "no_position")}  # fmt: skip
+        outside = n["edge"] + n["out_of_swath"]
+        if n["valid"]:
+            flag = "ok"
+        elif n["no_position"] == len(rows):
+            flag = "no_position"
+        elif n["cloudy"] and not outside:
+            flag = "all_cloudy"
+        elif outside and not n["cloudy"]:
+            flag = "outside_all_scenes"
+        else:
+            flag = "cloudy_or_outside"
+        valid_gaps = [abs(float(row["time_gap_hours"])) for row in rows if row["status"] == "valid"]
+        cloudy = [float(row["valid_fraction"]) for row in rows if row["status"] == "cloudy"]
+        out.append(
+            {
+                "site_id": site_id,
+                "section": section.get(site_id, ""),
+                "position": position,
+                "flag": flag,
+                "n_scenes": len(rows),
+                "n_valid": n["valid"],
+                "n_cloudy": n["cloudy"],
+                "n_edge": n["edge"],
+                "n_out_of_swath": n["out_of_swath"],
+                "n_no_position": n["no_position"],
+                "best_valid_gap_hours": f"{min(valid_gaps):.2f}" if valid_gaps else "",
+                "best_cloudy_valid_fraction": f"{max(cloudy):.3f}" if cloudy else "",
+            }
+        )
+    return out
 
 
 def summarise(samples, log, tiles_by_site, rows, missing, args) -> None:
@@ -139,7 +209,12 @@ def summarise(samples, log, tiles_by_site, rows, missing, args) -> None:
     matched = {row["sample_id"] for row in rows}
     print(f"\nSamples with at least one clear tile: {len(matched):,} of {len(samples):,}")
     print(f"Manifest rows (sample x tile): {len(rows):,}")
+    flags: dict[tuple[str, str], int] = defaultdict(int)
+    for row in site_status(samples, log):
+        flags[(row["position"], row["flag"])] += 1
+    print("Sites by position and flag: " + ", ".join(f"{n:,} {p}/{flag}" for (p, flag), n in sorted(flags.items())))
     print(f"Wrote {args.out_csv}")
+    print(f"Wrote {args.out_csv.with_name('site_tile_status.csv')}")
 
 
 def parse_args() -> argparse.Namespace:

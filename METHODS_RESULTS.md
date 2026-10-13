@@ -129,7 +129,9 @@ paired SST orbit file as complete product archives (about 300 GB) to
 around the sites, so that later steps can read any location in a scene; the
 back-trajectory analysis needs positions upstream of the sampling site.
 
-**Result:** not run yet.
+**Result (2026-10-13):** download completed on the cluster (reported by the
+project owner; archive counts and total size still to be recorded here from
+`python scripts/download_products.py --dry-run`).
 
 ## 5. Back-tracking the sampled water
 
@@ -192,7 +194,7 @@ This checks the tracking code, not the realism of the currents.
 
 **Result:** not run yet on real currents.
 
-## 6. Tiles (written, not run)
+## 6. Tiles and cloud screening (written, not run)
 
 Carried over unchanged from the Florida project: band selection, quality flags,
 normalisation, SST resampling. Changed: the tile is centred on the site instead
@@ -219,6 +221,23 @@ Steps 1 to 6 are applied twice per site and scene: once at the sampling position
 (`fixed`) and once at the back-tracked position (`advected`). The two tiles can
 differ in cloud cover, so a site may have one without the other.
 
+**Cloud handling.** Cloud cover is not known from the catalogue; it is measured
+here, per tile, from the pixel flags. All candidate scenes within the time window
+are tested, so if the closest overpass is cloudy at a position, the next closest
+clear one is used instead. Nothing cloudy or out of scene reaches the embedding
+step: such cases never produce a tile. They are recorded in `data/tile_log.csv`
+(one line per site, scene and position, with the clear fraction and the dominant
+rejection flags) and summarised per site and position in
+`data/manifests/site_tile_status.csv` with a `flag`:
+
+| Flag | Meaning | Possible response |
+|---|---|---|
+| `ok` | at least one clear tile | none |
+| `all_cloudy` | every scene covers the position; none is 80% clear | widen the time window, or lower the threshold (`best_cloudy_valid_fraction` shows how close it came) |
+| `outside_all_scenes` | the position is off the edge of, or outside, every scene | search for scenes containing the advected position |
+| `cloudy_or_outside` | a mix of the two | either of the above |
+| `no_position` | back-tracking gave no advected position | check `advected_positions.csv` status |
+
 Every clear overpass yields a tile, so a site can have several.
 `scripts/build_tile_manifest.py` joins samples to tiles. For each sample and
 position it marks the tile closest in time as `is_best`, and it marks the advected
@@ -232,10 +251,38 @@ example every 24 h back), giving a short history of the water mass. The hourly
 tracks are already saved in `data/advection/trajectories.csv`; this would need a
 further scene search along the tracks.
 
-## 7. Embeddings and models (planned)
+## 7. Granite embeddings (written, not run)
 
-Tiles -> Granite Geospatial Ocean encoder -> embeddings -> CatBoost predicting
-NMF community weights and KEGG profiles.
+`scripts/embed_tiles.py`, model loading carried over from the Florida project
+(`biogoship/granite.py`).
+
+- Model: `ibm-granite/granite-geospatial-ocean`, a masked autoencoder; only the
+  encoder is used. It is built as a TerraTorch `prithvi_eo_tiny` backbone
+  (17 channels, 42x42 input, 2x2 patches, width 512, 12 layers, 8 heads) and the
+  encoder weights are loaded from `checkpoint.pt`; decoder weights are dropped.
+- Input: the `(17, 42, 42)` tile, with NaN (missing SST) set to 0, the channel mean.
+- Embedding: mean over the encoder's output tokens, 512 numbers per tile.
+- Every clear tile is embedded, for both positions and all clear overpasses, not
+  only the best one. The per-sample table carries `position`, `is_best` and
+  `same_scene_as_best_fixed` to select from them.
+
+**Result:** not run yet.
+
+## 8. Planned next
+
+- **Fixed vs advected.** Compare models trained on the two sets of embeddings,
+  using the same overpass for both (`same_scene_as_best_fixed`).
+- **Short time series per sample.** Average the embeddings of roughly 3 to 5
+  clear scenes along the drift track, so each sample is represented by more than
+  one view of its water. The embeddings for all clear overpasses within +/-3 days
+  are already produced; scenes at earlier points on the track would need a
+  further search.
+- **Advected position outside the scene** (expected near coasts). Two responses,
+  to be built once `site_tile_status.csv` shows how often it happens: (a) search
+  for and download the scene that does contain the advected position; (b) switch
+  to another overpass, for example one before sampling if the one after failed.
+- **Models.** Embeddings -> CatBoost predicting NMF community weights and KEGG
+  profiles.
 
 ## Open questions
 

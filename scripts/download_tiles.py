@@ -16,8 +16,9 @@ archives in data/products/ when they are there and downloading otherwise:
      SST orbit file, and write one .npz tile per passing position.
   3. Record the outcome for every (site, scene, position) in data/tile_log.csv.
 
-Re-running resumes: scenes already in data/product_log.csv are skipped. Scenes
-that errored are retried on the next run.
+Re-running resumes: (site, scene, position) combinations already in
+data/tile_log.csv are skipped, so the advected tiles can be added after a
+fixed-only run. Scenes that errored are retried on the next run.
 
 Each tile .npz holds:
   data            float32 (17, 42, 42)  normalised; channels 0-15 OLCI, 16 SST
@@ -83,7 +84,7 @@ TILE_LOG_FIELDS = [
     "sst_valid_fraction",
     "tile_path",
 ]
-PRODUCT_LOG_FIELDS = ["product_id", "product_name", "status", "n_sites", "n_valid", "seconds", "message"]
+PRODUCT_LOG_FIELDS = ["product_id", "product_name", "status", "n_targets", "n_valid", "seconds", "message"]
 
 
 def main() -> None:
@@ -97,32 +98,39 @@ def main() -> None:
     advected = load_advected(args)
     print(f"Positions: {', '.join(args.positions)}" + (f" ({len(advected):,} advected positions)" if advected else ""))
 
+    # Resume per (site, scene, position): a later run can add the advected tiles to scenes already done for fixed.
+    tile_log = args.data_dir / "tile_log.csv"
     product_log = args.data_dir / "product_log.csv"
-    done = {row["product_id"] for row in read_csv(product_log) if row["status"] == "done"} if product_log.exists() else set()
-    todo = [product for product in products if product["product_id"] not in done]
+    logged = {(r["site_id"], r["product_id"], r["position"]) for r in read_csv(tile_log)} if tile_log.exists() else set()
+    todo = []
+    for product in products:
+        product_sites = [(sites[link["site_id"]], link) for link in links[product["product_id"]]]
+        targets = targets_for(product_sites, product["product_id"], args.positions, advected)
+        targets = [t for t in targets if (t["site"]["site_id"], product["product_id"], t["position"]) not in logged]
+        if targets:
+            todo.append((product, targets))
     if args.max_products:
         todo = todo[: args.max_products]
-    print(f"OLCI scenes: {len(products):,} in catalogue, {len(done):,} already done, {len(todo):,} to process now")
+    print(f"OLCI scenes: {len(products):,} in catalogue, {len(todo):,} with positions still to check")
     print(f"Download mode: {args.download_mode}; min valid fraction: {args.min_valid}; SST: {'off' if args.no_sst else 'on'}")
 
     worker = TileWorker(args)
     totals = {"valid": 0, "errors": 0}
-    for i, product in enumerate(todo, start=1):
+    for i, (product, targets) in enumerate(todo, start=1):
         started = time.time()
         print(f"[{i}/{len(todo)}] {product['product_name']}", flush=True)
-        product_sites = [(sites[link["site_id"]], link) for link in links[product["product_id"]]]
         try:
-            rows = worker.process(product, targets_for(product_sites, product["product_id"], args.positions, advected))
+            rows = worker.process(product, targets)
         except Exception as exc:  # noqa: BLE001 - one bad scene must not stop the run
             totals["errors"] += 1
             print(f"  ERROR: {exc}", flush=True)
-            log_product(product_log, product, "error", len(product_sites), 0, started, str(exc)[:300])
+            log_product(product_log, product, "error", len(targets), 0, started, str(exc)[:300])
             worker.cleanup(product)
             continue
-        append_csv(args.data_dir / "tile_log.csv", rows, TILE_LOG_FIELDS)
+        append_csv(tile_log, rows, TILE_LOG_FIELDS)
         n_valid = sum(1 for row in rows if row["status"] == "valid")
         totals["valid"] += n_valid
-        log_product(product_log, product, "done", len(product_sites), n_valid, started, "")
+        log_product(product_log, product, "done", len(targets), n_valid, started, "")
         worker.cleanup(product)
         counts = defaultdict(int)
         for row in rows:
@@ -162,12 +170,12 @@ def targets_for(product_sites: list[tuple[dict, dict]], product_id: str, positio
     return targets
 
 
-def log_product(path: Path, product: dict, status: str, n_sites: int, n_valid: int, started: float, message: str) -> None:
+def log_product(path: Path, product: dict, status: str, n_targets: int, n_valid: int, started: float, message: str) -> None:
     row = {
         "product_id": product["product_id"],
         "product_name": product["product_name"],
         "status": status,
-        "n_sites": n_sites,
+        "n_targets": n_targets,
         "n_valid": n_valid,
         "seconds": f"{time.time() - started:.0f}",
         "message": message,

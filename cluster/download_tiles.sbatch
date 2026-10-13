@@ -15,9 +15,9 @@
 #   cp cdse_credentials.sh.example cdse_credentials.sh   # once; then fill it in
 #
 #   # 1. smoke test on three scenes
-#   sbatch --account=<allocation> --export=ALL,MAX_PRODUCTS=3 cluster/download_tiles.sbatch
+#   sbatch --account=191001-364393 --export=ALL,MAX_PRODUCTS=3 cluster/download_tiles.sbatch
 #   # 2. everything
-#   sbatch --account=<allocation> cluster/download_tiles.sbatch
+#   sbatch --account=191001-364393 cluster/download_tiles.sbatch
 #
 # Other overrides: POSITIONS="fixed advected" (or just "fixed"), MIN_VALID=0.8,
 # DOWNLOAD_MODE=files|zip, NO_SST=1, CONNECTIONS=4.

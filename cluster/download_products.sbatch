@@ -13,8 +13,8 @@
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
 #   cp cdse_credentials.sh.example cdse_credentials.sh   # once; then fill it in
 #
-#   sbatch --account=<allocation> --export=ALL,MAX_PRODUCTS=2 cluster/download_products.sbatch   # smoke test
-#   sbatch --account=<allocation> cluster/download_products.sbatch                               # everything
+#   sbatch --account=191001-364393 --export=ALL,MAX_PRODUCTS=2 cluster/download_products.sbatch   # smoke test
+#   sbatch --account=191001-364393 cluster/download_products.sbatch                               # everything
 #
 # Other overrides: NO_SST=1, CONNECTIONS=4.
 

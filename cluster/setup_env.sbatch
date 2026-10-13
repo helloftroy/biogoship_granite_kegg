@@ -11,7 +11,7 @@
 # the Copernicus Marine toolbox (needed by cluster/backtrack.sbatch).
 #
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
-#   sbatch --account=<allocation> cluster/setup_env.sbatch
+#   sbatch --account=191001-364393 cluster/setup_env.sbatch
 
 set -euo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"

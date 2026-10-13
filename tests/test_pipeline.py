@@ -217,5 +217,118 @@ class EndToEndTests(unittest.TestCase):
                 self.assertEqual(str(tile["date"]), "2020-03-29T11:41:29Z")
 
 
+
+class LocalArchiveRunTests(unittest.TestCase):
+    """The scripts run as on the cluster: scenes already downloaded as archives, no network."""
+
+    def run_script(self, module, argv: list[str]) -> None:
+        old = sys.argv
+        sys.argv = [module.__name__, *argv]
+        try:
+            module.main()
+        finally:
+            sys.argv = old
+
+    def test_tile_manifest_and_embeddings(self):
+        import contextlib
+        import io
+        import zipfile
+
+        import build_tile_manifest
+        from biogoship.tables import read_csv, write_csv
+
+        sst_name = "S3B_SL_2_WST____20200329T103000_20200329T121000_20200330T090904_6059_037_137______MAR_O_NT_003.SEN3"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifests, data = root / "manifests", root / "data"
+            # Scene archives, laid out like real products: <name>.zip containing <name>/<files>.
+            write_olci(root / "src" / OLCI_NAME, cloudy_cols=slice(110, 160))
+            write_sst(root / "src" / sst_name / SST_FILE)
+            for kind, name in (("olci", OLCI_NAME), ("sst", sst_name)):
+                (data / "products" / kind).mkdir(parents=True)
+                with zipfile.ZipFile(data / "products" / kind / f"{name}.zip", "w") as archive:
+                    for path in (root / "src" / name).iterdir():
+                        archive.write(path, arcname=f"{name}/{path.name}")
+
+            def site(name: str, col: int) -> dict:
+                return {"site_id": name, "time_utc": "2020-03-29T06:00:00Z", "lat": LAT0 - 60 * STEP,
+                        "lon": LON0 + col * STEP, "section": "TEST"}  # fmt: skip
+
+            write_csv(manifests / "biogoship_sites.csv", [site("clear", 60), site("cloudy", 125)])
+            write_csv(manifests / "biogoship_samples.csv", [
+                {"sample_id": f"{s}_{rep}", "site_id": s, "collection_time_utc": "2020-03-29T06:00:00Z",
+                 "lat": LAT0 - 60 * STEP, "lon": LON0 + col * STEP, "section": "TEST", "metagenome_runs": "SRR1"}
+                for s, col in (("clear", 60), ("cloudy", 125)) for rep in ("a", "b")
+            ])  # fmt: skip
+            write_csv(manifests / "products.csv", [{
+                "product_id": "p1", "product_name": OLCI_NAME, "satellite": "S3B", "start_utc": "2020-03-29T11:41:29.000000Z",
+                "sst_product_id": "s1", "sst_product_name": sst_name,
+            }])  # fmt: skip
+            write_csv(manifests / "site_products.csv", [
+                {"site_id": s, "product_id": "p1", "time_gap_hours": "5.69"} for s in ("clear", "cloudy")
+            ])  # fmt: skip
+            common = ["--manifest-dir", str(manifests), "--data-dir", str(data), "--products-dir", str(data / "products")]
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                # First the sampling positions only, as when back-tracking has not run yet.
+                self.run_script(download_tiles, [*common, "--positions", "fixed"])
+                self.assertEqual(len(read_csv(data / "tile_log.csv")), 2)
+                # Then both: only the advected positions are new work. "cloudy" drifted west into clear water.
+                write_csv(manifests / "advected_positions.csv", [
+                    {"site_id": "clear", "product_id": "p1", "advected_lat": LAT0 - 60 * STEP,
+                     "advected_lon": LON0 + 500 * STEP, "status": "ok"},
+                    {"site_id": "cloudy", "product_id": "p1", "advected_lat": LAT0 - 60 * STEP,
+                     "advected_lon": LON0 + 70 * STEP, "status": "ok"},
+                ])  # fmt: skip
+                self.run_script(download_tiles, common)
+                log = read_csv(data / "tile_log.csv")
+                self.assertEqual(
+                    {(r["site_id"], r["position"]): r["status"] for r in log},
+                    {("clear", "fixed"): "valid", ("cloudy", "fixed"): "cloudy",
+                     ("clear", "advected"): "out_of_swath", ("cloudy", "advected"): "valid"},
+                )  # fmt: skip
+                self.run_script(download_tiles, common)  # nothing left to do
+                self.assertEqual(len(read_csv(data / "tile_log.csv")), 4)
+                self.assertTrue((data / "products" / "olci" / f"{OLCI_NAME}.zip").exists())  # archives are kept
+
+                out_csv = manifests / "biogoship_tile_manifest.csv"
+                self.run_script(build_tile_manifest, ["--manifest-dir", str(manifests), "--tile-log",
+                                                      str(data / "tile_log.csv"), "--out-csv", str(out_csv)])  # fmt: skip
+            manifest = read_csv(out_csv)
+            self.assertEqual(sorted((r["sample_id"], r["position"]) for r in manifest),
+                             [("clear_a", "fixed"), ("clear_b", "fixed"), ("cloudy_a", "advected"), ("cloudy_b", "advected")])  # fmt: skip
+            flags = {(r["site_id"], r["position"]): r["flag"] for r in read_csv(manifests / "site_tile_status.csv")}
+            self.assertEqual(flags, {("clear", "fixed"): "ok", ("clear", "advected"): "outside_all_scenes",
+                                     ("cloudy", "fixed"): "all_cloudy", ("cloudy", "advected"): "ok"})  # fmt: skip
+
+            try:
+                import torch
+
+                import embed_tiles
+                from biogoship import granite
+            except ImportError:
+                self.skipTest("torch not installed; embedding step not exercised")
+
+            class StubEncoder(torch.nn.Module):  # stands in for Granite: 441 tokens of width 512 per tile
+                def forward(self, x):
+                    self.seen_shape = tuple(x.shape)
+                    return [x.mean(dim=(1, 2, 3, 4)).reshape(-1, 1, 1).expand(-1, 441, granite.EMBED_DIM)]
+
+            stub, real = StubEncoder(), granite.build_encoder
+            granite.build_encoder = lambda *args, **kwargs: (stub, "stub encoder")
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.run_script(embed_tiles, ["--manifest-csv", str(out_csv), "--out-dir", str(data / "embeddings")])
+            finally:
+                granite.build_encoder = real
+            embeddings = np.load(data / "embeddings" / "tile_embeddings.npy")
+            self.assertEqual(embeddings.shape, (2, granite.EMBED_DIM))  # two distinct tiles, four sample rows
+            self.assertEqual(stub.seen_shape, (2, 17, 1, 42, 42))
+            sample_rows = read_csv(data / "embeddings" / "sample_embeddings.csv")
+            self.assertEqual(len(sample_rows), 4)
+            self.assertEqual({r["embedding_row"] for r in sample_rows}, {"0", "1"})
+            self.assertTrue((data / "embeddings" / "granite_embeddings_bundle.zip").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

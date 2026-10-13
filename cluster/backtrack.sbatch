@@ -12,7 +12,7 @@
 # itself takes a few minutes. Run cluster/setup_env.sbatch once first.
 #
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
-#   sbatch --account=<allocation> cluster/backtrack.sbatch
+#   sbatch --account=191001-364393 cluster/backtrack.sbatch
 #
 # Overrides: DEPTH_M=15 (or 0), MARGIN_DEG=5.
 

@@ -9,3 +9,7 @@ xarray
 netCDF4
 parcels>=3.1,<4
 copernicusmarine>=2
+# Granite embeddings (scripts/embed_tiles.py)
+torch
+terratorch
+huggingface_hub

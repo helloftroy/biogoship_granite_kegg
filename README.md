@@ -8,7 +8,11 @@ foundation model.
 
 This file is the how-to: what each step does and how to run it. The reasoning
 behind the choices, and the results so far, are in
-[METHODS_RESULTS.md](METHODS_RESULTS.md).
+[METHODS_RESULTS.md](METHODS_RESULTS.md). Notes specific to the morrill cluster
+(access, partitions, environments, job order and status) are in [CLUSTER.md](CLUSTER.md).
+
+The `sbatch` commands below use this project's allocation, `191001-364393`;
+substitute your own.
 
 ## Pipeline
 
@@ -16,10 +20,10 @@ behind the choices, and the results so far, are in
 |---|---|---|---|
 | 1 | Build the sample and site manifests from public metadata | `scripts/build_sample_manifest.py` | done, output committed |
 | 2 | Find the Sentinel-3 scenes covering each site | `scripts/search_products.py` | done, output committed |
-| 3 | Download those scenes (OLCI + SST) | `scripts/download_products.py` | ready to run on the cluster |
+| 3 | Download those scenes (OLCI + SST) | `scripts/download_products.py` | done on the cluster |
 | 4 | Back-track each site's water to the time of every overpass | `scripts/download_currents.py`, `scripts/backtrack_sites.py` | ready to run on the cluster |
 | 5 | Cut Granite-ready tiles at the sampling position and at the back-tracked position | `scripts/download_tiles.py`, `scripts/build_tile_manifest.py` | written, not run yet |
-| 6 | Tiles to Granite embeddings | | planned |
+| 6 | Tiles to Granite embeddings, for both positions | `scripts/embed_tiles.py` | written, not run yet |
 | 7 | Embeddings to NMF communities and KEGG profiles (CatBoost) | | planned |
 
 ## Repository layout
@@ -29,12 +33,14 @@ biogoship/            library code
   cdse.py             Copernicus login, catalogue search, downloads
   tiles.py            Sentinel-3 readers, quality masks, Granite normalisation
   advection.py        back-tracking with OceanParcels
+  granite.py          Granite encoder loading and embedding
   tables.py           CSV, time and distance helpers
 scripts/              one script per pipeline step (see table above)
 cluster/              SLURM job scripts and shared environment setup
 data/manifests/       small tables, committed
 tests/                offline tests
 METHODS_RESULTS.md    methods notes and results log
+CLUSTER.md            how this project runs on the morrill cluster
 ```
 
 Committed manifests in `data/manifests/`:
@@ -51,7 +57,7 @@ Committed manifests in `data/manifests/`:
 
 Python 3.10 or newer. Steps 1-3 and 5 need only `numpy`, `h5py`, `certifi` and
 `pandas`; step 4 also needs `xarray`, `netCDF4`, OceanParcels 3.x and the
-Copernicus Marine toolbox.
+Copernicus Marine toolbox; step 6 needs `torch`, `terratorch` and `huggingface_hub`.
 
 ```bash
 pip install -r requirements.txt
@@ -81,9 +87,10 @@ python scripts/search_products.py --max-days 3 --section-max-days I09N=10
 
 ## Step 3: download the Sentinel-3 scenes
 
-Downloads every candidate scene, not just the closest in time, so that a cloudy
-overpass can be replaced by a clear one: 414 OLCI scenes and 218 SST orbit files,
-about 300 GB, as complete product archives under `data/products/`.
+Downloads every candidate scene within the time window of every site (all
+overpasses within +/-3 days, not just the closest), so that a cloudy overpass can
+be replaced by a clear one: 414 OLCI scenes and 218 SST orbit files, about 300 GB,
+as complete product archives under `data/products/`.
 
 On the cluster (SLURM). Jobs that need internet use the `service` partition.
 Always `cd` into the repo before `sbatch`; the job scripts find the repo through
@@ -99,11 +106,11 @@ chmod 600 cdse_credentials.sh
 df -h .                                               # needs about 300 GB free
 
 # smoke test: the first two scenes and their SST files (about 2 GB)
-sbatch --account=<allocation> --export=ALL,MAX_PRODUCTS=2 cluster/download_products.sbatch
+sbatch --account=191001-364393 --export=ALL,MAX_PRODUCTS=2 cluster/download_products.sbatch
 tail -f logs/bgs_products_<jobid>.out
 
 # everything; resubmit the same command to resume or to retry failures
-sbatch --account=<allocation> cluster/download_products.sbatch
+sbatch --account=191001-364393 cluster/download_products.sbatch
 ```
 
 Outputs:
@@ -146,10 +153,10 @@ Currents: Copernicus Marine
 
 ```bash
 # once: a project environment with OceanParcels and the Copernicus Marine toolbox
-sbatch --account=<allocation> cluster/setup_env.sbatch
+sbatch --account=191001-364393 cluster/setup_env.sbatch
 
 # add your Copernicus Marine login to cdse_credentials.sh, then
-sbatch --account=<allocation> cluster/backtrack.sbatch
+sbatch --account=191001-364393 cluster/backtrack.sbatch
 ```
 
 Outputs:
@@ -178,12 +185,19 @@ bands plus SST, normalised for Granite. Two versions are cut from the same scene
 - `fixed`: centred on the sampling position, as in the Florida project
 - `advected`: centred on where the sampled water was at the scene's sensing time (step 4)
 
+Cloud cover is checked here. Every candidate scene is tested at every position: a
+tile is written only if at least 80% of its pixels are clear open ocean, so a site
+whose closest overpass is cloudy falls back to the next closest clear one. A site
+and position with no clear scene gets no tile and is flagged in
+`site_tile_status.csv`.
+
 It reads the archives from step 3 when they are on disk, and otherwise downloads
-just the files it needs.
+just the files it needs. Re-running adds only what is missing, so it can be run
+for `fixed` first and again for `advected` once step 4 is done.
 
 ```bash
-sbatch --account=<allocation> cluster/download_tiles.sbatch
-sbatch --account=<allocation> --export=ALL,POSITIONS=fixed cluster/download_tiles.sbatch   # without step 4
+sbatch --account=191001-364393 cluster/download_tiles.sbatch
+sbatch --account=191001-364393 --export=ALL,POSITIONS=fixed cluster/download_tiles.sbatch   # without step 4
 ```
 
 Outputs:
@@ -194,6 +208,27 @@ Outputs:
   is `fixed` or `advected`; `is_best` marks the tile closest in time for each
   sample and position; `same_scene_as_best_fixed` marks the advected tile from the
   same overpass as the best fixed tile.
+- `data/manifests/site_tile_status.csv` per site and position: counts of clear,
+  cloudy and not-covered scenes, and a `flag` (`ok`, `all_cloudy`,
+  `outside_all_scenes`, `cloudy_or_outside`, `no_position`).
+
+## Step 6: Granite embeddings (not run yet)
+
+Runs every clear tile, at both positions and for every clear overpass, through the
+Granite Geospatial Ocean encoder and averages the output tokens: one 512-number
+embedding per tile.
+
+```bash
+sbatch --account=191001-364393 cluster/cache_granite.sbatch   # once, needs internet: TerraTorch + model weights
+sbatch --account=191001-364393 cluster/embed_tiles.sbatch     # GPU node, offline
+```
+
+Outputs in `data/embeddings/`:
+
+- `tile_embeddings.npy` `(n_tiles, 512)` and `tile_embeddings.csv`, one row per tile in the same order
+- `sample_embeddings.csv` one row per (sample, tile) with `embedding_row` pointing into the `.npy`;
+  filter on `position` and `is_best` for one embedding per sample
+- `granite_embeddings_bundle.zip` all of the above in one file, for copying off the cluster
 
 ## Data sources and citation
 

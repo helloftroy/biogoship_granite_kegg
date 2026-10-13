@@ -11,8 +11,8 @@
 # only after changing the sample list or the time window.
 #
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
-#   sbatch --account=<allocation> cluster/search_products.sbatch
-#   sbatch --account=<allocation> --export=ALL,MAX_DAYS=5,I09N_MAX_DAYS=10 cluster/search_products.sbatch
+#   sbatch --account=191001-364393 cluster/search_products.sbatch
+#   sbatch --account=191001-364393 --export=ALL,MAX_DAYS=5,I09N_MAX_DAYS=10 cluster/search_products.sbatch
 
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"

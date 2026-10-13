@@ -101,6 +101,7 @@ def main() -> None:
     # Resume per (site, scene, position): a later run can add the advected tiles to scenes already done for fixed.
     tile_log = args.data_dir / "tile_log.csv"
     product_log = args.data_dir / "product_log.csv"
+    migrate_legacy_tile_log(tile_log)
     logged = {(r["site_id"], r["product_id"], r["position"]) for r in read_csv(tile_log)} if tile_log.exists() else set()
     todo = []
     for product in products:
@@ -142,6 +143,19 @@ def main() -> None:
     print(f"Tiles: {args.data_dir / 'tiles'}\nLog:   {args.data_dir / 'tile_log.csv'}")
     if totals["errors"] and totals["errors"] == len(todo):
         raise SystemExit("Every scene failed; check credentials and network before re-running.")
+
+
+def migrate_legacy_tile_log(tile_log: Path) -> None:
+    """Bring a log written before positions existed up to date: its rows were all at the sampling position."""
+    if not tile_log.exists():
+        return
+    rows = read_csv(tile_log)
+    if not rows or "position" in rows[0]:
+        return
+    backup = tile_log.with_name("tile_log.legacy.csv")
+    tile_log.replace(backup)
+    append_csv(tile_log, [{**row, "position": "fixed"} for row in rows], TILE_LOG_FIELDS)
+    print(f"Converted {len(rows):,} rows of an older tile log to the current format (original kept as {backup.name}).")
 
 
 def load_advected(args: argparse.Namespace) -> dict[tuple[str, str], tuple[float, float]]:

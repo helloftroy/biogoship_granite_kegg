@@ -273,6 +273,13 @@ class LocalArchiveRunTests(unittest.TestCase):
                 # First the sampling positions only, as when back-tracking has not run yet.
                 self.run_script(download_tiles, [*common, "--positions", "fixed"])
                 self.assertEqual(len(read_csv(data / "tile_log.csv")), 2)
+                # A log from before the position column existed is converted, not tripped over.
+                legacy = [{k: v for k, v in row.items() if k not in ("position", "target_lat", "target_lon")}
+                          for row in read_csv(data / "tile_log.csv")]  # fmt: skip
+                write_csv(data / "tile_log.csv", legacy)
+                self.run_script(download_tiles, [*common, "--positions", "fixed"])
+                self.assertEqual([r["position"] for r in read_csv(data / "tile_log.csv")], ["fixed", "fixed"])
+                self.assertTrue((data / "tile_log.legacy.csv").exists())
                 # Then both: only the advected positions are new work. "cloudy" drifted west into clear water.
                 write_csv(manifests / "advected_positions.csv", [
                     {"site_id": "clear", "product_id": "p1", "advected_lat": LAT0 - 60 * STEP,

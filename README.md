@@ -192,6 +192,20 @@ whose closest overpass is cloudy falls back to the next closest clear one. A sit
 and position with no clear scene gets no tile and is flagged in
 `site_tile_status.csv`.
 
+Roughly one overpass in five is clear at a given site. To see what limits the
+yield, and what a lower clear fraction or a different time window would give:
+
+```bash
+python scripts/cloud_report.py        # reads data/tile_log.csv; instant
+```
+
+To accept the nearest clear window within 20 km when the centred one is cloudy,
+and re-test only the combinations that failed:
+
+```bash
+sbatch --account=191001-364393 --export=ALL,POSITIONS=fixed,MAX_OFFSET_KM=20,RECHECK="cloudy edge" cluster/download_tiles.sbatch
+```
+
 It reads the archives from step 3 when they are on disk, and otherwise downloads
 just the files it needs. Re-running adds only what is missing, so it can be run
 for `fixed` first and again for `advected` once step 4 is done.

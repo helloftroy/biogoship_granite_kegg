@@ -89,7 +89,7 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 1 | `download_products.sbatch` | service | all candidate OLCI scenes and SST files, about 300 GB, to `data/products/` | completed |
 | 2 | `setup_env.sbatch` | service | creates the `biogoship` environment | built 2026-10-13 with venv + pip (the first, conda, attempt failed on the `$HOME` quota). Needs one re-run to pick up the xarray pin below |
 | 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | not run |
-| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | not run |
+| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 (674 clear tiles, 376 of 721 sites); advected not run |
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | not run |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
 

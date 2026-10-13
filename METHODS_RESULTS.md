@@ -205,7 +205,8 @@ For each site and candidate scene (`scripts/download_tiles.py`):
 1. Find the OLCI pixel nearest the site. If it is more than 1 km away, the site
    is outside the swath (`out_of_swath`).
 2. Take the 42x42 pixel window (12.6 km) centred on that pixel. If it runs off
-   the scene, skip (`edge`).
+   the scene, skip (`edge`). (With `--max-offset-km`, a window that fails here or
+   at step 3 is replaced by the nearest clear window within that distance.)
 3. Compute the fraction of clear open-ocean pixels: WATER set, and none of
    INVALID, LAND, CLOUD, CLOUD_AMBIGUOUS, CLOUD_MARGIN, SNOW_ICE, INLAND_WATER,
    COASTLINE, SUSPECT, SATURATED, AC_FAIL. Below 0.8, skip (`cloudy`).
@@ -244,7 +245,40 @@ position it marks the tile closest in time as `is_best`, and it marks the advect
 tile from the same overpass as the best fixed tile (`same_scene_as_best_fixed`),
 which is the like-for-like pair for comparing the two approaches.
 
-**Result:** not run yet.
+**Result (2026-10-13): fixed position, centred window, 80% clear, +/-3 days (I09N +/-10).**
+
+All 3,727 site x scene combinations were tested: 674 clear (18%), 2,992 cloudy,
+61 at a scene edge.
+
+| Section | Samples | Samples with a clear tile | Share |
+|---|---:|---:|---:|
+| C13.5/A13.5 | 263 | 189 | 72% |
+| I07N | 261 | 113 | 43% |
+| I09N | 242 (61 matchable sites) | 47 | 19% of all samples |
+| AMT28 | 63 | 18 | 29% |
+| P18 | 104 | 29 | 28% |
+| Pre-Sentinel-3 cruises | 63 | 0 | |
+| **Total** | **996** | **396** | **40%** |
+
+By site: 376 of the 721 matchable sites have a clear tile (52%); 314 are cloudy in
+every scene; 31 are cloudy or off the edge in every scene. Advected position not
+run yet.
+
+So about one overpass in five is clear at a given site, and having four to six
+overpasses per site lifts coverage to about half. Every candidate scene was
+already tried; the misses are sites cloudy in all of them.
+
+**Ways to raise the yield** (`scripts/cloud_report.py` quantifies the second and
+third from the existing log):
+
+1. *Nearest clear window* (`--max-offset-km`): if the window centred on the
+   position is not clear, take the closest clear window within a set distance.
+   The Florida project accepted tiles up to 20 km from the sample, so 20 km is
+   consistent with it. The offset is recorded per tile (`offset_km`).
+2. *Lower the clear fraction* below 0.8. Masked pixels then make up more of the
+   tile; how Granite handles them is untested.
+3. *Widen the time window* beyond +/-3 days: more scenes to download, and a
+   looser match in time (the advected position matters more as the gap grows).
 
 **Possible extension.** Tiles at several points along each trajectory (for
 example every 24 h back), giving a short history of the water mass. The hourly

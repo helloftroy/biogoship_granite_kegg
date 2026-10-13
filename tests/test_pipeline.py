@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import download_tiles  # noqa: E402
 import search_products  # noqa: E402
-from biogoship import cdse, tiles  # noqa: E402
+from biogoship import advection, cdse, tiles  # noqa: E402
 from biogoship.tables import haversine_km  # noqa: E402
 
 SHAPE = (120, 160)
@@ -121,6 +121,44 @@ class SstPairingTests(unittest.TestCase):
         self.assertEqual(search_products.pair_sst(olci, far)["sst_product_id"], "")
 
 
+class AdvectionTests(unittest.TestCase):
+    def test_position_along_track(self):
+        track = np.array([[-2.0, 0.0, 179.8], [0.0, 0.0, 180.0], [2.0, 1.0, -179.8]])  # crosses the antimeridian
+        lat, lon = advection.position_at(track, 1.0)
+        self.assertAlmostEqual(lat, 0.5)
+        self.assertAlmostEqual(abs(lon), 179.9, places=6)
+        self.assertAlmostEqual(advection.position_at(track, -1.0)[1], 179.9, places=6)
+        self.assertIsNone(advection.position_at(track, 3.0))
+        self.assertAlmostEqual(advection.path_length_km(track, -2.0), 22.24, delta=0.05)
+
+    def test_uniform_current_gives_known_drift(self):
+        try:
+            import parcels  # noqa: F401
+            import xarray as xr
+        except ImportError:
+            self.skipTest("parcels/xarray not installed")
+        import logging
+        import warnings
+        from datetime import datetime, timezone
+
+        warnings.simplefilter("ignore")
+        logging.getLogger("parcels").setLevel(logging.ERROR)
+        lat, lon = np.arange(-5, 5.01, 0.25), np.arange(-35, -24.99, 0.25)
+        times = np.arange("2020-03-25", "2020-04-02", dtype="datetime64[D]").astype("datetime64[ns]")
+        shape = (len(times), len(lat), len(lon))
+        currents = xr.Dataset(
+            {"uo": (("time", "latitude", "longitude"), np.full(shape, 0.5, "float32")),
+             "vo": (("time", "latitude", "longitude"), np.zeros(shape, "float32"))},
+            coords={"time": times, "latitude": lat, "longitude": lon},
+        )  # fmt: skip
+        release = {"id": "s", "lat": 0.0, "lon": -30.0, "time": datetime(2020, 3, 28, 6, 30, tzinfo=timezone.utc)}
+        track = advection.advect(currents, [release], max_hours=24)["s"]
+        for hours, sign in ((24.0, 1), (-24.0, -1)):  # 0.5 m/s east for a day is 43.2 km
+            where = advection.position_at(track, hours)
+            self.assertAlmostEqual(haversine_km(0.0, -30.0, *where), 43.2, delta=0.2)
+            self.assertGreater(sign * (where[1] + 30.0), 0)
+
+
 class EndToEndTests(unittest.TestCase):
     """download_tiles on a fake scene: fetch() is a no-op because the files are already in place."""
 
@@ -147,14 +185,24 @@ class EndToEndTests(unittest.TestCase):
                 )  # fmt: skip
 
             sites = [site("clear", 60, 60), site("cloudy", 60, 125), site("edge", 5, 60), site("outside", 60, 900)]
-            rows = {row["site_id"]: row for row in worker.process(product, sites)}
+            # Water sampled at "clear" was 30 pixels east at overpass time; "cloudy" has no back-tracked position.
+            advected = {("clear", "p1"): (LAT0 - 60 * STEP, LON0 + 90 * STEP)}
+            targets = download_tiles.targets_for(sites, "p1", ["fixed", "advected"], advected)
+            all_rows = worker.process(product, targets)
+            rows = {row["site_id"]: row for row in all_rows if row["position"] == "fixed"}
+            moved = {row["site_id"]: row for row in all_rows if row["position"] == "advected"}
+            self.assertEqual(moved["clear"]["status"], "valid")
+            self.assertEqual(moved["cloudy"]["status"], "no_position")
+            with np.load(data_dir / "tiles" / "2020" / "03" / "tile_S3B_20200329T114129_clear_advected.npz") as tile:
+                self.assertAlmostEqual(float(tile["lon_center"]), LON0 + 90 * STEP, places=4)
+                self.assertEqual(str(tile["position"]), "advected")
 
             self.assertEqual(
                 {name: row["status"] for name, row in rows.items()},
                 {"clear": "valid", "cloudy": "cloudy", "edge": "edge", "outside": "out_of_swath"},
             )
             self.assertIn("CLOUD", rows["cloudy"]["reject_flags"])
-            tile_file = data_dir / "tiles" / "2020" / "03" / "tile_S3B_20200329T114129_clear.npz"
+            tile_file = data_dir / "tiles" / "2020" / "03" / "tile_S3B_20200329T114129_clear_fixed.npz"
             self.assertTrue(tile_file.exists())
             with np.load(tile_file) as tile:
                 data = tile["data"]

@@ -4,6 +4,8 @@ cdse_credentials.sh
 # Downloaded and generated data (lives on cluster scratch, next to the code)
 data/products/
 data/download_log.csv
+data/currents/
+data/advection/
 data/tiles/
 data/work/
 data/tile_log.csv

@@ -17,8 +17,8 @@ behind the choices, and the results so far, are in
 | 1 | Build the sample and site manifests from public metadata | `scripts/build_sample_manifest.py` | done, output committed |
 | 2 | Find the Sentinel-3 scenes covering each site | `scripts/search_products.py` | done, output committed |
 | 3 | Download those scenes (OLCI + SST) | `scripts/download_products.py` | ready to run on the cluster |
-| 4 | Cut Granite-ready tiles around each site | `scripts/download_tiles.py`, `scripts/build_tile_manifest.py` | written, not run yet |
-| 5 | Water-mass back-trajectories from each site | | planned |
+| 4 | Back-track each site's water to the time of every overpass | `scripts/download_currents.py`, `scripts/backtrack_sites.py` | ready to run on the cluster |
+| 5 | Cut Granite-ready tiles at the sampling position and at the back-tracked position | `scripts/download_tiles.py`, `scripts/build_tile_manifest.py` | written, not run yet |
 | 6 | Tiles to Granite embeddings | | planned |
 | 7 | Embeddings to NMF communities and KEGG profiles (CatBoost) | | planned |
 
@@ -28,6 +28,7 @@ behind the choices, and the results so far, are in
 biogoship/            library code
   cdse.py             Copernicus login, catalogue search, downloads
   tiles.py            Sentinel-3 readers, quality masks, Granite normalisation
+  advection.py        back-tracking with OceanParcels
   tables.py           CSV, time and distance helpers
 scripts/              one script per pipeline step (see table above)
 cluster/              SLURM job scripts and shared environment setup
@@ -44,18 +45,26 @@ Committed manifests in `data/manifests/`:
 | `biogoship_sites.csv` | site (unique position and time) | the unit matched to satellite data |
 | `site_products.csv` | (site, OLCI scene) | every candidate overpass and its time gap in hours |
 | `products.csv` | OLCI scene | the scene and its paired SST orbit file |
+| `advected_positions.csv` (after step 4) | (site, OLCI scene) | where the site's water was at the scene's sensing time |
 
 ## Requirements
 
-Python 3.9 or newer with `numpy`, `h5py`, `certifi` and (for step 1 only) `pandas`:
+Python 3.10 or newer. Steps 1-3 and 5 need only `numpy`, `h5py`, `certifi` and
+`pandas`; step 4 also needs `xarray`, `netCDF4`, OceanParcels 3.x and the
+Copernicus Marine toolbox.
 
 ```bash
 pip install -r requirements.txt
 python -m unittest discover -s tests     # offline tests, no network needed
 ```
 
-Downloading needs a free [Copernicus Data Space](https://dataspace.copernicus.eu)
-account. Searching does not.
+Two free accounts are needed, both entered in `cdse_credentials.sh` (copy it from
+`cdse_credentials.sh.example`):
+
+- [Copernicus Data Space](https://dataspace.copernicus.eu) for Sentinel-3 (steps 3 and 5)
+- [Copernicus Marine](https://marine.copernicus.eu) for surface currents (step 4)
+
+Searching (step 2) needs neither.
 
 ## Steps 1 and 2: manifests and scene search
 
@@ -109,7 +118,7 @@ Options, passed with `--export=ALL,NAME=value`:
 | `MAX_PRODUCTS` | 0 (all) | only the first N OLCI scenes |
 | `NO_SST` | 0 | set to 1 to skip the SST files |
 | `CONNECTIONS` | 4 | parallel downloads; 4 is the Copernicus per-account limit |
-| `BGS_CONDA_ENV` | `/scratch/morrill/users/$USER/conda_envs/faire-agent` | conda environment, by full path |
+| `BGS_CONDA_ENV` | `/scratch/morrill/users/$USER/conda_envs/faire-agent` | conda environment, by full path (step 4 defaults to `.../conda_envs/biogoship`) |
 
 Anywhere else:
 
@@ -123,19 +132,68 @@ python scripts/download_products.py
 conda environment by full path and checks that the activation took effect, and
 installs `numpy`/`h5py` into the environment if they are missing.
 
-## Step 4: cut tiles (not run yet)
+## Step 4: back-track the sampled water
 
-For each site and each clear overpass, writes a `(17, 42, 42)` array centred on
-the site: 16 OLCI bands plus SST, normalised for Granite. It reads the archives
-from step 3 when they are on disk, and otherwise downloads just the files it needs.
+A satellite overpass is hours to days away from sampling, and the water moves in
+between. This step releases one particle per site at the sampling position and
+time and advects it with surface currents, backward and forward, using
+[OceanParcels](https://docs.oceanparcels.org). Each (site, scene) pair then gets
+the position of that water at the scene's sensing time.
+
+Currents: Copernicus Marine
+[MULTIOBS_GLO_PHY_MYNRT_015_003](https://data.marine.copernicus.eu/product/MULTIOBS_GLO_PHY_MYNRT_015_003/description)
+(GlobCurrent total velocity, 0.25 degree, daily), about 100 MB for all sections.
+
+```bash
+# once: a project environment with OceanParcels and the Copernicus Marine toolbox
+sbatch --account=<allocation> cluster/setup_env.sbatch
+
+# add your Copernicus Marine login to cdse_credentials.sh, then
+sbatch --account=<allocation> cluster/backtrack.sbatch
+```
+
+Outputs:
+
+- `data/currents/currents_<section>.nc` the current fields
+- `data/advection/trajectories.csv` hourly track for every site
+- `data/manifests/advected_positions.csv` one row per (site, scene): advected
+  position, straight-line displacement and path length in km, and a `status`
+
+Options (`--export=ALL,NAME=value`): `DEPTH_M` (15, or 0 for the surface level),
+`MARGIN_DEG` (5; room around the sites for water to drift into).
+
+Anywhere else:
+
+```bash
+source cdse_credentials.sh
+python scripts/download_currents.py
+python scripts/backtrack_sites.py --depth-m 15
+```
+
+## Step 5: cut tiles (not run yet)
+
+For each site and each clear overpass, writes a `(17, 42, 42)` array: 16 OLCI
+bands plus SST, normalised for Granite. Two versions are cut from the same scene:
+
+- `fixed`: centred on the sampling position, as in the Florida project
+- `advected`: centred on where the sampled water was at the scene's sensing time (step 4)
+
+It reads the archives from step 3 when they are on disk, and otherwise downloads
+just the files it needs.
 
 ```bash
 sbatch --account=<allocation> cluster/download_tiles.sbatch
+sbatch --account=<allocation> --export=ALL,POSITIONS=fixed cluster/download_tiles.sbatch   # without step 4
 ```
 
-Outputs: `data/tiles/YYYY/MM/*.npz`, `data/tile_log.csv` (outcome for every site
-and scene) and `data/manifests/biogoship_tile_manifest.csv` (samples joined to
-tiles, with `is_best` marking the tile closest in time).
+Outputs:
+
+- `data/tiles/YYYY/MM/tile_<satellite>_<time>_<site>_<position>.npz`
+- `data/tile_log.csv` outcome for every site, scene and position
+- `data/manifests/biogoship_tile_manifest.csv` samples joined to tiles. `position`
+  is `fixed` or `advected`; `is_best` marks the tile closest in time for each
+  sample and position; `same_scene_as_best_fixed` marks the advected tile from the
+  same overpass as the best fixed tile.
 
 ## Data sources and citation
 
@@ -145,5 +203,8 @@ tiles, with `is_best` marking the tile closest in time).
 - Curated sample metadata:
   [merenlab/public-marine-omics-metadata](https://github.com/merenlab/public-marine-omics-metadata).
 - Sentinel-3 OLCI and SLSTR level-2 products: Copernicus Data Space Ecosystem.
+- Surface currents: Copernicus Marine Service, MULTIOBS_GLO_PHY_MYNRT_015_003,
+  [doi:10.48670/mds-00327](https://doi.org/10.48670/mds-00327).
+- Particle tracking: [OceanParcels](https://oceanparcels.org) v3.
 - The Sentinel-3 handling is carried over from
   [helloftroy/multimodal_eDNA](https://github.com/helloftroy/multimodal_eDNA).

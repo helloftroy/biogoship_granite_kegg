@@ -2,5 +2,10 @@
 numpy
 h5py
 certifi
-# Sample manifest builder only
+# Sample manifest builder
 pandas
+# Back-tracking (scripts/download_currents.py, scripts/backtrack_sites.py)
+xarray
+netCDF4
+parcels>=3.1,<4
+copernicusmarine>=2

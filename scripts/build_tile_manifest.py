@@ -3,8 +3,11 @@
 
 Reads data/tile_log.csv (written by download_tiles.py) and writes
 data/manifests/biogoship_tile_manifest.csv: one row per (sample, clear tile).
-`is_best` marks, for each sample, the tile closest in time to sampling; filter on
-it for a one-tile-per-sample table. The column names follow the manifests of the
+`position` says whether the tile is centred on the sampling position (`fixed`) or
+on where the water was at overpass time (`advected`). `is_best` marks, for each
+sample and position, the tile closest in time to sampling; filter on it for a
+one-tile-per-sample table. `same_scene_as_best_fixed` marks the advected tile cut
+from the same overpass as the best fixed tile, for a like-for-like comparison. The column names follow the manifests of the
 Florida project (tile_path, tile_date, tile_lat, tile_lon, match_day_gap,
 match_distance_km), so the Granite embedding step can read it unchanged.
 
@@ -40,6 +43,7 @@ FIELDS = [
     "tile_lon",
     "sample_id",
     "site_id",
+    "position",
     "sample_time",
     "sample_lat",
     "sample_lon",
@@ -49,6 +53,8 @@ FIELDS = [
     "valid_fraction",
     "sst_valid_fraction",
     "is_best",
+    "same_scene_as_best_fixed",
+    "displacement_km",
     "granule_id",
     *SAMPLE_COLUMNS,
 ]
@@ -69,14 +75,23 @@ def main() -> None:
             missing += 1
             continue
         tiles_by_site[row["site_id"]].append(row)
-    for site_tiles in tiles_by_site.values():
+    best_fixed_scene = {}
+    for site_id, site_tiles in tiles_by_site.items():
         site_tiles.sort(key=lambda row: abs(float(row["time_gap_hours"])))
+        seen = set()
+        for tile in site_tiles:  # closest in time first, so the first of each position is its best
+            tile["is_best"] = "0" if tile["position"] in seen else "1"
+            seen.add(tile["position"])
+            if tile["position"] == "fixed" and tile["is_best"] == "1":
+                best_fixed_scene[site_id] = tile["product_id"]
 
     rows = []
     for sample in samples:
-        for rank, tile in enumerate(tiles_by_site.get(sample["site_id"], [])):
+        for tile in tiles_by_site.get(sample["site_id"], []):
             gap_hours = float(tile["time_gap_hours"])
             lat, lon = float(sample["lat"]), float(sample["lon"])
+            distance_km = haversine_km(lat, lon, float(tile["tile_lat"]), float(tile["tile_lon"]))
+            same_scene = tile["position"] == "advected" and best_fixed_scene.get(sample["site_id"]) == tile["product_id"]
             rows.append(
                 {
                     "tile_path": tile["tile_path"],
@@ -85,15 +100,18 @@ def main() -> None:
                     "tile_lon": tile["tile_lon"],
                     "sample_id": sample["sample_id"],
                     "site_id": sample["site_id"],
+                    "position": tile["position"],
                     "sample_time": sample["collection_time_utc"],
                     "sample_lat": sample["lat"],
                     "sample_lon": sample["lon"],
                     "match_day_gap": f"{abs(gap_hours) / 24:.3f}",
                     "match_hour_gap": f"{gap_hours:.2f}",
-                    "match_distance_km": f"{haversine_km(lat, lon, float(tile['tile_lat']), float(tile['tile_lon'])):.3f}",
+                    "match_distance_km": f"{distance_km:.3f}",
                     "valid_fraction": tile["valid_fraction"],
                     "sst_valid_fraction": tile["sst_valid_fraction"],
-                    "is_best": "1" if rank == 0 else "0",
+                    "is_best": tile["is_best"],
+                    "same_scene_as_best_fixed": "1" if same_scene else "0",
+                    "displacement_km": f"{distance_km:.3f}" if tile["position"] == "advected" else "0.000",
                     "granule_id": tile["product_name"],
                     **{column: sample.get(column, "") for column in SAMPLE_COLUMNS},
                 }
@@ -109,12 +127,15 @@ def summarise(samples, log, tiles_by_site, rows, missing, args) -> None:
     print("Site x scene outcomes: " + ", ".join(f"{count:,} {status}" for status, count in sorted(statuses.items())))
     if missing:
         print(f"WARNING: {missing:,} logged tiles are not on disk under {REPO_ROOT} and were left out.")
-    print(f"\n{'section':12s} {'samples':>8s} {'with tile':>10s} {'metagenomes with tile':>22s}")
+    def sites_with(position: str) -> set[str]:
+        return {site for site, site_tiles in tiles_by_site.items() if any(t["position"] == position for t in site_tiles)}
+
+    fixed, advected = sites_with("fixed"), sites_with("advected")
+    print(f"\n{'section':12s} {'samples':>8s} {'fixed tile':>11s} {'advected tile':>14s} {'both':>6s}")
     for section in sorted({sample["section"] for sample in samples}):
-        in_section = [sample for sample in samples if sample["section"] == section]
-        with_tile = [sample for sample in in_section if sample["site_id"] in tiles_by_site]
-        metagenomes = sum(1 for sample in with_tile if sample["metagenome_runs"])
-        print(f"{section:12s} {len(in_section):8d} {len(with_tile):10d} {metagenomes:22d}")
+        in_section = [sample["site_id"] for sample in samples if sample["section"] == section]
+        counts = [sum(1 for site in in_section if site in group) for group in (fixed, advected, fixed & advected)]
+        print(f"{section:12s} {len(in_section):8d} {counts[0]:11d} {counts[1]:14d} {counts[2]:6d}")
     matched = {row["sample_id"] for row in rows}
     print(f"\nSamples with at least one clear tile: {len(matched):,} of {len(samples):,}")
     print(f"Manifest rows (sample x tile): {len(rows):,}")

@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Download Sentinel-3 data and cut one Granite tile per (site, clear overpass).
+"""Cut Granite tiles from Sentinel-3 scenes: one per (site, clear overpass, position).
 
-Works through data/manifests/products.csv one OLCI scene at a time:
+Two positions are tiled for each site and scene, as two versions of the same experiment:
 
-  1. Fetch only geo_coordinates.nc and wqsf.nc (~60 MB) and test every site the
-     scene covers: is the 42x42 window around the site inside the swath, and is it
-     at least --min-valid clear open ocean?
-  2. Only if some site passes, fetch the 16 reflectance bands (~280 MB) and the
-     paired SST orbit file, and write one .npz tile per passing site.
-  3. Record the outcome for every (site, scene) in data/tile_log.csv, then delete
-     the scene's files.
+  fixed     the sampling position itself, ignoring water movement
+  advected  where the sampled water was at the scene's sensing time, from
+            data/manifests/advected_positions.csv (scripts/backtrack_sites.py)
+
+Works through data/manifests/products.csv one OLCI scene at a time, reading the
+archives in data/products/ when they are there and downloading otherwise:
+
+  1. From geo_coordinates.nc and wqsf.nc, test every target position: is the 42x42
+     window around it inside the swath, and at least --min-valid clear open ocean?
+  2. Only if some position passes, read the 16 reflectance bands and the paired
+     SST orbit file, and write one .npz tile per passing position.
+  3. Record the outcome for every (site, scene, position) in data/tile_log.csv.
 
 Re-running resumes: scenes already in data/product_log.csv are skipped. Scenes
 that errored are retried on the next run.
@@ -20,7 +25,7 @@ Each tile .npz holds:
   date            OLCI sensing start, ISO-8601 UTC
   lat_center, lon_center                 centre pixel position
   granule_id      source OL_2_WFR product name
-  site_id, site_time, time_gap_hours, valid_fraction, sst_valid_fraction
+  site_id, site_time, position, time_gap_hours, valid_fraction, sst_valid_fraction
 
 Credentials: see cdse_credentials.sh.example.
 
@@ -58,11 +63,15 @@ from biogoship.tables import (  # noqa: E402
 DATA_DIR = REPO_ROOT / "data"
 MAX_PIXEL_KM = 1.0  # a site farther than this from its nearest pixel is outside the swath
 
+POSITIONS = ["fixed", "advected"]
 TILE_LOG_FIELDS = [
     "site_id",
     "product_id",
     "product_name",
-    "status",  # valid | cloudy | edge | out_of_swath
+    "position",  # fixed | advected
+    "target_lat",
+    "target_lon",
+    "status",  # valid | cloudy | edge | out_of_swath | no_position
     "valid_fraction",
     "reject_flags",
     "time_gap_hours",
@@ -85,6 +94,9 @@ def main() -> None:
     for row in read_csv(args.manifest_dir / "site_products.csv"):
         links[row["product_id"]].append(row)
 
+    advected = load_advected(args)
+    print(f"Positions: {', '.join(args.positions)}" + (f" ({len(advected):,} advected positions)" if advected else ""))
+
     product_log = args.data_dir / "product_log.csv"
     done = {row["product_id"] for row in read_csv(product_log) if row["status"] == "done"} if product_log.exists() else set()
     todo = [product for product in products if product["product_id"] not in done]
@@ -100,7 +112,7 @@ def main() -> None:
         print(f"[{i}/{len(todo)}] {product['product_name']}", flush=True)
         product_sites = [(sites[link["site_id"]], link) for link in links[product["product_id"]]]
         try:
-            rows = worker.process(product, product_sites)
+            rows = worker.process(product, targets_for(product_sites, product["product_id"], args.positions, advected))
         except Exception as exc:  # noqa: BLE001 - one bad scene must not stop the run
             totals["errors"] += 1
             print(f"  ERROR: {exc}", flush=True)
@@ -122,6 +134,32 @@ def main() -> None:
     print(f"Tiles: {args.data_dir / 'tiles'}\nLog:   {args.data_dir / 'tile_log.csv'}")
     if totals["errors"] and totals["errors"] == len(todo):
         raise SystemExit("Every scene failed; check credentials and network before re-running.")
+
+
+def load_advected(args: argparse.Namespace) -> dict[tuple[str, str], tuple[float, float]]:
+    """(site_id, product_id) -> advected (lat, lon), for pairs the back-tracking resolved."""
+    path = args.manifest_dir / "advected_positions.csv"
+    if "advected" not in args.positions:
+        return {}
+    if not path.exists():
+        raise SystemExit(f"{path} not found: run scripts/backtrack_sites.py first, or pass --positions fixed.")
+    return {
+        (row["site_id"], row["product_id"]): (float(row["advected_lat"]), float(row["advected_lon"]))
+        for row in read_csv(path)
+        if row["status"] == "ok"
+    }
+
+
+def targets_for(product_sites: list[tuple[dict, dict]], product_id: str, positions: list[str], advected: dict) -> list[dict]:
+    """One target per (site, position): where to centre a tile in this scene."""
+    targets = []
+    for site, link in product_sites:
+        for position in positions:
+            where = (float(site["lat"]), float(site["lon"]))
+            if position == "advected":
+                where = advected.get((site["site_id"], product_id))
+            targets.append({"site": site, "link": link, "position": position, "where": where})
+    return targets
 
 
 def log_product(path: Path, product: dict, status: str, n_sites: int, n_valid: int, started: float, message: str) -> None:
@@ -266,7 +304,7 @@ class TileWorker:
                 shutil.rmtree(old, ignore_errors=True)
 
     # -- one scene --------------------------------------------------------------
-    def process(self, product: dict[str, str], product_sites: list[tuple[dict, dict]]) -> list[dict]:
+    def process(self, product: dict[str, str], targets: list[dict]) -> list[dict]:
         product_id, product_name = product["product_id"], product["product_name"]
         product_dir = self.product_dir(product_name)
         self.fetch(product_id, product_name, tiles.OLCI_CHECK_FILES, product_dir)
@@ -274,15 +312,22 @@ class TileWorker:
         wqsf = tiles.load_wqsf(product_dir / "wqsf.nc")
 
         rows, passing = [], []
-        for site, link in product_sites:
+        for target in targets:
+            site, link, position = target["site"], target["link"], target["position"]
             row = {
                 "site_id": site["site_id"],
                 "product_id": product_id,
                 "product_name": product_name,
+                "position": position,
                 "time_gap_hours": link["time_gap_hours"],
             }
             rows.append(row)
-            pixel_row, pixel_col, pixel_km = tiles.locate_pixel(lat, lon, float(site["lat"]), float(site["lon"]))
+            if target["where"] is None:  # back-tracking has no position for this site and scene
+                row["status"] = "no_position"
+                continue
+            target_lat, target_lon = target["where"]
+            row["target_lat"], row["target_lon"] = f"{target_lat:.6f}", f"{target_lon:.6f}"
+            pixel_row, pixel_col, pixel_km = tiles.locate_pixel(lat, lon, target_lat, target_lon)
             row["pixel_km"] = f"{pixel_km:.3f}"
             if pixel_km > MAX_PIXEL_KM:
                 row["status"] = "out_of_swath"
@@ -300,7 +345,7 @@ class TileWorker:
                 row["status"] = "cloudy"
                 row["reject_flags"] = tiles.dominant_reject_flags(wqsf[window])
                 continue
-            passing.append((site, row, origin, valid, lat[window], lon[window]))
+            passing.append((site, position, row, origin, valid, lat[window], lon[window]))
 
         if not passing:
             return rows
@@ -310,12 +355,12 @@ class TileWorker:
         sensed = parse_utc(product["start_utc"])
         out_dir = self.tiles_dir / f"{sensed.year:04d}" / f"{sensed.month:02d}"
         out_dir.mkdir(parents=True, exist_ok=True)
-        for site, row, (r0, c0), valid, tile_lat, tile_lon in passing:
+        for site, position, row, (r0, c0), valid, tile_lat, tile_lon in passing:
             olci = tiles.read_olci_window(product_dir, r0, c0)
             sst = sst_swath.resample(tile_lat, tile_lon) if sst_swath is not None else None
             data = tiles.stack_tile(olci, sst)
             centre = tiles.HALF
-            tile_path = out_dir / f"tile_{product['satellite']}_{sensed:%Y%m%dT%H%M%S}_{site['site_id']}.npz"
+            tile_path = out_dir / f"tile_{product['satellite']}_{sensed:%Y%m%dT%H%M%S}_{site['site_id']}_{position}.npz"
             np.savez_compressed(
                 tile_path,
                 data=data,
@@ -326,6 +371,7 @@ class TileWorker:
                 granule_id=np.array(product_name),
                 site_id=np.array(site["site_id"]),
                 site_time=np.array(site["time_utc"]),
+                position=np.array(position),
                 time_gap_hours=np.array(float(row["time_gap_hours"]), dtype=np.float32),
                 valid_fraction=np.array(valid.mean(), dtype=np.float32),
                 sst_valid_fraction=np.array(np.isfinite(data[-1]).mean(), dtype=np.float32),
@@ -344,6 +390,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR, help="Holds tiles/, work/ and the logs.")
+    parser.add_argument(
+        "--positions",
+        nargs="+",
+        choices=POSITIONS,
+        default=POSITIONS,
+        help="Which positions to tile. 'advected' needs data/manifests/advected_positions.csv.",
+    )
     parser.add_argument("--min-valid", type=float, default=0.8, help="Minimum clear open-ocean fraction of a tile.")
     parser.add_argument("--max-products", type=int, default=0, help="Stop after this many scenes (0 = all).")
     parser.add_argument(

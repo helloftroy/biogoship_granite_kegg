@@ -7,8 +7,9 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
-# Download Sentinel-3 OLCI + SST and cut Granite tiles for every Bio-GO-SHIP site.
-# Needs internet, hence the 'service' partition. Safe to resubmit: it resumes.
+# Cut Granite tiles for every Bio-GO-SHIP site, at the sampling position and at the
+# back-tracked position. Reads the archives from download_products.sbatch if present,
+# otherwise downloads what it needs. Safe to resubmit: it resumes.
 #
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
 #   cp cdse_credentials.sh.example cdse_credentials.sh   # once; then fill it in
@@ -18,7 +19,8 @@
 #   # 2. everything
 #   sbatch --account=<allocation> cluster/download_tiles.sbatch
 #
-# Other overrides: MIN_VALID=0.8, DOWNLOAD_MODE=files|zip, NO_SST=1, CONNECTIONS=4.
+# Other overrides: POSITIONS="fixed advected" (or just "fixed"), MIN_VALID=0.8,
+# DOWNLOAD_MODE=files|zip, NO_SST=1, CONNECTIONS=4.
 
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
@@ -42,7 +44,9 @@ fi
 
 echo "Job started: $(date)"
 df -h "${REPO_ROOT}" | tail -1
+# shellcheck disable=SC2086  # POSITIONS is a space-separated list
 python scripts/download_tiles.py \
+  --positions ${POSITIONS:-fixed advected} \
   --min-valid "${MIN_VALID:-0.8}" \
   --max-products "${MAX_PRODUCTS:-0}" \
   --download-mode "${DOWNLOAD_MODE:-files}" \

@@ -142,7 +142,7 @@ the position of that water at the scene's sensing time.
 
 Currents: Copernicus Marine
 [MULTIOBS_GLO_PHY_MYNRT_015_003](https://data.marine.copernicus.eu/product/MULTIOBS_GLO_PHY_MYNRT_015_003/description)
-(GlobCurrent total velocity, 0.25 degree, daily), about 100 MB for all sections.
+(GlobCurrent total velocity, 0.25 degree, daily); a few hundred MB for all sections.
 
 ```bash
 # once: a project environment with OceanParcels and the Copernicus Marine toolbox

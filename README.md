@@ -135,9 +135,10 @@ python scripts/download_products.py --dry-run     # counts and sizes only
 python scripts/download_products.py
 ```
 
-`cluster/env.sh` is shared by all jobs. It keeps caches off `$HOME`, activates the
-conda environment by full path and checks that the activation took effect, and
-installs `numpy`/`h5py` into the environment if they are missing.
+`cluster/env.sh` is shared by all jobs. It keeps caches and temporary files off
+`$HOME`, activates the Python environment (conda or venv) by full path and checks
+that the activation took effect, and installs `numpy`/`h5py` into it if they are
+missing.
 
 ## Step 4: back-track the sampled water
 
@@ -152,7 +153,7 @@ Currents: Copernicus Marine
 (GlobCurrent total velocity, 0.25 degree, daily); a few hundred MB for all sections.
 
 ```bash
-# once: a project environment with OceanParcels and the Copernicus Marine toolbox
+# once: a project environment (venv on scratch) with OceanParcels and the Copernicus Marine toolbox
 sbatch --account=191001-364393 cluster/setup_env.sbatch
 
 # add your Copernicus Marine login to cdse_credentials.sh, then

@@ -21,26 +21,35 @@ export HF_HOME="${HF_HOME:-${SCRATCH_ROOT}/.cache/huggingface}"
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-${SCRATCH_USER_DIR}/conda_envs/pip_cache}"
 export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS:-${SCRATCH_USER_DIR}/conda_envs/conda_pkgs}"
 export PYTHONUNBUFFERED=1
-mkdir -p "${XDG_CACHE_HOME}" "${MPLCONFIGDIR}" "${HF_HOME}" "${REPO_ROOT}/logs"
+export TMPDIR="${TMPDIR:-${SCRATCH_ROOT}/.cache/tmp}"
+export PIP_DISABLE_PIP_VERSION_CHECK=1
+mkdir -p "${XDG_CACHE_HOME}" "${MPLCONFIGDIR}" "${HF_HOME}" "${TMPDIR}" "${REPO_ROOT}/logs"
 
-# conda is not on PATH by default, and environments are activated by full path.
+# The environment is activated by full path, never by name. It is either a conda
+# environment (conda is not on PATH by default, so conda.sh is sourced first) or a
+# plain virtual environment such as the one cluster/setup_env.sbatch builds.
 CONDA_SH="${CONDA_SH:-${SCRATCH_USER_DIR}/miniforge3/etc/profile.d/conda.sh}"
 BGS_CONDA_ENV="${BGS_CONDA_ENV:-${SCRATCH_USER_DIR}/conda_envs/faire-agent}"
-if [ ! -f "${CONDA_SH}" ]; then
-  echo "conda.sh not found at ${CONDA_SH}; set CONDA_SH." >&2
-  exit 2
-fi
 if [ ! -d "${BGS_CONDA_ENV}" ]; then
-  echo "Conda environment not found at ${BGS_CONDA_ENV}; set BGS_CONDA_ENV (see 'conda env list')." >&2
+  echo "Python environment not found at ${BGS_CONDA_ENV}; set BGS_CONDA_ENV, or run cluster/setup_env.sbatch." >&2
   exit 2
 fi
-set +u  # conda's activation scripts read unset variables
-source "${CONDA_SH}"
-conda activate "${BGS_CONDA_ENV}"
+export PYTHONNOUSERSITE=1  # ignore ~/.local
+set +u  # activation scripts read unset variables
+if [ -f "${BGS_CONDA_ENV}/pyvenv.cfg" ]; then
+  source "${BGS_CONDA_ENV}/bin/activate"
+else
+  if [ ! -f "${CONDA_SH}" ]; then
+    echo "conda.sh not found at ${CONDA_SH}; set CONDA_SH." >&2
+    exit 2
+  fi
+  source "${CONDA_SH}"
+  conda activate "${BGS_CONDA_ENV}"
+fi
 set -u
 _actual_prefix="$(python -c 'import sys; print(sys.prefix)')"
 if [ "$(cd "${_actual_prefix}" && pwd -P)" != "$(cd "${BGS_CONDA_ENV}" && pwd -P)" ]; then
-  echo "conda activate did not take effect: python is ${_actual_prefix}, expected ${BGS_CONDA_ENV}." >&2
+  echo "Environment activation did not take effect: python is ${_actual_prefix}, expected ${BGS_CONDA_ENV}." >&2
   exit 2
 fi
 

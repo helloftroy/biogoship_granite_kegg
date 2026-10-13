@@ -6,7 +6,8 @@ reports, per section:
 
   * sites with a clear tile as the clear-fraction threshold is lowered
   * sites with a clear tile as the time window is narrowed
-  * which quality flags spoil the cloudy windows
+  * which quality flags are set in the cloudy windows (some are informational and
+    do not reject a pixel; those are marked)
 
 It cannot predict the effect of --max-offset-km (using a nearby clear window);
 that needs a re-run of download_tiles.py with --recheck.
@@ -23,6 +24,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from biogoship import tiles  # noqa: E402
 from biogoship.tables import MANIFEST_DIR, REPO_ROOT, latest_tile_log_rows, read_csv  # noqa: E402
 
 THRESHOLDS = [0.9, 0.8, 0.7, 0.6, 0.5, 0.3, 0.1]
@@ -67,7 +69,8 @@ def main() -> None:
                 flags[name] += float(fraction)
         print(f"\nMean share of pixels carrying each flag, over the {len(cloudy):,} cloudy windows (top three flags per window):")
         for name, total in sorted(flags.items(), key=lambda item: -item[1]):
-            print(f"  {name:16s} {total / max(len(cloudy), 1):.2f}")
+            note = "" if name in tiles.REJECT_FLAGS else "   (reported only; does not reject a pixel)"
+            print(f"  {name:16s} {total / max(len(cloudy), 1):.2f}{note}")
 
         offsets = [float(row["offset_km"]) for row in log if row["position"] == position and row["status"] == "valid" and row.get("offset_km")]
         shifted = [o for o in offsets if o > 0.5]

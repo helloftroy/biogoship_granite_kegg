@@ -268,6 +268,35 @@ So about one overpass in five is clear at a given site, and having four to six
 overpasses per site lifts coverage to about half. Every candidate scene was
 already tried; the misses are sites cloudy in all of them.
 
+**Yield report (2026-10-13, `scripts/cloud_report.py`, fixed position).**
+
+Sites with a tile, of 721, as the required clear fraction is lowered:
+
+| Clear fraction | 0.9 | 0.8 | 0.7 | 0.6 | 0.5 | 0.3 |
+|---|---:|---:|---:|---:|---:|---:|
+| Sites | 319 | 376 | 416 | 442 | 476 | 539 |
+
+Sites with a tile (80% clear), of the 660 outside I09N, by largest time gap allowed:
+
+| Gap | 6 h | 12 h | 24 h | 48 h | 72 h |
+|---|---:|---:|---:|---:|---:|
+| Sites | 74 | 117 | 164 | 276 | 329 |
+
+- Only 74 sites have a clear tile within 6 hours of sampling and 164 within a
+  day; for half of the sites with a tile, the best one is more than a day from
+  sampling. This is the case for the advected position.
+- The gain per extra day is shrinking (+112 sites from day 1 to 2, +53 from day
+  2 to 3) but has not levelled off, so a wider window would add more.
+- Rejections are real cloud: CLOUD covers 55% of the pixels of a rejected
+  window on average, CLOUD_MARGIN 17%, CLOUD_AMBIGUOUS 7%. SUSPECT and AC_FAIL
+  are about 1% each, so loosening those would gain almost nothing. (HIGHGLINT,
+  15%, and OCNN_FAIL, 9%, appear in the report but are not rejection criteria,
+  as in the Florida project.)
+- 674 clear tiles over 376 sites is 1.8 per site with a tile, and 0.9 per
+  matchable site. Averaging 3 to 5 clear views per sample would therefore need
+  roughly four times as many overpasses per site, i.e. a window of about +/-10
+  to 15 days along the trajectory.
+
 **Ways to raise the yield** (`scripts/cloud_report.py` quantifies the second and
 third from the existing log):
 

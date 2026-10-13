@@ -67,6 +67,12 @@ either kind: a directory with `pyvenv.cfg` is sourced as a virtual environment,
 anything else goes through `conda activate`. Any job can be pointed at another environment with
 `--export=ALL,BGS_CONDA_ENV=/full/path`.
 
+Version constraint to keep: OceanParcels 3 requires zarr 2, and xarray from 2026
+onward only works with zarr 3. Unpinned, pip installs both and the Copernicus
+Marine download fails with `open_group() got an unexpected keyword argument
+'zarr_format'`. `cluster/env_packages.txt` therefore holds `xarray<2026` and
+`zarr<3`. Re-running `setup_env.sbatch` applies changes to that file.
+
 ## Credentials
 
 `cdse_credentials.sh` in the repo root (gitignored, `chmod 600`), copied from
@@ -81,7 +87,7 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | # | Job | Partition | What it does | Status (2026-10-13) |
 |---|---|---|---|---|
 | 1 | `download_products.sbatch` | service | all candidate OLCI scenes and SST files, about 300 GB, to `data/products/` | completed |
-| 2 | `setup_env.sbatch` | service | creates the `biogoship` environment | first attempt (conda) failed on the `$HOME` quota; rewritten to use venv + pip |
+| 2 | `setup_env.sbatch` | service | creates the `biogoship` environment | built 2026-10-13 with venv + pip (the first, conda, attempt failed on the `$HOME` quota). Needs one re-run to pick up the xarray pin below |
 | 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | not run |
 | 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | not run |
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | not run |

@@ -56,10 +56,21 @@ fi
 "${ENV_PATH}/bin/python" -m pip install --upgrade pip
 "${ENV_PATH}/bin/python" -m pip install -r "${REPO_ROOT}/cluster/env_packages.txt"
 
-"${ENV_PATH}/bin/python" -c "
-import sys, numpy, h5py, pandas, xarray, parcels, copernicusmarine
-print('python', sys.version.split()[0], '| prefix', sys.prefix)
-print('numpy', numpy.__version__, '| xarray', xarray.__version__, '| parcels', parcels.__version__, '| copernicusmarine', copernicusmarine.__version__)"
+# Check the pieces work together, not just that they import: the Copernicus Marine
+# toolbox reads its data through xarray + zarr, which breaks if their versions drift apart.
+"${ENV_PATH}/bin/python" - <<'PY'
+import sys, tempfile
+import numpy, h5py, pandas, xarray, zarr, parcels, copernicusmarine
+
+print("python", sys.version.split()[0], "| prefix", sys.prefix)
+print("numpy", numpy.__version__, "| xarray", xarray.__version__, "| zarr", zarr.__version__,
+      "| parcels", parcels.__version__, "| copernicusmarine", copernicusmarine.__version__)
+with tempfile.TemporaryDirectory() as tmp:
+    data = xarray.Dataset({"uo": (("time", "x"), numpy.ones((2, 3), "float32"))})
+    data.to_zarr(f"{tmp}/check.zarr", consolidated=True)
+    assert float(xarray.open_zarr(f"{tmp}/check.zarr", consolidated=True)["uo"].sum()) == 6.0
+print("xarray + zarr read/write check passed")
+PY
 echo "Environment size: $(du -sh "${ENV_PATH}" | cut -f1)"
 echo "Environment ready: ${ENV_PATH}"
 echo "Job finished: $(date)"

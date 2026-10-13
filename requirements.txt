@@ -5,7 +5,9 @@ certifi
 # Sample manifest builder
 pandas
 # Back-tracking (scripts/download_currents.py, scripts/backtrack_sites.py)
-xarray
+# OceanParcels 3 needs zarr 2; xarray 2026 and later only work with zarr 3, so xarray is held below 2026.
+xarray>=2024.10,<2026
+zarr>=2.18.3,<3
 netCDF4
 parcels>=3.1,<4
 copernicusmarine>=2

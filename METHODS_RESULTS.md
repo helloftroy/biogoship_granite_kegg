@@ -393,6 +393,12 @@ advected position at each scene's sensing time comes from the hourly track. In a
 test on AMT28 (all 63 sites, days 3 to 5), 53 sites gained candidate scenes: 282
 new pairs from 64 new scenes.
 
+**Result (2026-10-19): search out to +/-6 days** for the 135 sites without an
+advected tile (798 catalogue queries). 133 of the 135 gained candidate scenes:
+750 new site x scene pairs from 113 new OLCI scenes (32 GB) and up to 79 SST
+files (52 GB). With what was already on disk, 146 new archives (about 54 GB), for
+a total of 527 OLCI scenes and 251 SST files (355 GB).
+
 **Ways to raise the yield** (`scripts/cloud_report.py` quantifies the second and
 third from the existing log):
 

@@ -94,8 +94,14 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | done 2026-10-13; encoder loads cleanly |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
 
-Where things stand (2026-10-19): jobs 1 to 5 done. Next: 6 on the tiles so far,
-and 4b -> 1 -> 4 for the 135 sites still missing an advected tile, then 6 again.
+Where things stand (2026-10-19): jobs 1 to 5 done; 4b done out to +/-6 days
+(113 new scenes). Next: 1 (fetch the new scenes, ~54 GB), 4 (tile them), then 6.
+
+Note: 4b rewrites `data/manifests/site_products.csv`, `products.csv` and
+`advected_positions.csv` on the cluster, so the cluster copies of those tracked
+files now differ from GitHub. `git pull` still works as long as nobody changes
+them upstream; do not `git checkout` or `git reset` them on the cluster. To
+publish the final versions, commit them from the cluster or copy them back.
 
 Harmless messages in `.err` files: "unauthenticated requests to the HF Hub"
 (set `HF_TOKEN` to silence it), "`torch.jit.script` is deprecated", and "Can't

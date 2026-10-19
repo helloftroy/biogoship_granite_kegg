@@ -89,15 +89,17 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 1 | `download_products.sbatch` | service | all candidate OLCI scenes and SST files, about 300 GB, to `data/products/` | completed |
 | 2 | `setup_env.sbatch` | service | creates the `biogoship` environment | built 2026-10-13 with venv + pip (the first, conda, attempt failed on the `$HOME` quota). Needs one re-run to pick up the xarray pin below |
 | 3 | `backtrack.sbatch` | service | downloads currents, back-tracks every site, writes `data/manifests/advected_positions.csv` | done 2026-10-13 on real currents: all 3,727 pairs resolved, 7-day tracks complete |
-| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 fixed case done 2026-10-13: 1,692 clear tiles, 586 of 721 sites, 614 of 996 samples; advected not run |
+| 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 done 2026-10-13 for both positions within the original window: fixed 614 samples, advected 611, both 589 |
 | 4b | `extend_search.sbatch` | service | for sites without a clear advected tile, finds scenes further out along the water's track; then rerun 1 and 4 | not run |
-| 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | not run |
+| 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | done 2026-10-13; encoder loads cleanly |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
 
-Where things stand (2026-10-19): jobs 1 to 3 done; job 4 done for the fixed
-position. Submitted around 2026-10-13 and awaiting results: job 4 for the
-advected position, and job 5. Next after those: 4b -> 1 -> 4 for sites still
-missing an advected tile, then 6.
+Where things stand (2026-10-19): jobs 1 to 5 done. Next: 6 on the tiles so far,
+and 4b -> 1 -> 4 for the 135 sites still missing an advected tile, then 6 again.
+
+Harmless messages in `.err` files: "unauthenticated requests to the HF Hub"
+(set `HF_TOKEN` to silence it), "`torch.jit.script` is deprecated", and "Can't
+initialize NVML" on nodes without a GPU.
 
 Original plan (2026-10-13): finish the fixed case (4 with `RECHECK="cloudy edge"`,
 to apply the 20 km rule to combinations tested before it existed), then 3, then 4

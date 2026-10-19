@@ -263,6 +263,25 @@ rejection flags) and summarised per site and position in
 | `cloudy_or_outside` | a mix of the two | either of the above |
 | `no_position` | back-tracking gave no advected position | check `advected_positions.csv` status |
 
+**Result (2026-10-13): advected case, scenes within the original window** (80%
+clear, nearest clear tile within 20 km). 1,635 advected tiles. Over both
+positions: 3,327 clear, 3,962 cloudy, 77 at a scene edge, and 88 where the
+advected position fell outside the scene (searched by the sampling position).
+
+| Section | Samples | Fixed tile | Advected tile | Both |
+|---|---:|---:|---:|---:|
+| C13.5/A13.5 | 263 | 251 | 246 | 243 |
+| I07N | 261 | 194 | 195 | 185 |
+| AMT28 | 63 | 46 | 46 | 45 |
+| P18 | 104 | 67 | 65 | 62 |
+| I09N | 242 | 56 | 59 | 54 |
+| **Total** | **996** | **614** | **611** | **589** |
+
+By site, 586 of 721 have an advected tile (the same count as fixed, by
+coincidence; the sets differ). 135 sites lack one: 112 cloudy in every scene,
+23 cloudy or outside. These are the sites for the wider search along the track.
+636 samples have at least one of the two.
+
 Every clear overpass yields a tile, so a site can have several.
 `scripts/build_tile_manifest.py` joins samples to tiles. For each sample and
 position it marks the tile closest in time as `is_best`, and it marks the advected
@@ -406,7 +425,12 @@ further scene search along the tracks.
   only the best one. The per-sample table carries `position`, `is_best` and
   `same_scene_as_best_fixed` to select from them.
 
-**Result:** not run yet.
+**Model check (2026-10-13, `cluster/cache_granite.sbatch`):** the checkpoint
+loaded into the TerraTorch encoder with 150 tensors matched, 56 decoder tensors
+skipped, no unmatched checkpoint tensors and no encoder tensors left without
+weights; a test batch gives embeddings of shape (2, 512). torch 2.14.1.
+
+**Result:** embeddings not run yet.
 
 ## 8. Planned next
 

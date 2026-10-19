@@ -94,7 +94,12 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | not run |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
 
-Current plan (2026-10-13): finish the fixed case (4 with `RECHECK="cloudy edge"`,
+Where things stand (2026-10-19): jobs 1 to 3 done; job 4 done for the fixed
+position. Submitted around 2026-10-13 and awaiting results: job 4 for the
+advected position, and job 5. Next after those: 4b -> 1 -> 4 for sites still
+missing an advected tile, then 6.
+
+Original plan (2026-10-13): finish the fixed case (4 with `RECHECK="cloudy edge"`,
 to apply the 20 km rule to combinations tested before it existed), then 3, then 4
 for the advected position, then 4b -> 1 -> 4 to widen the window for sites still
 missing an advected tile, then 5 and 6.

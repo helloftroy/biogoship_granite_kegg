@@ -316,7 +316,12 @@ outside I09N): 150 within 6 h, 236 within 12 h, 335 within 24 h, 477 within 48 h
 530 within 72 h. The remaining rejections are almost all true cloud (CLOUD on 72%
 of the pixels of a rejected window).
 
-Still to record: the distribution of tile offsets (0 to 20 km).
+Tile offsets: the 674 tiles from the first run are centred on the sampling
+position (offset under one pixel). Of the 1,018 tiles added by the 20 km rule,
+994 are shifted by more than 0.5 km: median 8.3 km, maximum 19.9 km. So a third
+of fixed tiles are not centred on the sample, typically by less than a tile
+width. That is comparable to the median water displacement at overpass time
+(9 to 23 km), which matters when comparing the fixed and advected cases.
 
 **Yield report (2026-10-13, `scripts/cloud_report.py`, fixed position, before the 20 km rule).**
 

@@ -94,8 +94,9 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | done 2026-10-13; encoder loads cleanly |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
 
-Where things stand (2026-10-19): jobs 1 to 5 done; 4b done out to +/-6 days
-(113 new scenes). Next: 1 (fetch the new scenes, ~54 GB), 4 (tile them), then 6.
+Where things stand (2026-10-20): jobs 1 to 5 done; 4b done out to +/-6 days,
+the new scenes downloaded and tiled (advected tiles for 663 of 721 sites). Job 6
+(embeddings) submitted 2026-10-20 on all tiles so far.
 
 Note: 4b rewrites `data/manifests/site_products.csv`, `products.csv` and
 `advected_positions.csv` on the cluster, so the cluster copies of those tracked

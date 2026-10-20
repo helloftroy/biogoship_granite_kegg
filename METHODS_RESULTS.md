@@ -399,6 +399,26 @@ advected tile (798 catalogue queries). 133 of the 135 gained candidate scenes:
 files (52 GB). With what was already on disk, 146 new archives (about 54 GB), for
 a total of 527 OLCI scenes and 251 SST files (355 GB).
 
+**Result (2026-10-20): advected tiles after the +/-6 day search.** 176 more
+advected tiles. Over both positions: 3,503 clear, 4,527 cloudy, 85 edge, 89
+outside the scene.
+
+| Section | Samples | Fixed tile | Advected tile | Both |
+|---|---:|---:|---:|---:|
+| C13.5/A13.5 | 263 | 251 | 261 | 251 |
+| I07N | 261 | 194 | 224 | 193 |
+| P18 | 104 | 67 | 91 | 66 |
+| AMT28 | 63 | 46 | 59 | 46 |
+| I09N | 242 | 56 | 59 | 54 |
+| **Total** | **996** | **614** | **694** | **610** |
+
+By site, 663 of 721 now have an advected tile (92%, up from 81%); 58 do not
+(47 cloudy in every scene, 11 cloudy or outside). 698 samples have at least one
+of the two cases. Note that the advected tiles found by the wider search are 3
+to 6 days from sampling, while fixed tiles are within 3 days, so the two cases
+now also differ in time gap; for a like-for-like comparison use the samples
+with both, and `same_scene_as_best_fixed`.
+
 **Ways to raise the yield** (`scripts/cloud_report.py` quantifies the second and
 third from the existing log):
 

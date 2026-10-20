@@ -469,6 +469,45 @@ weights; a test batch gives embeddings of shape (2, 512). torch 2.14.1.
   variance. Fixed and advected tiles from the same site and scene have a median
   cosine similarity of 0.999.
 
+### Input audit against the model (2026-10-20)
+
+Checked against the model's own `config.yaml` and checkpoint (Hugging Face
+snapshot `319ac64`), IBM's backbone code (`custom_modules/prithvi_vit_S3.py` and
+`configs/config-fine-tuning.yaml` in github.com/ibm-granite/geospatial) and the
+paper (Dawson et al. 2025, arXiv:2509.21273). Items marked "verified" were
+checked by `scripts/check_granite_inputs.py` against the model files.
+
+| Item | Granite pretraining | Our tiles | Status |
+|---|---|---|---|
+| Tile size | 42 x 42 pixels (`img_size [1, 42, 42]`); the 224 x 224 of Prithvi-EO was reduced for Sentinel-3's 300 m pixels | 42 x 42 | match, verified |
+| Patches | 2 x 2 pixels, 21 x 21 = 441 tokens, attention within the tile | same | match, verified |
+| Pixel grid | native OLCI full-resolution (300 m) swath grid, cut into non-overlapping tiles; SST resampled onto the OLCI grid | native OLCI swath grid, no reprojection; SST nearest-neighbour onto the OLCI grid | match (their SST resampling method is not stated) |
+| Padding | none needed at 42 x 42 | none; tiles that would run off the swath are skipped | match |
+| Sensor and product | Sentinel-3A/B OLCI L2 WFR water reflectances + SLSTR L2 SST, 2017-2021 | the same products, 2016-2020 | match |
+| Bands and order | Oa01-Oa12, Oa16, Oa17, Oa18, Oa21, SST | the same | match, verified |
+| Units | physical reflectance (band means ~0.02) and SST in kelvin (mean 293.9) | scale factor and offset applied; kelvin | match |
+| Normalisation | per-band mean and s.d. in config.yaml | identical (largest relative difference 4e-8, float rounding) | match, verified |
+| Other inputs | IBM's backbone lists coordinate encodings (day length, distance to coast, region, biome), but TerraTorch only acts on "time" and "location", so they are inert; the paper describes only 2D sin/cos positional embeddings | none | match |
+| Positional embedding | fixed 2D sin/cos | checkpoint values equal the sin/cos formula to 8e-7 | match, verified |
+| Weights | encoder of the MAE checkpoint | 150 encoder tensors loaded, none missing; 56 decoder tensors dropped | match |
+| Quality screening | product-notice recommended flags masked "with the exception of the cloud flag"; tiles kept if at least 80% cloud-free | tiles kept if at least 80% of pixels are clear of cloud, cloud margin, ambiguous cloud and the other quality flags | similar; ours slightly stricter |
+| Masked and missing pixels | not documented for pretraining. IBM's fine-tuning config sets missing values to 0 in physical units before normalisation (TerraTorch `no_data_replace: 0`) | flagged pixels keep their measured values; missing SST and OLCI fill values set to the channel mean (0 after normalisation) | **open**: tested below |
+
+The one convention that cannot be read from the documentation is how pixels
+that are flagged or missing were filled during pretraining. Cloud pixels were
+apparently kept with their measured values, as in ours. `check_granite_inputs.py`
+therefore runs real tiles through Granite's own masked-autoencoder decoder under
+three conventions (ours; flagged and missing pixels set to the channel mean;
+set to physical zero as in IBM's fine-tuning config) and measures reconstruction
+error on hidden clear pixels: the convention closest to pretraining should give
+the lowest error, and all should beat a constant guess by a wide margin if the
+inputs are in the form the model expects. It also reports how much the
+embeddings change between conventions.
+
+**Result:** configuration items verified locally against the model files;
+reconstruction test on real tiles to be run on the cluster
+(`cluster/check_granite_inputs.sbatch`).
+
 ## 8. First check: do the features carry signal?
 
 `scripts/compare_feature_sets.py`, 2026-10-20. Targets: in-situ temperature,

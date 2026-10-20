@@ -269,6 +269,17 @@ Outputs in `data/embeddings/`:
   filter on `position` and `is_best` for one embedding per sample
 - `granite_embeddings_bundle.zip` all of the above in one file, for copying off the cluster
 
+### Checking the inputs are what Granite expects
+
+```bash
+sbatch --account=191001-364393 cluster/check_granite_inputs.sbatch
+```
+
+Compares the tile format with the model's own config (size, bands, order,
+normalisation, positional embedding) and runs a sample of real tiles through
+Granite's masked-autoencoder decoder under different gap-filling conventions.
+See "Input audit" in [METHODS_RESULTS.md](METHODS_RESULTS.md).
+
 ## Step 7: does it work? A first CatBoost comparison
 
 Until the NMF and KEGG tables exist, the in-situ measurements in the sample

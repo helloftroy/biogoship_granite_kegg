@@ -504,9 +504,43 @@ the lowest error, and all should beat a constant guess by a wide margin if the
 inputs are in the form the model expects. It also reports how much the
 embeddings change between conventions.
 
-**Result:** configuration items verified locally against the model files;
-reconstruction test on real tiles to be run on the cluster
-(`cluster/check_granite_inputs.sbatch`).
+**Result (2026-10-20, 300 real tiles, cluster job 80958).**
+
+- Configuration, band order, normalisation and positional embedding: all match
+  the model's files.
+- Our tiles are bluer and warmer than Granite's average. On clear pixels, after
+  normalisation, Oa01-Oa03 average +1.4 to +1.8 s.d. and SST +1.6 s.d.; the red
+  and near-infrared bands sit slightly below average with little spread. That is
+  what clear subtropical open ocean looks like (water-leaving reflectance near
+  0.04 at 400 nm, SST near 298 K), against a pretraining set that over-sampled
+  coastal water. The size of the offsets rules out a unit error: a wrong scale
+  (for example reflectance divided by pi, or SST in Celsius) would put them tens
+  of s.d. away.
+- SST is missing on 24% of pixels (71 of 300 tiles have some gaps); OLCI fill
+  values on 1.4%.
+- Reconstruction of hidden patches (clear pixels; normalised units): our
+  convention 1.204, flagged pixels to the channel mean 1.207, IBM's physical-zero
+  fill 1.217, against 1.330 for a constant guess. Our convention is the best of
+  the three, by a small margin.
+- Embedding sensitivity: setting flagged pixels to the channel mean barely moves
+  the embeddings (median cosine similarity 0.995). The physical-zero convention
+  moves some of them drastically (minimum 0.12), because a missing SST pixel then
+  becomes -110 s.d.; it should not be used with these tiles.
+
+Conclusion on gap filling: keep the current convention.
+
+**A finding about the model rather than the inputs.** Granite reconstructs our
+tiles only about 10% better than a constant guess. Probing the decoder with
+synthetic tiles (local test, real checkpoint): a uniform tile at +0.5 or +1.0 s.d.
+in every channel is reproduced exactly, but a uniform tile with the open-ocean
+spectrum above is pulled toward the training average: hidden pixels come back
+1.5 s.d. too low in Oa01-Oa02 and 0.75 s.d. too low in SST. So Granite represents
+bright-blue, warm, oligotrophic water poorly: the kind of water most Bio-GO-SHIP
+samples come from. Its embeddings may compress the open-ocean variability that
+matters here. This makes the raw-channel baseline comparison (section 8)
+important, and makes fine-tuning Granite on this data worth considering later.
+`check_granite_inputs.py` now also reports a "tile's own visible-pixel mean"
+baseline and the per-channel bias, to quantify this on real tiles at the next run.
 
 ## 8. First check: do the features carry signal?
 

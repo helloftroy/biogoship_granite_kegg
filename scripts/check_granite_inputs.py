@@ -200,7 +200,8 @@ def reconstruction(mae, variants: dict, scored: torch.Tensor, args: argparse.Nam
     reference = variants["as_embedded"].unsqueeze(2)  # what the clear pixels truly are
     weight = scored.unsqueeze(2).float()
     for name, inputs in variants.items():
-        squared, constant, count, per_channel_sq, per_channel_n = 0.0, 0.0, 0.0, torch.zeros(17), torch.zeros(17)
+        squared, constant, local, count = 0.0, 0.0, 0.0, 0.0
+        per_channel_sq, per_channel_n, per_channel_bias = torch.zeros(17), torch.zeros(17), torch.zeros(17)
         for repeat in range(args.repeats):
             torch.manual_seed(args.seed + repeat)  # same hidden patches for every variant
             with torch.no_grad():
@@ -210,13 +211,20 @@ def reconstruction(mae, variants: dict, scored: torch.Tensor, args: argparse.Nam
             error = (image - reference) ** 2 * w
             squared += float(error.sum())
             constant += float((reference**2 * w).sum())  # guessing the training mean (0) everywhere
+            # Guessing each hidden pixel as the mean of the tile's visible clear pixels, per channel.
+            seen = weight * (1 - hidden)
+            visible_mean = (reference * seen).sum(dim=(2, 3, 4), keepdim=True) / seen.sum(dim=(2, 3, 4), keepdim=True).clamp(min=1)
+            local += float(((visible_mean - reference) ** 2 * w).sum())
             count += float(w.sum())
             per_channel_sq += error.sum(dim=(0, 2, 3, 4))
+            per_channel_bias += ((image - reference) * w).sum(dim=(0, 2, 3, 4))
             per_channel_n += w.sum(dim=(0, 2, 3, 4))
         results[name] = {
             "description": VARIANTS[name],
             "rmse_hidden_clear_pixels": (squared / count) ** 0.5,
             "rmse_constant_guess": (constant / count) ** 0.5,
+            "rmse_visible_mean_guess": (local / count) ** 0.5,
+            "bias_per_channel": {b: float(per_channel_bias[i] / per_channel_n[i]) for i, b in enumerate(OUR_BANDS)},
             "rmse_per_channel": {b: float((per_channel_sq[i] / per_channel_n[i]) ** 0.5) for i, b in enumerate(OUR_BANDS)},
         }
     return results
@@ -269,7 +277,11 @@ def summarise(report: dict) -> None:
         print(f"     {name:18s} {stats['mean']:7.2f} / {stats['std']:5.2f}")
     print("4. Reconstruction of hidden patches (clear pixels only; normalised units; lower is better)")
     for name, r in report["reconstruction"].items():
-        print(f"   {name:20s} model {r['rmse_hidden_clear_pixels']:.3f} vs constant guess {r['rmse_constant_guess']:.3f}")
+        print(f"   {name:20s} model {r['rmse_hidden_clear_pixels']:.3f} | constant guess {r['rmse_constant_guess']:.3f}"
+              f" | tile's own visible-pixel mean {r['rmse_visible_mean_guess']:.3f}")  # fmt: skip
+    bias = report["reconstruction"]["as_embedded"]["bias_per_channel"]
+    print("   mean error (prediction - truth) per channel, as embedded: "
+          + ", ".join(f"{name.split('_')[0]} {value:+.2f}" for name, value in bias.items()))  # fmt: skip
     print("5. Embedding change vs as embedded (cosine similarity, median / min)")
     for name, r in report["embedding_sensitivity"].items():
         print(f"   {name:20s} {r['cosine_to_as_embedded_median']:.4f} / {r['cosine_min']:.4f}")

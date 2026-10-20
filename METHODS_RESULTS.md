@@ -585,10 +585,34 @@ Reading:
   cruise is held out, metadata drops to the level of the embeddings and becomes
   less stable from cruise to cruise, while the embeddings hold up. Held-out
   cruises are the fairer test for transfer to new regions.
-- Still to add: the raw-channel baseline (`raw_fixed`, `raw_advected`), which
-  says whether Granite adds anything over the tile's own band averages.
+- Raw-channel baseline added 2026-10-20 (below): Granite's embeddings beat the
+  tile's own band averages clearly.
 - These are physical targets with a direct satellite signature (temperature has
   its own SST channel). Microbial community targets are the real test.
+
+**With the raw-channel baseline (2026-10-20).** `raw_fixed` and `raw_advected` are
+the mean and s.d. of each of the 17 normalised channels over the tile's clear
+pixels (34 numbers; `scripts/pool_tile_features.py`). Same 610 samples; tiles
+without SST keep a gap that CatBoost handles. R2:
+
+| Target | CV | Fixed | Raw fixed | Advected | Raw advected | Metadata |
+|---|---|---:|---:|---:|---:|---:|
+| Temperature | blocks | 0.77 | 0.70 | 0.77 | 0.72 | 0.93 |
+| Phosphate | blocks | 0.68 | 0.36 | 0.65 | 0.39 | 0.92 |
+| Nitrate + nitrite | blocks | 0.71 | 0.04 | 0.73 | -0.02 | 0.92 |
+| Temperature | cruise held out | 0.72 +/- 0.06 | 0.61 +/- 0.18 | 0.71 +/- 0.06 | 0.63 +/- 0.14 | 0.73 +/- 0.12 |
+| Phosphate | cruise held out | 0.40 +/- 0.24 | -0.04 +/- 0.83 | 0.34 +/- 0.40 | -0.08 +/- 0.76 | 0.51 +/- 0.41 |
+
+- Granite's embeddings carry clearly more usable information than the band
+  averages of the same tiles, most of all for the nutrients, and they transfer
+  to unseen cruises more steadily. So despite reconstructing open-ocean spectra
+  imperfectly (section 7), the encoder adds something: likely spatial texture
+  within the tile that averages discard.
+- One confound to rule out: the embeddings also see flagged pixels (up to 20% of
+  a tile) that the raw averages exclude, so cloud and glint patterns, which vary
+  with region, could carry some of the signal. A raw baseline that includes the
+  clear fraction and flag fractions would test this.
+- Fixed and advected remain indistinguishable on these targets.
 
 ## 9. Planned next
 

@@ -80,7 +80,9 @@ def main() -> None:
         features = {name: frame for name, frame in features.items() if name in args.feature_sets}
 
     targets = load_targets(args, samples)
-    common = sorted(set.intersection(*(set(frame.dropna().index) for frame in features.values())))
+    # A sample counts if it has a row in every feature set. Missing values inside a row
+    # (e.g. a tile with no SST) are left to CatBoost, which handles them natively.
+    common = sorted(set.intersection(*(set(frame.index[frame.notna().any(axis=1)]) for frame in features.values())))
     print(f"Samples with every feature set ({', '.join(features)}): {len(common):,}")
 
     if args.cv == "section":  # each cruise held out in turn: can the model transfer to another ocean basin?

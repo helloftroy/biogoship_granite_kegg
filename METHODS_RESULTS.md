@@ -529,6 +529,85 @@ embeddings change between conventions.
 
 Conclusion on gap filling: keep the current convention.
 
+**How "bluer and warmer" is measured.** Every tile is stored normalised with
+Granite's own statistics: value = (physical value - Granite mean) / Granite s.d.
+So a normalised value of 0 is Granite's pretraining average and +1 is one
+pretraining s.d. above it. Averaging the normalised clear pixels of our tiles
+and converting back to physical units (`tile_raw_features.csv`, all 3,503 tiles):
+
+| Quantity | Granite pretraining average | Our tiles, median |
+|---|---:|---:|
+| Water-leaving reflectance at 400 nm (Oa01) | 0.0235 | 0.0365 |
+| Water-leaving reflectance at 560 nm (Oa06) | 0.0077 | 0.0041 |
+| Blue-to-green ratio (Oa01 / Oa06) | 3.1 | 9.0 |
+| SST | 20.8 C | 25.6 C |
+
+83% of our tiles are bluer than Granite's average at 400 nm and 67% are warmer.
+The blue-to-green ratio, the basis of standard chlorophyll algorithms, is three
+times Granite's average: our water is much clearer, i.e. lower in chlorophyll.
+
+| Section | Tiles | Median latitude (absolute) | Oa01, normalised | SST, normalised | SST |
+|---|---:|---:|---:|---:|---:|
+| C13.5/A13.5 | 1,549 | 21 | +2.85 | +1.75 | 25.5 C |
+| P18 | 280 | 21 | +2.03 | +1.13 | 23.8 C |
+| AMT28 | 372 | 26 | +1.48 | +0.94 | 23.3 C |
+| I07N | 1,086 | 9 | +1.00 | +2.38 | 27.1 C |
+| I09N | 216 | 12 | +0.88 | +3.71 | 30.7 C |
+
+The Atlantic and Pacific transects cross the subtropical gyres (clearest water);
+the Indian Ocean transects are the warmest (I09N: Bay of Bengal and eastern
+Indian Ocean in April-May, near 31 C).
+
+Our tiles also vary more than Granite's training data: between tiles, the 400 nm
+band spans 1.8 Granite s.d., while within a tile it varies by only 0.4.
+
+**Why Granite's average is not open-ocean water.** Most of the ocean by area is
+indeed clear blue open water, but Granite's pretraining set was not sampled by
+area (paper, section 2.1):
+
+- An equal number of tiles (6,400) was taken from every Longhurst
+  biogeographic province. Many provinces are coastal or shelf provinces, each
+  small in area, so equal sampling per province gives coastal water far more
+  weight than its share of the ocean; the paper notes that "by design the
+  sampling strategy results in more data being used near the coast". Coastal
+  water is greener and browner (chlorophyll, sediment, dissolved organic matter
+  absorb blue light), which lowers the average 400 nm reflectance and raises
+  green and red.
+- Every month of 2017-2021 was sampled equally in every province, including
+  winter in temperate and subpolar provinces (colder, more productive water).
+  Only the polar provinces were excluded. Hence an average SST of 20.8 C.
+- Our samples are the opposite selection: Bio-GO-SHIP transects through
+  tropical and subtropical open ocean, and only tiles at least 80% cloud-free,
+  which favours the clear skies over the subtropical gyres.
+
+So relative to what Granite saw most of, our samples are an under-represented
+corner: clear, warm, oligotrophic water.
+
+**How the reconstruction numbers are measured.** Granite was pretrained as a
+masked autoencoder: 75% of a tile's 2x2-pixel patches are hidden and the
+decoder predicts them from the rest. `check_granite_inputs.py` does the same on
+real tiles and scores only hidden pixels that are clear water with SST present,
+as a root-mean-square error in normalised units (1 = one Granite s.d.):
+
+- Granite's decoder: 1.204.
+- Constant guess, predicting Granite's average (0) for every hidden pixel: 1.330.
+- (1.330 - 1.204) / 1.330 = 9.5%, hence "about 10% better than a constant guess".
+
+The constant guess is a low bar for our tiles, because they sit far from
+Granite's average. The fairer yardstick is predicting each hidden pixel from the
+tile's own visible pixels (their mean, per channel). Since a tile varies by only
+about 0.4 s.d. internally, that simple guess should do far better than 1.2.
+`check_granite_inputs.py` now reports it, with the per-channel bias, but it has
+not been run on real tiles yet. On synthetic tiles with our open-ocean spectrum,
+the decoder returned blue bands 1.5 s.d. too low and SST 0.75 s.d. too low: it
+pulls water like ours back toward its training average instead of copying the
+level it can see.
+
+This concerns the decoder, which is not used for embeddings. The encoder's
+embeddings still beat the raw band averages for every target (section 8). But a
+decoder that cannot reproduce open-ocean levels suggests the encoder represents
+them coarsely, which is the case for improving it below.
+
 **A finding about the model rather than the inputs.** Granite reconstructs our
 tiles only about 10% better than a constant guess. Probing the decoder with
 synthetic tiles (local test, real checkpoint): a uniform tile at +0.5 or +1.0 s.d.
@@ -613,6 +692,31 @@ without SST keep a gap that CatBoost handles. R2:
   with region, could carry some of the signal. A raw baseline that includes the
   clear fraction and flag fractions would test this.
 - Fixed and advected remain indistinguishable on these targets.
+
+### Ways to improve Granite for this data
+
+In rough order of cost:
+
+1. **Align the quality mask with pretraining.** The paper masked the flags
+   recommended by the Sentinel-3 product notice. Our mask, inherited from the
+   Florida project, does not reject HIGHGLINT, which is set on many of our
+   pixels (on average 18% of a rejected window). Glint brightens all bands; if
+   pretraining masked it and we do not, that adds a mismatch. Check the
+   product-notice list, record per-pixel flag fractions per tile, and compare
+   embeddings with and without glint pixels.
+2. **Better readout of the encoder.** The embedding is the mean of the final
+   layer's tokens, which discards spatial structure and earlier layers. Try the
+   mean of several layers, the CLS token, the tokens nearest the tile centre, and
+   embeddings concatenated with the raw band averages (which carry the absolute
+   levels the model compresses).
+3. **Continued self-supervised pretraining on open-ocean tiles.** The 527 OLCI
+   scenes on disk hold many more clear tiles than the sample sites, almost all
+   tropical and subtropical open ocean. Continuing Granite's masked-autoencoder
+   training on them (no labels needed) adapts it to this water. Measure it by the
+   reconstruction error against the visible-mean yardstick above, then by the
+   downstream comparison.
+4. **Fine-tuning on the targets**, once NMF and KEGG are available: small sample
+   sizes, so only with strong regularisation and cruise-held-out validation.
 
 ## 9. Planned next
 

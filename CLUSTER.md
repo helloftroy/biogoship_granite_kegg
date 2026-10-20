@@ -92,11 +92,13 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 4 | `download_tiles.sbatch` | service | cuts tiles at fixed and advected positions; checks cloud cover | fixed position run 2026-10-13 done 2026-10-13 for both positions within the original window: fixed 614 samples, advected 611, both 589 |
 | 4b | `extend_search.sbatch` | service | for sites without a clear advected tile, finds scenes further out along the water's track; then rerun 1 and 4 | not run |
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | done 2026-10-13; encoder loads cleanly |
-| 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | not run |
+| 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | done 2026-10-20: 3,503 tiles in 101 s |
+| 7 | (no job) `python scripts/pool_tile_features.py` | login node is fine (a minute of file reading) | raw-channel summary per tile, for the baseline; copy `data/embeddings/tile_raw_features.csv` back | not run |
 
-Where things stand (2026-10-20): jobs 1 to 5 done; 4b done out to +/-6 days,
-the new scenes downloaded and tiled (advected tiles for 663 of 721 sites). Job 6
-(embeddings) submitted 2026-10-20 on all tiles so far.
+Where things stand (2026-10-20): jobs 1 to 6 done (advected tiles for 663 of
+721 sites; embeddings for all 3,503 tiles). The embedding bundle was copied back
+and the first CatBoost comparison run locally. Next: step 7 on the cluster for
+the raw-channel baseline.
 
 Note: 4b rewrites `data/manifests/site_products.csv`, `products.csv` and
 `advected_positions.csv` on the cluster, so the cluster copies of those tracked

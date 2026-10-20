@@ -24,8 +24,9 @@ substitute your own.
 | 4 | Back-track each site's water to the time of every overpass | `scripts/download_currents.py`, `scripts/backtrack_sites.py` | ready to run on the cluster |
 | 5 | Cut Granite-ready tiles at the sampling position and at the back-tracked position | `scripts/download_tiles.py`, `scripts/build_tile_manifest.py` | fixed position run; advected pending |
 | 5b | For sites still without an advected tile, search further out along the water's track | `scripts/search_trajectory_products.py` | ready to run on the cluster |
-| 6 | Tiles to Granite embeddings, for both positions | `scripts/embed_tiles.py` | written, not run yet |
-| 7 | Embeddings to NMF communities and KEGG profiles (CatBoost) | | planned |
+| 6 | Tiles to Granite embeddings, for both positions | `scripts/embed_tiles.py` | done |
+| 7 | Check the features carry signal: CatBoost on in-situ temperature and nutrients | `scripts/compare_feature_sets.py`, `scripts/pool_tile_features.py` | embeddings done; raw-channel baseline pending |
+| 8 | Embeddings to NMF communities and KEGG profiles (CatBoost) | `scripts/compare_feature_sets.py --targets-csv` | waiting for NMF and KEGG tables |
 
 ## Repository layout
 
@@ -267,6 +268,29 @@ Outputs in `data/embeddings/`:
 - `sample_embeddings.csv` one row per (sample, tile) with `embedding_row` pointing into the `.npy`;
   filter on `position` and `is_best` for one embedding per sample
 - `granite_embeddings_bundle.zip` all of the above in one file, for copying off the cluster
+
+## Step 7: does it work? A first CatBoost comparison
+
+Until the NMF and KEGG tables exist, the in-situ measurements in the sample
+manifest (temperature, phosphate, nitrate + nitrite) serve as targets. The
+comparison uses only samples that have every feature set, one row per sample (the
+best tile of each position), and cross-validates by spatial block or by whole
+cruise.
+
+```bash
+# on the cluster (a minute, CPU): raw-channel summary of every tile, for the baseline
+python scripts/pool_tile_features.py      # -> data/embeddings/tile_raw_features.csv
+
+# anywhere with catboost, after copying data/embeddings/ across
+python scripts/compare_feature_sets.py                # 5 folds of section x 5-degree blocks
+python scripts/compare_feature_sets.py --cv section   # hold out one cruise at a time
+```
+
+Feature sets: `fixed` and `advected` (Granite embeddings), `raw_fixed` and
+`raw_advected` (mean and s.d. of the 17 tile channels; present once
+`tile_raw_features.csv` exists), and `metadata` (latitude, longitude, day of year).
+Results go to `data/results/`. Later targets go in with
+`--targets-csv table.csv --targets NMF1 NMF2 ...` (a CSV keyed by `sample_id`).
 
 ## Data sources and citation
 

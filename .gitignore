@@ -8,6 +8,7 @@ data/currents/
 data/advection/
 data/tiles/
 data/embeddings/
+data/results/
 data/work/
 data/tile_log.csv
 data/product_log.csv

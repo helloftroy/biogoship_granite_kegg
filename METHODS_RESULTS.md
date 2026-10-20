@@ -456,9 +456,68 @@ loaded into the TerraTorch encoder with 150 tensors matched, 56 decoder tensors
 skipped, no unmatched checkpoint tensors and no encoder tensors left without
 weights; a test batch gives embeddings of shape (2, 512). torch 2.14.1.
 
-**Result:** embeddings not run yet.
+**Result (2026-10-20):** 3,503 tiles embedded (1,692 fixed, 1,811 advected) in
+101 s on one A100. Checks on the returned bundle:
 
-## 8. Planned next
+- All values finite; no constant dimensions; one row per tile, in order.
+- 227 tiles have an identical embedding to another tile because the tiles are
+  identical: mostly the fixed and advected positions of a site snapping to the
+  same nearest clear window in the same scene (95 cases), or two neighbouring
+  sites doing so (70 fixed, 43 advected). Expected under the 20 km rule.
+- Embeddings are strongly aligned: cosine similarity between random tiles has a
+  median of 0.78, and the first three principal components hold 84% of the
+  variance. Fixed and advected tiles from the same site and scene have a median
+  cosine similarity of 0.999.
+
+## 8. First check: do the features carry signal?
+
+`scripts/compare_feature_sets.py`, 2026-10-20. Targets: in-situ temperature,
+phosphate and nitrate + nitrite from the sample metadata (NMF and KEGG not yet
+available). 610 samples with both a fixed and an advected tile; one row per
+sample, using each position's best tile. CatBoost (600 trees, depth 6, learning
+rate 0.05). R2 against the training-fold mean.
+
+Spatial-block cross-validation (5 folds; blocks = section x 5-degree latitude band):
+
+| Target | Samples | Fixed | Advected | Metadata (lat, lon, day of year) |
+|---|---:|---:|---:|---:|
+| Temperature | 587 | 0.77 +/- 0.08 | 0.77 +/- 0.07 | 0.93 +/- 0.02 |
+| Phosphate | 302 | 0.68 +/- 0.12 | 0.65 +/- 0.14 | 0.92 +/- 0.06 |
+| Nitrate + nitrite | 180 | 0.71 +/- 0.26 | 0.73 +/- 0.20 | 0.92 +/- 0.05 |
+
+Holding out one cruise at a time (temperature, 5 folds):
+
+| Held out | Fixed | Advected | Metadata |
+|---|---:|---:|---:|
+| AMT28 | 0.71 | 0.71 | 0.67 |
+| C13.5/A13.5 | 0.65 | 0.68 | 0.51 |
+| I07N | 0.69 | 0.65 | 0.84 |
+| I09N | 0.82 | 0.82 | 0.81 |
+| P18 | 0.72 | 0.68 | 0.79 |
+| **Mean** | **0.72 +/- 0.06** | **0.71 +/- 0.06** | **0.73 +/- 0.12** |
+
+Reading:
+
+- The pipeline works end to end: Granite embeddings of the tiles explain about
+  three quarters of the variance in in-situ temperature, and two thirds or more
+  for the nutrients, on samples from parts of the ocean the model was not
+  trained on.
+- Fixed and advected are indistinguishable on these targets; the differences
+  are well inside the fold-to-fold spread. Expected: the water moved about one
+  tile width, the two tiles are often the same window, and the embeddings of the
+  two positions are nearly identical (cosine 0.999).
+- Position and season alone predict these targets very well when neighbouring
+  stretches of the same transect are in the training data (0.92 to 0.93),
+  because temperature and nutrients vary smoothly along a transect. When a whole
+  cruise is held out, metadata drops to the level of the embeddings and becomes
+  less stable from cruise to cruise, while the embeddings hold up. Held-out
+  cruises are the fairer test for transfer to new regions.
+- Still to add: the raw-channel baseline (`raw_fixed`, `raw_advected`), which
+  says whether Granite adds anything over the tile's own band averages.
+- These are physical targets with a direct satellite signature (temperature has
+  its own SST channel). Microbial community targets are the real test.
+
+## 9. Planned next
 
 - **Fixed vs advected.** Compare models trained on the two sets of embeddings,
   using the same overpass for both (`same_scene_as_best_fixed`).

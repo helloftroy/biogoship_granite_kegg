@@ -102,7 +102,7 @@ def main() -> None:
                 test = folds == fold
                 model = CatBoostRegressor(
                     iterations=args.iterations, depth=6, learning_rate=0.05, loss_function="RMSE",
-                    random_seed=args.seed, verbose=False, thread_count=args.threads,
+                    random_seed=args.seed, verbose=False, thread_count=args.threads, allow_writing_files=False,
                 )  # fmt: skip
                 model.fit(X[~test], y.to_numpy()[~test])
                 pred = model.predict(X[test])

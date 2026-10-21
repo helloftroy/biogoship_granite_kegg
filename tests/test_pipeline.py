@@ -404,19 +404,23 @@ class FillMissingSstTests(unittest.TestCase):
             night = {**day, "product_id": "sst-night", "product_name": "S3B_SL_2_WST_night",
                      "start_utc": "2020-03-29T00:10:00Z", "end_utc": "2020-03-29T01:50:00Z"}  # fmt: skip
             real_search = fill_missing_sst.cdse.search_products
-            fill_missing_sst.cdse.search_products = lambda *a, **k: [night, day]
+            calls = []
+            fill_missing_sst.cdse.search_products = lambda *a, **k: calls.append(1) or [night, day]
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
                     LocalArchiveRunTests.run_script(self, download_tiles, argv_tiles)
                     tile_path = data / "tiles" / "2020" / "03" / "tile_S3B_20200329T114129_s_fixed.npz"
                     with np.load(tile_path) as tile:
                         self.assertFalse(np.isfinite(tile["data"][-1]).any())  # no paired SST product
-                    LocalArchiveRunTests.run_script(self, fill_missing_sst, ["--data-dir", str(data), "--products-dir", str(data / "products")])
-                    LocalArchiveRunTests.run_script(self, fill_missing_sst, ["--data-dir", str(data), "--products-dir", str(data / "products")])
+                    fill_args = ["--data-dir", str(data), "--products-dir", str(data / "products"), "--search-pause", "0"]
+                    LocalArchiveRunTests.run_script(self, fill_missing_sst, [*fill_args, "--dry-run"])
+                    LocalArchiveRunTests.run_script(self, fill_missing_sst, fill_args)
+                    LocalArchiveRunTests.run_script(self, fill_missing_sst, fill_args)
             finally:
                 fill_missing_sst.cdse.search_products = real_search
             log = read_csv(data / "sst_fill_log.csv")
-            self.assertEqual([r["status"] for r in log], ["filled"])  # the second run had nothing left to do
+            self.assertEqual([r["status"] for r in log], ["filled"])  # the last run had nothing left to do
+            self.assertEqual(len(calls), 1)  # the dry run's search was reused, not repeated
             self.assertEqual((log[0]["sst_product"], log[0]["night"]), (sst_name, "0"))
             with np.load(tile_path) as tile:
                 expected = (290.0 + (LAT0 - 60 * STEP) - tiles.SST_MEAN_K) / tiles.SST_STD_K

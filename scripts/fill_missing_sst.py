@@ -33,6 +33,8 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import threading
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
@@ -65,15 +67,37 @@ def main() -> None:
     if not todo:
         return
 
-    def search(tile: dict) -> list[dict]:
+    # Catalogue searches are saved, so a re-run (or the real run after a dry run) does not
+    # repeat them: hundreds of searches in a row trip the catalogue's rate limit (HTTP 429).
+    cache_path = args.data_dir / "sst_fill_candidates.csv"
+    cached = load_candidate_cache(cache_path, args.max_hours)
+    lock = threading.Lock()
+
+    def search(tile: dict) -> list[dict] | None:
+        if tile["tile_path"] in cached:
+            return cached[tile["tile_path"]]
         window = timedelta(hours=args.max_hours)
-        found = cdse.search_products(cdse.SLSTR_WST, tile["time"] - window, tile["time"] + window,
-                                     point=(tile["lon"], tile["lat"]))  # fmt: skip
-        return rank_candidates(tile, found)
+        try:
+            found = cdse.search_products(cdse.SLSTR_WST, tile["time"] - window, tile["time"] + window,
+                                         point=(tile["lon"], tile["lat"]), retries=args.search_retries)  # fmt: skip
+        except Exception as exc:  # noqa: BLE001 - leave this tile for the next run
+            print(f"  search failed for {Path(tile['tile_path']).name}: {exc}", flush=True)
+            return None
+        finally:
+            time.sleep(args.search_pause)
+        ranked = rank_candidates(tile, found)
+        with lock:
+            save_candidates(cache_path, tile["tile_path"], args.max_hours, ranked)
+        return ranked
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         for tile, candidates in zip(todo, pool.map(search, todo)):
             tile["candidates"] = candidates
+    unsearched = [tile for tile in todo if tile["candidates"] is None]
+    todo = [tile for tile in todo if tile["candidates"] is not None]
+    if unsearched:
+        print(f"Catalogue search failed for {len(unsearched):,} tiles (rate limit or network); re-run later to retry them. "
+              f"Searches done so far are saved in {cache_path.name}.")  # fmt: skip
     unique = {c["product_id"]: c for tile in todo for c in tile["candidates"][: args.max_tries]}
     local = {pid for pid, c in unique.items() if local_archive(args, c["product_name"]) is not None}
     no_candidate = sum(1 for tile in todo if not tile["candidates"])
@@ -120,6 +144,33 @@ def tiles_without_sst(args: argparse.Namespace, done: set[str]) -> list[dict]:
                 "lat": float(tile["lat_center"]), "lon": float(tile["lon_center"]),
             })  # fmt: skip
     return out
+
+
+CANDIDATE_FIELDS = ["tile_path", "max_hours", "product_id", "product_name", "satellite", "start_utc", "end_utc",
+                    "size_bytes", "gap_hours", "night"]  # fmt: skip
+
+
+def load_candidate_cache(path: Path, max_hours: float) -> dict[str, list[dict]]:
+    """tile_path -> ranked candidates from earlier searches with the same time window.
+
+    A tile searched with no result is stored as a row with an empty product_id.
+    """
+    cache: dict[str, list[dict]] = {}
+    if not path.exists():
+        return cache
+    for row in read_csv(path):
+        if float(row["max_hours"]) != max_hours:
+            continue
+        found = cache.setdefault(row["tile_path"], [])
+        if row["product_id"]:
+            found.append({**row, "gap_hours": float(row["gap_hours"]), "night": row["night"] == "1"})
+    return cache
+
+
+def save_candidates(path: Path, tile_path: str, max_hours: float, ranked: list[dict]) -> None:
+    rows = [{**c, "tile_path": tile_path, "max_hours": max_hours, "gap_hours": f"{c['gap_hours']:.3f}",
+             "night": int(c["night"])} for c in ranked]  # fmt: skip
+    append_csv(path, rows or [{"tile_path": tile_path, "max_hours": max_hours}], CANDIDATE_FIELDS)
 
 
 def rank_candidates(tile: dict, products: list[dict]) -> list[dict]:
@@ -262,7 +313,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-hours", type=float, default=48.0, help="Largest time gap to the OLCI scene. Default 48 h.")
     parser.add_argument("--max-tries", type=int, default=4, help="SST overpasses to try per tile before giving up.")
     parser.add_argument("--sst-cache", type=int, default=6, help="Downloaded SST files kept for reuse.")
-    parser.add_argument("--workers", type=int, default=4, help="Parallel catalogue searches.")
+    parser.add_argument("--workers", type=int, default=2, help="Parallel catalogue searches.")
+    parser.add_argument("--search-pause", type=float, default=1.0, help="Seconds each worker waits between searches.")
+    parser.add_argument("--search-retries", type=int, default=10, help="Retries per search on rate limits (back-off up to 15 min).")
     parser.add_argument("--dry-run", action="store_true", help="Search and report; change nothing.")
     parser.add_argument("--keep-work", action="store_true", help="Keep extracted and downloaded files.")
     return parser.parse_args()

@@ -200,7 +200,7 @@ def reconstruction(mae, variants: dict, scored: torch.Tensor, args: argparse.Nam
     reference = variants["as_embedded"].unsqueeze(2)  # what the clear pixels truly are
     weight = scored.unsqueeze(2).float()
     for name, inputs in variants.items():
-        squared, constant, local, count = 0.0, 0.0, 0.0, 0.0
+        squared, constant, local, count, spread_in, spread_out, n_spread = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0
         per_channel_sq, per_channel_n, per_channel_bias = torch.zeros(17), torch.zeros(17), torch.zeros(17)
         for repeat in range(args.repeats):
             torch.manual_seed(args.seed + repeat)  # same hidden patches for every variant
@@ -219,11 +219,18 @@ def reconstruction(mae, variants: dict, scored: torch.Tensor, args: argparse.Nam
             per_channel_sq += error.sum(dim=(0, 2, 3, 4))
             per_channel_bias += ((image - reference) * w).sum(dim=(0, 2, 3, 4))
             per_channel_n += w.sum(dim=(0, 2, 3, 4))
+            # Spread across the 17 channels at each hidden clear pixel: does the decoder reproduce spectral shape?
+            pixels = (w[:, 0, 0] > 0)
+            spread_in += float(reference[:, :, 0].permute(0, 2, 3, 1)[pixels].std(1).sum())
+            spread_out += float(image[:, :, 0].permute(0, 2, 3, 1)[pixels].std(1).sum())
+            n_spread += int(pixels.sum())
         results[name] = {
             "description": VARIANTS[name],
             "rmse_hidden_clear_pixels": (squared / count) ** 0.5,
             "rmse_constant_guess": (constant / count) ** 0.5,
             "rmse_visible_mean_guess": (local / count) ** 0.5,
+            "channel_spread_input": spread_in / max(n_spread, 1),
+            "channel_spread_decoder_output": spread_out / max(n_spread, 1),
             "bias_per_channel": {b: float(per_channel_bias[i] / per_channel_n[i]) for i, b in enumerate(OUR_BANDS)},
             "rmse_per_channel": {b: float((per_channel_sq[i] / per_channel_n[i]) ** 0.5) for i, b in enumerate(OUR_BANDS)},
         }
@@ -279,6 +286,9 @@ def summarise(report: dict) -> None:
     for name, r in report["reconstruction"].items():
         print(f"   {name:20s} model {r['rmse_hidden_clear_pixels']:.3f} | constant guess {r['rmse_constant_guess']:.3f}"
               f" | tile's own visible-pixel mean {r['rmse_visible_mean_guess']:.3f}")  # fmt: skip
+    r = report["reconstruction"]["as_embedded"]
+    print(f"   spread across the 17 channels at a pixel: input {r['channel_spread_input']:.3f}, "
+          f"decoder output {r['channel_spread_decoder_output']:.3f}")  # fmt: skip
     bias = report["reconstruction"]["as_embedded"]["bias_per_channel"]
     print("   mean error (prediction - truth) per channel, as embedded: "
           + ", ".join(f"{name.split('_')[0]} {value:+.2f}" for name, value in bias.items()))  # fmt: skip

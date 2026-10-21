@@ -603,10 +603,61 @@ the decoder returned blue bands 1.5 s.d. too low and SST 0.75 s.d. too low: it
 pulls water like ours back toward its training average instead of copying the
 level it can see.
 
-This concerns the decoder, which is not used for embeddings. The encoder's
-embeddings still beat the raw band averages for every target (section 8). But a
-decoder that cannot reproduce open-ocean levels suggests the encoder represents
-them coarsely, which is the case for improving it below.
+This concerns the decoder, which is not used for embeddings. (An earlier version
+of this note concluded that the encoder therefore represents open-ocean water
+coarsely. The follow-up below shows that conclusion was wrong.)
+
+### Follow-up (2026-10-21): is the decoder result a preprocessing problem?
+
+A masked autoencoder that sees 25% of a tile should copy the visible level
+almost trivially, so a reconstruction error of 1.2 when tiles vary by 0.4
+internally pointed at the inputs. Checked in order (local tests with the real
+checkpoint; pseudo-tiles built from the band means of 96 real tiles, with mild
+texture added):
+
+1. **Fill values.** Flagged pixels (cloud, glint and the other flags) are not
+   filled: they keep their measured values. Only OLCI fill pixels (1.4% of
+   pixels) and missing SST (24% of SST pixels, in 71 of 300 tiles) are set to 0,
+   Granite's average. Reconstruction is scored only on clear pixels with SST.
+   Setting flagged pixels to the average as well changed the error from 1.204 to
+   1.207 and the embeddings hardly at all (median cosine 0.995). Not the cause.
+2. **Product, units, band order.** Our input is the `OaNN_reflectance` variables
+   of OLCI L2 WFR, which are water-leaving reflectance (dimensionless), the
+   product the paper names ("L2 OLCI full resolution water reflectances"), with
+   Granite's band names being these exact variable names. Granite's mean at
+   400 nm (0.0235) is plausible as water-leaving reflectance and implausibly
+   bright as remote-sensing reflectance (which is 1/pi of it, typically 0.01 to
+   0.015 even in clear water). Band order matches config.yaml exactly. Feeding
+   the pseudo-tiles as Rrs, as pi x reflectance, with SST in Celsius, with the
+   OLCI bands reversed or with SST first: none reconstructs better than our
+   convention (errors 1.0 to 24 against our 1.01).
+3. **The decoder itself.** Copying each pseudo-tile's visible pixels scores 0.05;
+   the decoder scores 1.0. It scores just as badly on random spectra of ordinary
+   size (each channel drawn from N(0, 1): 0.95), so this is not about our water
+   being unusual. It reconstructs well only when all channels share one level:
+   Granite's average everywhere 0.046, every channel at +1 0.040, but eight
+   channels at +1 and nine at -1 gives 0.94. At a hidden pixel, the spread across
+   the 17 channels is 0.97 in the input and 0.12 in the decoder output. The
+   released decoder reproduces a shared level and spatial texture but not the
+   differences between channels, whatever the input convention. Its
+   reconstruction error therefore cannot diagnose our preprocessing.
+   (Checked and ruled out: a different patch-unpacking order, and a decoder
+   trained to predict per-patch standardised pixels.)
+4. **What matters for us: does the encoder keep the absolute spectrum?** A
+   cross-validated linear readout (ridge regression, folds grouped by cruise)
+   from each tile's 512-number embedding to its own mean value per channel,
+   over all 3,503 tiles: R2 = 0.99 for Oa01-Oa04, 0.96-0.97 for Oa05-Oa06,
+   0.83-0.92 for Oa07-Oa11, 0.95 for Oa21 and 0.97 for SST. Only Oa12-Oa18, the
+   near-infrared bands where tiles hardly differ, are poorly recovered (0.07 to
+   0.53). The embeddings retain the absolute colour and temperature of the tile,
+   including for our bright-blue, warm water.
+
+Conclusion: the inputs are what Granite expects, and the embeddings carry the
+spectral levels. The poor reconstruction is a property of the released decoder,
+which only matters if the decoder is used (for example to measure
+reconstruction, or to continue pretraining). Worth raising with IBM on the model
+page. `check_granite_inputs.py` now also reports the channel spread of input and
+decoder output, to confirm item 3 on real tiles.
 
 **A finding about the model rather than the inputs.** Granite reconstructs our
 tiles only about 10% better than a constant guess. Probing the decoder with
@@ -712,9 +763,11 @@ In rough order of cost:
 3. **Continued self-supervised pretraining on open-ocean tiles.** The 527 OLCI
    scenes on disk hold many more clear tiles than the sample sites, almost all
    tropical and subtropical open ocean. Continuing Granite's masked-autoencoder
-   training on them (no labels needed) adapts it to this water. Measure it by the
-   reconstruction error against the visible-mean yardstick above, then by the
-   downstream comparison.
+   training on them (no labels needed) adapts it to this water. Because the
+   released decoder does not reconstruct spectra (follow-up above), this would
+   in effect retrain the decoder too; judge it by the downstream comparison, not
+   by reconstruction error alone. Lower priority now that the encoder is known
+   to keep the spectral levels.
 4. **Fine-tuning on the targets**, once NMF and KEGG are available: small sample
    sizes, so only with strong regularisation and cruise-held-out validation.
 

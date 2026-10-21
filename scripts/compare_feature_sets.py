@@ -12,9 +12,13 @@ Compares feature sets on the same samples, so differences come from the features
 "Best" is the clear tile closest in time to sampling. Only samples that have every
 feature set compared are used, one row per sample.
 
-Cross-validation is grouped by spatial block (section x 5-degree latitude band), so
-neighbouring underway samples never sit on both sides of a split; random splits
-would let near-duplicate neighbours inflate the scores. A mean-only baseline gives
+Cross-validation holds out one whole cruise at a time by default (--cv section):
+every sample of the test cruise is unseen, and the other cruises, including any
+that crossed the same ocean in another year, are in training. --cv block instead
+uses 5 folds of section x 5-degree latitude blocks. Either way neighbouring
+underway samples never sit on both sides of a split; random splits would let
+near-duplicate neighbours inflate the scores. For each held-out cruise the script
+prints how much of its target range the training cruises cover. A mean-only baseline gives
 R2 = 0 by construction, and a "metadata" set (latitude, longitude, day of year)
 shows how much a model gets from position and season alone.
 
@@ -27,8 +31,9 @@ Outputs in data/results/:
   feature_set_comparison_summary.csv  mean and s.d. over folds
 
 Usage:
-    python scripts/compare_feature_sets.py
-    python scripts/compare_feature_sets.py --cv section      # hold out one cruise at a time
+    python scripts/compare_feature_sets.py                   # hold out one cruise at a time
+    python scripts/compare_feature_sets.py --unique-tiles    # one row per distinct tile
+    python scripts/compare_feature_sets.py --cv block        # spatial blocks instead
     python scripts/compare_feature_sets.py --targets-csv nmf_scores.csv --targets NMF1 NMF2
 """
 
@@ -76,6 +81,9 @@ def main() -> None:
             "doy_cos": np.cos(2 * np.pi * sampled.dt.dayofyear / 365.25),
         }
     )
+    for position in ("fixed", "advected"):
+        if f"raw_{position}" in features:  # embedding and band summaries side by side
+            features[f"{position}+raw"] = features[position].join(features[f"raw_{position}"], how="inner")
     if args.feature_sets:
         features = {name: frame for name, frame in features.items() if name in args.feature_sets}
 
@@ -85,9 +93,24 @@ def main() -> None:
     has_sst = best_tile.set_index("sample_id")["sst_valid_fraction"].reindex(samples.index) > 0
 
     targets = load_targets(args, samples)
+    if args.unique_tiles:
+        # Identical content, not identical file: neighbouring sites that snapped to the same clear window
+        # have separate tile files holding the same pixels.
+        fixed_rows = best[best["position"] == "fixed"].drop_duplicates("sample_id").set_index("sample_id")["embedding_row"]
+        content = pd.Series([v.tobytes() for v in embeddings[fixed_rows.to_numpy()].round(5)], index=fixed_rows.index)
+        tile_key = content.map({key: i for i, key in enumerate(content.unique())}).rename("tile_key")
+        targets = targets.join(tile_key).groupby("tile_key").transform("mean").reindex(targets.index)
     # A sample counts if it has a row in every feature set. Missing values inside a row
     # (e.g. a tile with no SST) are left to CatBoost, which handles them natively.
     common = sorted(set.intersection(*(set(frame.index[frame.notna().any(axis=1)]) for frame in features.values())))
+    groups = None
+    if args.unique_tiles:
+        # Samples whose best fixed tile is the same window (replicates, or neighbours snapped to one clear
+        # window) become one row: features of that tile, targets averaged over its samples.
+        groups = tile_key.reindex(common)
+        representative = groups.reset_index().drop_duplicates("tile_key")["sample_id"]
+        print(f"Unique-tile mode: {len(common):,} samples -> {groups.nunique():,} distinct fixed tiles (by content)")
+        common = sorted(representative.to_numpy())
     print(f"Samples with every feature set ({', '.join(features)}): {len(common):,}")
 
     if args.cv == "section":  # each cruise held out in turn: can the model transfer to another ocean basin?
@@ -101,6 +124,8 @@ def main() -> None:
             print(f"{target}: only {len(y)} samples with a value; skipped")
             continue
         n_folds = blocks.loc[y.index].nunique() if args.cv == "section" else args.folds
+        if args.cv == "section":
+            report_coverage(samples, blocks.loc[y.index], y)
         folds = assign_folds(blocks.loc[y.index], n_folds, args.seed, flag=~has_sst.loc[y.index])
         no_sst_share = [float((~has_sst.loc[y.index]).to_numpy()[folds == k].mean()) for k in range(n_folds)]
         print(f"\n{target}: {len(y):,} samples, {blocks.loc[y.index].nunique()} groups, {n_folds} folds ({args.cv} CV); "
@@ -135,14 +160,32 @@ def main() -> None:
 
     out = pd.DataFrame(results)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    suffix = "" if args.cv == "block" else f"_{args.cv}"
+    suffix = ("" if args.cv == "block" else f"_{args.cv}") + ("_unique_tiles" if args.unique_tiles else "")
     out.to_csv(args.out_dir / f"feature_set_comparison{suffix}.csv", index=False)
     pd.concat(predictions).to_csv(args.out_dir / f"feature_set_predictions{suffix}.csv", index=False)
     summary = out.groupby(["target", "feature_set"]).agg(
         r2_mean=("r2", "mean"), r2_sd=("r2", "std"), rmse_mean=("rmse", "mean"), n_samples=("n_test", "sum")
     )
     summary.round(4).to_csv(args.out_dir / f"feature_set_comparison{suffix}_summary.csv")
+    table = summary.apply(lambda r: f"{r['r2_mean']:.2f} +/- {r['r2_sd']:.2f}", axis=1).unstack("feature_set")
+    table = table[[c for c in features if c in table.columns]]
+    (args.out_dir / f"feature_set_comparison{suffix}_table.md").write_text(
+        "| Target | " + " | ".join(table.columns) + " |\n|---|" + "---:|" * len(table.columns) + "\n"
+        + "".join(f"| {target} | " + " | ".join(row) + " |\n" for target, row in table.iterrows())
+    )
+    per_cruise = out.pivot_table(index=["target", "held_out"], columns="feature_set", values="r2")
+    if args.cv == "section":
+        per_cruise[[c for c in features if c in per_cruise.columns]].round(3).to_csv(args.out_dir / f"feature_set_comparison{suffix}_per_cruise.csv")
     print(f"\nWrote {args.out_dir / f'feature_set_comparison{suffix}_summary.csv'}")
+
+
+def report_coverage(samples: pd.DataFrame, cruise: pd.Series, y: pd.Series) -> None:
+    """For each held-out cruise: how much of its target range the other cruises cover in training."""
+    for held in sorted(cruise.unique()):
+        test, train = y[cruise == held], y[cruise != held]
+        inside = ((test >= train.min()) & (test <= train.max())).mean()
+        print(f"    held out {held:12s} n={len(test):4d} | target {test.min():8.3g} to {test.max():8.3g}; "
+              f"training range {train.min():8.3g} to {train.max():8.3g}; {inside:.0%} of test inside it")
 
 
 def load_targets(args: argparse.Namespace, samples: pd.DataFrame) -> pd.DataFrame:
@@ -193,10 +236,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cv",
         choices=["block", "section"],
-        default="block",
+        default="section",
         help="block: 5 folds of section x 5-degree latitude blocks. section: hold out one cruise at a time.",
     )
     parser.add_argument("--folds", type=int, default=5, help="Folds for block CV.")
+    parser.add_argument(
+        "--unique-tiles",
+        action="store_true",
+        help="One row per distinct best fixed tile, by content (targets averaged over the samples sharing it).",
+    )
     parser.add_argument("--iterations", type=int, default=600)
     parser.add_argument("--threads", type=int, default=-1)
     parser.add_argument("--seed", type=int, default=7)

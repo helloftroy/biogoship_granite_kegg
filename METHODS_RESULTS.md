@@ -851,6 +851,93 @@ In rough order of cost:
 4. **Fine-tuning on the targets**, once NMF and KEGG are available: small sample
    sizes, so only with strong regularisation and cruise-held-out validation.
 
+### Standard comparison: whole cruise held out (2026-10-21)
+
+From now on, comparisons hold out one whole cruise at a time (`compare_feature_sets.py`
+default): the model is trained on the other cruises and tested on every sample
+of the held-out one. Scores below are R2, mean +/- s.d. over held-out cruises.
+610 samples with both a fixed and an advected tile (582 sites). Before SST
+filling.
+
+**Targets available.** The public sample metadata holds three measured
+environmental variables: in-situ temperature, phosphate and nitrate + nitrite.
+Everything else in it describes sampling (position, time, depth, underway or CTD).
+C13.5/A13.5 has temperature only, and I07N has nitrate + nitrite for only 67 of
+261 samples, so the nutrient comparisons run over 4 cruises. More variables
+(salinity, oxygen, silicate, chlorophyll) exist in the GO-SHIP bottle data for
+the 273 CTD samples and possibly in ships' underway records, but are not
+assembled here.
+
+**Feature sets.** `fixed`, `advected`: Granite embedding of the best tile (512
+numbers). `raw_fixed`, `raw_advected`: mean and s.d. of the 17 tile channels (34
+numbers). `fixed+raw`, `advected+raw`: both together. `metadata`: latitude,
+longitude and day of year (position and season).
+
+| Target | Cruises | Fixed | Raw fixed | Advected | Raw advected | Fixed + raw | Advected + raw | Position + season |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Temperature | 5 | 0.72 +/- 0.06 | 0.61 +/- 0.20 | 0.71 +/- 0.07 | 0.63 +/- 0.15 | 0.70 +/- 0.04 | 0.71 +/- 0.06 | 0.73 +/- 0.14 |
+| Phosphate | 4 | 0.40 +/- 0.28 | -0.04 +/- 0.95 | 0.34 +/- 0.46 | -0.08 +/- 0.87 | 0.46 +/- 0.23 | 0.41 +/- 0.40 | 0.51 +/- 0.47 |
+| Nitrate + nitrite | 4 | 0.52 +/- 0.40 | -0.25 +/- 1.13 | 0.47 +/- 0.50 | -0.30 +/- 1.17 | 0.46 +/- 0.42 | 0.48 +/- 0.52 | 0.83 +/- 0.18 |
+
+Per held-out cruise (R2):
+
+| Target | Held out | Fixed | Raw fixed | Advected | Raw advected | Fixed + raw | Advected + raw | Position + season |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Temperature | AMT28 | 0.71 | 0.74 | 0.71 | 0.69 | 0.68 | 0.69 | 0.67 |
+| Temperature | C13.5/A13.5 | 0.65 | 0.70 | 0.68 | 0.66 | 0.69 | 0.70 | 0.51 |
+| Temperature | I07N | 0.69 | 0.35 | 0.65 | 0.53 | 0.65 | 0.68 | 0.84 |
+| Temperature | I09N | 0.82 | 0.81 | 0.82 | 0.82 | 0.76 | 0.82 | 0.81 |
+| Temperature | P18 | 0.72 | 0.44 | 0.68 | 0.43 | 0.70 | 0.66 | 0.79 |
+| Phosphate | AMT28 | 0.05 | -1.40 | -0.29 | -1.33 | 0.18 | -0.11 | -0.19 |
+| Phosphate | I07N | 0.72 | 0.43 | 0.75 | 0.27 | 0.68 | 0.80 | 0.73 |
+| Phosphate | I09N | 0.45 | 0.77 | 0.60 | 0.68 | 0.62 | 0.64 | 0.79 |
+| Phosphate | P18 | 0.38 | 0.04 | 0.29 | 0.07 | 0.37 | 0.30 | 0.70 |
+| Nitrate + nitrite | AMT28 | 0.06 | -1.77 | -0.13 | -1.84 | -0.02 | -0.12 | 0.79 |
+| Nitrate + nitrite | I07N | 0.73 | -0.25 | 0.78 | -0.40 | 0.59 | 0.86 | 0.95 |
+| Nitrate + nitrite | I09N | 0.96 | 0.95 | 0.99 | 0.95 | 0.97 | 0.97 | 0.98 |
+| Nitrate + nitrite | P18 | 0.33 | 0.07 | 0.26 | 0.08 | 0.30 | 0.21 | 0.59 |
+
+Files: `data/results/feature_set_comparison_section_table.md`,
+`..._section_per_cruise.csv`, `..._section.csv` (per fold), and
+`feature_set_predictions_section.csv` (per sample).
+
+Reading:
+
+- Temperature: the embeddings (0.71-0.72) match position and season (0.73) and
+  vary less from cruise to cruise (s.d. 0.06 against 0.14). The raw band averages
+  are clearly weaker and unstable (I07N 0.35, P18 0.44).
+- Nutrients: position and season are best, especially for nitrate + nitrite
+  (0.83). The embeddings explain about half the variance; the raw band averages
+  fail outright on held-out cruises (negative R2).
+- Adding the raw band averages to an embedding changes little.
+- Fixed and advected remain indistinguishable.
+- Some held-out cruises lie partly outside everything seen in training, which no
+  model can extrapolate to: P18 is the only cruise to reach Antarctic water, so
+  38% of its phosphate values (up to 1.76 umol/kg) and 20% of its temperatures
+  (down to -0.1 C) are beyond the training range; 35% of I09N temperatures (up to
+  32 C) are above it. These cruises' scores are a test of extrapolation as much
+  as of the features.
+
+**Do similar cruises sit on opposite sides of the split?**
+
+| Cruise | Ocean | Latitude | Sampled | Blue/green ratio (median) | Temperature (median) | Samples |
+|---|---|---|---|---:|---:|---:|
+| C13.5/A13.5 | Atlantic | 41 S to 36 N | Mar-Apr 2020 | 8.2 | 25.7 C | 251 |
+| AMT28 | Atlantic | 46 S to 50 N | Sep-Oct 2018 | 5.8 | 24.0 C | 46 |
+| I07N | Indian | 30 S to 18 N | Apr-Jun 2018 | 6.0 | 28.1 C | 194 |
+| I09N | Indian | 8 N to 18 N | Apr 2016 | 6.0 | 30.9 C | 56 |
+| P18 | Pacific | 70 S to 33 N | Nov 2016-Jan 2017 | 5.1 | 23.8 C | 67 |
+
+With one cruise held out at a time, every other cruise is in training, so each
+pair of cruises from the same ocean is split between test and training in turn:
+I07N and I09N (Indian Ocean, both April, two years apart), and AMT28 and C13.5
+(Atlantic). P18 is the only Pacific cruise, so when it is held out nothing from
+its ocean is in training. And C13.5/A13.5 is much bluer (clearer) than any other
+cruise, so when it is held out the model is trained only on greener cruises and
+tested on the blue one: the situation to avoid, and unavoidable with five
+cruises. Its temperature range is fully covered in training, and its
+temperature scores (0.65-0.70) are in line with the others.
+
 ## 9. Planned next
 
 - **Fixed vs advected.** Compare models trained on the two sets of embeddings,

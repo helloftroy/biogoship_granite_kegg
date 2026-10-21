@@ -938,6 +938,25 @@ tested on the blue one: the situation to avoid, and unavoidable with five
 cruises. Its temperature range is fully covered in training, and its
 temperature scores (0.65-0.70) are in line with the others.
 
+**Duplicate embeddings.** Of the 610 samples, 119 share an identical fixed
+embedding with another sample (replicate samples at one site, or neighbouring
+sites whose nearest clear window is the same), leaving 550 distinct tiles.
+Duplicates never cross between training and test (they are always within one
+cruise), but they over-weight some tiles. With `--unique-tiles` each group of
+identical tiles becomes one row, its targets averaged:
+
+| Target | Fixed | Raw fixed | Advected | Raw advected | Fixed + raw | Advected + raw | Position + season |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Temperature (535 rows) | 0.71 +/- 0.06 | 0.60 +/- 0.20 | 0.71 +/- 0.08 | 0.61 +/- 0.17 | 0.70 +/- 0.03 | 0.72 +/- 0.09 | 0.69 +/- 0.17 |
+| Phosphate (274) | 0.46 +/- 0.28 | -0.02 +/- 0.88 | 0.35 +/- 0.40 | 0.03 +/- 0.74 | 0.51 +/- 0.24 | 0.40 +/- 0.46 | 0.48 +/- 0.44 |
+| Nitrate + nitrite (177) | 0.51 +/- 0.44 | -0.31 +/- 1.16 | 0.47 +/- 0.53 | -0.22 +/- 1.15 | 0.49 +/- 0.43 | 0.49 +/- 0.53 | 0.80 +/- 0.20 |
+
+Removing duplicates changes the scores by a few hundredths at most, within the
+cruise-to-cruise spread: phosphate from embeddings rises slightly (fixed 0.40 to
+0.46), position + season falls slightly (it benefited from repeated samples at
+the same place). Not a material effect; unique tiles are the cleaner unit and
+can be used by default for reporting.
+
 ## 9. Planned next
 
 - **Fixed vs advected.** Compare models trained on the two sets of embeddings,

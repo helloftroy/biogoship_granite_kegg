@@ -10,6 +10,7 @@ This file is the how-to: what each step does and how to run it. The reasoning
 behind the choices, and the results so far, are in
 [METHODS_RESULTS.md](METHODS_RESULTS.md). Notes specific to the morrill cluster
 (access, partitions, environments, job order and status) are in [CLUSTER.md](CLUSTER.md).
+Figures, and the code that makes each one, are listed in [figures.md](figures.md).
 
 The `sbatch` commands below use this project's allocation, `191001-364393`;
 substitute your own.

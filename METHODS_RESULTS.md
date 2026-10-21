@@ -744,6 +744,70 @@ without SST keep a gap that CatBoost handles. R2:
   clear fraction and flag fractions would test this.
 - Fixed and advected remain indistinguishable on these targets.
 
+### Missing SST (2026-10-21)
+
+**Where it is missing.** SST is all or nothing per tile: 861 of 3,503 tiles (25%)
+have no SST at all, the rest have it everywhere. (The nearest-neighbour
+resampling fills every pixel from the nearest acceptable SLSTR pixel within the
+search window, so a tile is empty only if the window holds no acceptable SST.)
+The gaps are concentrated:
+
+| Section | Tiles | Without SST |
+|---|---:|---:|
+| I07N | 1,086 | 493 (45%) |
+| C13.5/A13.5 | 1,549 | 252 (16%) |
+| AMT28 | 372 | 74 (20%) |
+| P18 | 280 | 26 (9%) |
+| I09N | 216 | 16 (7%) |
+
+The main cause is the SST pairing. Where a scene's own satellite had no SST
+product (Sentinel-3B in spring 2018, during I07N, and in autumn 2018, during
+AMT28), the other satellite's orbit file was used; its swath and timing differ,
+and 52% of those tiles end up without SST, against 20% with a same-satellite
+pair. I07N Sentinel-3B scenes: 75% without SST. Fixed and advected tiles are
+affected equally (24% and 25%).
+
+**The embeddings record it strongly.** A linear classifier tells no-SST tiles
+from the rest by their embedding with AUC 0.99 (cruises held out). Along that
+direction, no-SST tiles sit 1.9 s.d. from the others (3.6 s.d. within I07N
+alone). The rest of the content survives: blue and green bands are recovered from
+the embedding equally well with or without SST (R2 0.99 and 0.96-0.97 in both).
+So "SST missing" is a large, easily detected signal in the embeddings, and it is
+regional, which makes it a possible confound for any target that differs by
+region.
+
+**Effect on predictions** (CatBoost, spatial-block CV, folds now balanced so each
+test fold holds 23-25% of samples without SST for temperature, 22-38% for
+phosphate, the closest whole blocks allow; `compare_feature_sets.py`):
+
+| Target | Features | RMSE with SST | RMSE without SST |
+|---|---|---:|---:|
+| Temperature | Fixed embedding | 1.8 C | 3.7 C |
+| Temperature | Advected embedding | 2.1 C | 3.5 C |
+| Temperature | Metadata | 1.7 C | 1.3 C |
+| Phosphate | Fixed embedding | 0.17 | 0.19 umol/kg |
+
+Missing SST roughly doubles the temperature error from embeddings; phosphate is
+much less affected. Holding out whole cruises cannot be balanced (I07N carries
+57% of the no-SST tiles).
+
+**Filling.** Missing SST is currently set to Granite's average, 20.8 C, while our
+tiles with SST have a median of 25.6 C (23 to 31 C by cruise). For a whole tile
+this is not a small gap to patch: it replaces the tile's temperature with a value
+that is wrong by about 5 C on average, and it is the same value everywhere, which
+is how the embedding recognises it. Options, in order of preference:
+
+1. Fill from a gap-free SST analysis at the scene's date and the tile's position,
+   e.g. the Copernicus Marine OSTIA L4 product (0.05 degree, daily; the same
+   account as the currents). It blends SLSTR with other sensors, so it is close to
+   what Granite was trained on, and differs from the tile's true SST by a fraction
+   of a degree in clear-sky conditions.
+2. Fill from the nearest tile of the same cruise and day that has SST.
+3. Keep the current fill but give downstream models an explicit SST-missing
+   indicator, so the confound is visible rather than hidden.
+
+In-situ temperature must not be used for filling: it is a target.
+
 ### Ways to improve Granite for this data
 
 In rough order of cost:

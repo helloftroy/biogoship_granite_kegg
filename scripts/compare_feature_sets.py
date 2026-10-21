@@ -79,6 +79,11 @@ def main() -> None:
     if args.feature_sets:
         features = {name: frame for name, frame in features.items() if name in args.feature_sets}
 
+    # SST availability of the tile behind each sample (best fixed tile; advected if there is no fixed one).
+    # A quarter of tiles have no SST at all, concentrated in I07N, so folds are balanced on it.
+    best_tile = best.sort_values("position", key=lambda p: p.map({"fixed": 0, "advected": 1})).drop_duplicates("sample_id")
+    has_sst = best_tile.set_index("sample_id")["sst_valid_fraction"].reindex(samples.index) > 0
+
     targets = load_targets(args, samples)
     # A sample counts if it has a row in every feature set. Missing values inside a row
     # (e.g. a tile with no SST) are left to CatBoost, which handles them natively.
@@ -89,15 +94,17 @@ def main() -> None:
         blocks = samples.loc[common, "section"].astype(str)
     else:
         blocks = samples.loc[common, "section"].astype(str) + "_" + (samples.loc[common, "sample_lat"] // 5).astype(int).astype(str)
-    results = []
+    results, predictions = [], []
     for target in targets.columns:
         y = targets.loc[common, target].dropna()
         if len(y) < 50:
             print(f"{target}: only {len(y)} samples with a value; skipped")
             continue
         n_folds = blocks.loc[y.index].nunique() if args.cv == "section" else args.folds
-        folds = assign_folds(blocks.loc[y.index], n_folds, args.seed)
-        print(f"\n{target}: {len(y):,} samples, {blocks.loc[y.index].nunique()} groups, {n_folds} folds ({args.cv} CV)")
+        folds = assign_folds(blocks.loc[y.index], n_folds, args.seed, flag=~has_sst.loc[y.index])
+        no_sst_share = [float((~has_sst.loc[y.index]).to_numpy()[folds == k].mean()) for k in range(n_folds)]
+        print(f"\n{target}: {len(y):,} samples, {blocks.loc[y.index].nunique()} groups, {n_folds} folds ({args.cv} CV); "
+              f"share without SST per test fold: {', '.join(f'{v:.0%}' for v in no_sst_share)}")  # fmt: skip
         for name, frame in features.items():
             X = frame.loc[y.index].to_numpy(dtype=float)
             for fold in range(n_folds):
@@ -109,6 +116,10 @@ def main() -> None:
                 model.fit(X[~test], y.to_numpy()[~test])
                 pred = model.predict(X[test])
                 truth = y.to_numpy()[test]
+                predictions.append(pd.DataFrame({
+                    "sample_id": y.index[test], "target": target, "feature_set": name, "cv": args.cv, "fold": fold,
+                    "observed": truth, "predicted": pred, "has_sst": has_sst.loc[y.index].to_numpy()[test],
+                }))  # fmt: skip
                 ss_res = float(((truth - pred) ** 2).sum())
                 ss_tot = float(((truth - y.to_numpy()[~test].mean()) ** 2).sum())  # baseline: training-fold mean
                 results.append(
@@ -117,12 +128,16 @@ def main() -> None:
                      "r2": 1 - ss_res / ss_tot, "rmse": float(np.sqrt(ss_res / test.sum()))}
                 )  # fmt: skip
             scores = [r["r2"] for r in results if r["target"] == target and r["feature_set"] == name]
-            print(f"  {name:13s} R2 {np.mean(scores):6.3f} +/- {np.std(scores):.3f}", flush=True)
+            pooled = pd.concat([p for p in predictions if p["target"].iat[0] == target and p["feature_set"].iat[0] == name])
+            by_sst = {flag: pooled_r2(pooled[pooled["has_sst"] == flag]) for flag in (True, False)}
+            print(f"  {name:13s} R2 {np.mean(scores):6.3f} +/- {np.std(scores):.3f} | pooled R2, samples with SST "
+                  f"{by_sst[True]:6.3f}, without {by_sst[False]:6.3f}", flush=True)  # fmt: skip
 
     out = pd.DataFrame(results)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     suffix = "" if args.cv == "block" else f"_{args.cv}"
     out.to_csv(args.out_dir / f"feature_set_comparison{suffix}.csv", index=False)
+    pd.concat(predictions).to_csv(args.out_dir / f"feature_set_predictions{suffix}.csv", index=False)
     summary = out.groupby(["target", "feature_set"]).agg(
         r2_mean=("r2", "mean"), r2_sd=("r2", "std"), rmse_mean=("rmse", "mean"), n_samples=("n_test", "sum")
     )
@@ -139,16 +154,32 @@ def load_targets(args: argparse.Namespace, samples: pd.DataFrame) -> pd.DataFram
     return catalogue[args.targets or DEFAULT_TARGETS].reindex(samples.index)
 
 
-def assign_folds(blocks: pd.Series, n_folds: int, seed: int) -> np.ndarray:
-    """Whole spatial blocks to folds, largest first, each to the currently smallest fold."""
-    sizes = blocks.value_counts()
-    order = sizes.sample(frac=1.0, random_state=seed).sort_values(ascending=False, kind="stable")
-    fold_of, load = {}, [0] * n_folds
-    for block, size in order.items():
-        fold = int(np.argmin(load))
+def assign_folds(blocks: pd.Series, n_folds: int, seed: int, flag: pd.Series | None = None) -> np.ndarray:
+    """Whole spatial blocks to folds, largest first, keeping folds balanced in size and in flagged samples.
+
+    Each block goes to the fold where, after adding it, the larger of (share of all
+    samples, share of flagged samples) is smallest. With flag = "no SST", samples
+    lacking SST are spread across folds as evenly as whole blocks allow.
+    """
+    flag = pd.Series(False, index=blocks.index) if flag is None else flag.astype(bool)
+    table = pd.DataFrame({"n": blocks.value_counts(), "k": flag.groupby(blocks).sum()}).fillna(0)
+    table = table.sample(frac=1.0, random_state=seed).sort_values(["n", "k"], ascending=False, kind="stable")
+    total_n, total_k = max(table["n"].sum(), 1), max(table["k"].sum(), 1)
+    load_n, load_k, fold_of = np.zeros(n_folds), np.zeros(n_folds), {}
+    for block, row in table.iterrows():
+        cost = np.maximum((load_n + row["n"]) / total_n, (load_k + row["k"]) / total_k)
+        fold = int(np.argmin(cost + 1e-9 * np.arange(n_folds)))
         fold_of[block] = fold
-        load[fold] += size
+        load_n[fold] += row["n"]
+        load_k[fold] += row["k"]
     return blocks.map(fold_of).to_numpy()
+
+
+def pooled_r2(frame: pd.DataFrame) -> float:
+    if len(frame) < 5:
+        return float("nan")
+    residual = ((frame["observed"] - frame["predicted"]) ** 2).sum()
+    return float(1 - residual / ((frame["observed"] - frame["observed"].mean()) ** 2).sum())
 
 
 def parse_args() -> argparse.Namespace:

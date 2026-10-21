@@ -94,6 +94,7 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 5 | `cache_granite.sbatch` | service | installs TerraTorch, caches the Granite checkpoint, test-loads the encoder | done 2026-10-13; encoder loads cleanly |
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | done 2026-10-20: 3,503 tiles in 101 s |
 | 6b | `check_granite_inputs.sbatch` | morrill (CPU) | due diligence: tiles vs the model's config, and MAE reconstruction under different gap-filling conventions | done 2026-10-20 (job 80958): inputs match; keep current gap filling |
+| 5c | `fill_missing_sst.sbatch` | service | fills tiles without SST from the nearest-in-time SLSTR overpass of the same spot; refreshes manifest and raw features; then re-run 6 | not run |
 | 7 | (no job) `python scripts/pool_tile_features.py` | login node is fine (a minute of file reading) | raw-channel summary per tile, for the baseline; copy `data/embeddings/tile_raw_features.csv` back | done 2026-10-20 |
 
 Where things stand (2026-10-20): jobs 1 to 6 done (advected tiles for 663 of

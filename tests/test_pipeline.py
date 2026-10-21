@@ -369,5 +369,61 @@ class LocalArchiveRunTests(unittest.TestCase):
             self.assertTrue((data / "embeddings" / "granite_embeddings_bundle.zip").exists())
 
 
+class FillMissingSstTests(unittest.TestCase):
+    """A tile cut without SST gets it from another overpass of the same spot, found by (mocked) search."""
+
+    def test_fill_from_nearest_overpass(self):
+        import contextlib
+        import io
+        import zipfile
+
+        import fill_missing_sst
+        from biogoship.tables import read_csv, write_csv
+
+        sst_name = "S3A_SL_2_WST____20200329T190000_20200329T204000_20200330T090904_6059_037_137______MAR_O_NT_003.SEN3"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifests, data = root / "manifests", root / "data"
+            write_olci(root / "src" / OLCI_NAME)
+            write_sst(root / "src" / sst_name / SST_FILE)
+            for kind, name in (("olci", OLCI_NAME), ("sst", sst_name)):
+                (data / "products" / kind).mkdir(parents=True)
+                with zipfile.ZipFile(data / "products" / kind / f"{name}.zip", "w") as archive:
+                    for path in (root / "src" / name).iterdir():
+                        archive.write(path, arcname=f"{name}/{path.name}")
+            site = {"site_id": "s", "time_utc": "2020-03-29T06:00:00Z", "lat": LAT0 - 60 * STEP, "lon": LON0 + 60 * STEP, "section": "T"}
+            write_csv(manifests / "biogoship_sites.csv", [site])
+            write_csv(manifests / "products.csv", [{"product_id": "p1", "product_name": OLCI_NAME, "satellite": "S3B",
+                                                    "start_utc": "2020-03-29T11:41:29Z", "sst_product_id": "", "sst_product_name": ""}])  # fmt: skip
+            write_csv(manifests / "site_products.csv", [{"site_id": "s", "product_id": "p1", "time_gap_hours": "5.69"}])
+            argv_tiles = ["--manifest-dir", str(manifests), "--data-dir", str(data), "--products-dir", str(data / "products"),
+                          "--positions", "fixed", "--max-offset-km", "0"]  # fmt: skip
+            # A night pass 1 h away and a day pass 8 h away: the day pass must win.
+            day = {"product_id": "sst-day", "product_name": sst_name, "satellite": "S3A", "size_bytes": "1",
+                   "start_utc": "2020-03-29T19:00:00Z", "end_utc": "2020-03-29T20:40:00Z", "timeliness": "NT"}
+            night = {**day, "product_id": "sst-night", "product_name": "S3B_SL_2_WST_night",
+                     "start_utc": "2020-03-29T00:10:00Z", "end_utc": "2020-03-29T01:50:00Z"}  # fmt: skip
+            real_search = fill_missing_sst.cdse.search_products
+            fill_missing_sst.cdse.search_products = lambda *a, **k: [night, day]
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    LocalArchiveRunTests.run_script(self, download_tiles, argv_tiles)
+                    tile_path = data / "tiles" / "2020" / "03" / "tile_S3B_20200329T114129_s_fixed.npz"
+                    with np.load(tile_path) as tile:
+                        self.assertFalse(np.isfinite(tile["data"][-1]).any())  # no paired SST product
+                    LocalArchiveRunTests.run_script(self, fill_missing_sst, ["--data-dir", str(data), "--products-dir", str(data / "products")])
+                    LocalArchiveRunTests.run_script(self, fill_missing_sst, ["--data-dir", str(data), "--products-dir", str(data / "products")])
+            finally:
+                fill_missing_sst.cdse.search_products = real_search
+            log = read_csv(data / "sst_fill_log.csv")
+            self.assertEqual([r["status"] for r in log], ["filled"])  # the second run had nothing left to do
+            self.assertEqual((log[0]["sst_product"], log[0]["night"]), (sst_name, "0"))
+            with np.load(tile_path) as tile:
+                expected = (290.0 + (LAT0 - 60 * STEP) - tiles.SST_MEAN_K) / tiles.SST_STD_K
+                np.testing.assert_allclose(tile["data"][-1].mean(), expected, atol=0.01)
+                self.assertEqual(str(tile["sst_source"]), "filled")
+                np.testing.assert_allclose(tile["data"][:16], 0.0, atol=0.01)  # OLCI channels untouched
+
+
 if __name__ == "__main__":
     unittest.main()

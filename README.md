@@ -252,7 +252,22 @@ The three can be repeated with a larger `MAX_DAYS` (up to the 7-day track
 length); each round only searches the sites still missing. The fixed position is
 not affected: it keeps to overpasses within the original window.
 
-## Step 6: Granite embeddings (not run yet)
+### Filling tiles that have no SST
+
+A quarter of tiles have no SST from their paired orbit file (mostly 2018
+Sentinel-3B scenes, for which no Sentinel-3B SST exists). This fills them from
+the closest-in-time SLSTR overpass of the same spot, either satellite, daytime
+passes first:
+
+```bash
+sbatch --account=191001-364393 --export=ALL,DRY_RUN=1 cluster/fill_missing_sst.sbatch   # how many, how much to fetch
+sbatch --account=191001-364393 cluster/fill_missing_sst.sbatch                         # fill, then refresh manifest and raw features
+```
+
+Tiles are updated in place; `data/sst_fill_log.csv` records the source of each
+fill, and the manifest gains `sst_source` (`paired`, `filled` or `none`).
+
+## Step 6: Granite embeddings
 
 Runs every clear tile, at both positions and for every clear overpass, through the
 Granite Geospatial Ocean encoder and averages the output tokens: one 512-number

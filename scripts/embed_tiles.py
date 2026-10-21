@@ -47,6 +47,7 @@ TILE_COLUMNS = [
     "offset_km",
     "valid_fraction",
     "sst_valid_fraction",
+    "sst_source",
     "is_best",
     "same_scene_as_best_fixed",
     "displacement_km",

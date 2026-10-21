@@ -67,6 +67,7 @@ FIELDS = [
     "offset_km",
     "valid_fraction",
     "sst_valid_fraction",
+    "sst_source",
     "is_best",
     "same_scene_as_best_fixed",
     "displacement_km",
@@ -82,6 +83,15 @@ def main() -> None:
     if repair_tile_log(args.tile_log):
         print("Rewrote the tile log in the current column layout (rows from older versions were kept).")
     log = latest_tile_log_rows(read_tile_log(args.tile_log))
+    # SST added afterwards by fill_missing_sst.py overrides the tile log's (empty) SST fraction.
+    fill_log = args.tile_log.with_name("sst_fill_log.csv")
+    filled = {r["tile_path"]: r for r in read_csv(fill_log) if r["status"] == "filled"} if fill_log.exists() else {}
+    for row in log:
+        if row["tile_path"] in filled:
+            row["sst_valid_fraction"] = filled[row["tile_path"]]["sst_valid_fraction"]
+            row["sst_source"] = "filled"
+        else:
+            row["sst_source"] = "paired" if row.get("sst_valid_fraction") and float(row["sst_valid_fraction"]) > 0 else "none"
 
     tiles_by_site: dict[str, list[dict[str, str]]] = defaultdict(list)
     missing = 0
@@ -127,6 +137,7 @@ def main() -> None:
                     "offset_km": tile.get("offset_km") or "0.000",
                     "valid_fraction": tile["valid_fraction"],
                     "sst_valid_fraction": tile["sst_valid_fraction"],
+                    "sst_source": tile["sst_source"],
                     "is_best": tile["is_best"],
                     "same_scene_as_best_fixed": "1" if same_scene else "0",
                     "displacement_km": f"{distance_km:.3f}" if tile["position"] == "advected" else "0.000",

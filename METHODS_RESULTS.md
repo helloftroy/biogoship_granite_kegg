@@ -760,12 +760,22 @@ The gaps are concentrated:
 | P18 | 280 | 26 (9%) |
 | I09N | 216 | 16 (7%) |
 
-The main cause is the SST pairing. Where a scene's own satellite had no SST
-product (Sentinel-3B in spring 2018, during I07N, and in autumn 2018, during
-AMT28), the other satellite's orbit file was used; its swath and timing differ,
-and 52% of those tiles end up without SST, against 20% with a same-satellite
-pair. I07N Sentinel-3B scenes: 75% without SST. Fixed and advected tiles are
-affected equally (24% and 25%).
+The main cause is the SST pairing. Sentinel-3B OLCI scenes are archived from
+May 2018, but Sentinel-3B SST (SL_2_WST) only from mid-2019 (none in the
+catalogue for June 2018 to March 2019; present from June 2019). For the 2018
+Sentinel-3B scenes (I07N, AMT28) the pairing therefore fell back to the
+Sentinel-3A orbit file whose time span contained the scene. A half-orbit file
+"containing" the time does not mean Sentinel-3A was over the same spot at that
+moment, so most of these tiles got no SST: 52% of cross-satellite tiles are empty
+against 20% of same-satellite ones, and 75% of I07N Sentinel-3B tiles. The 20%
+of same-satellite tiles without SST are mostly cloud as seen by SLSTR, whose
+cloud screening differs from OLCI's. Fixed and advected tiles are affected
+equally (24% and 25%).
+
+Both satellites are used throughout: the scene search has no satellite filter,
+so it covers Sentinel-3A from its first OLCI level-2 scenes (late April 2016) and
+Sentinel-3B from May 2018 (279 and 135 scenes in the +/-3 day search). The 2016-17
+cruises (I09N, P18) could only have Sentinel-3A.
 
 **The embeddings record it strongly.** A linear classifier tells no-SST tiles
 from the rest by their embedding with AUC 0.99 (cruises held out). Along that
@@ -795,18 +805,24 @@ much less affected. Holding out whole cruises cannot be balanced (I07N carries
 tiles with SST have a median of 25.6 C (23 to 31 C by cruise). For a whole tile
 this is not a small gap to patch: it replaces the tile's temperature with a value
 that is wrong by about 5 C on average, and it is the same value everywhere, which
-is how the embedding recognises it. Options, in order of preference:
+is how the embedding recognises it.
 
-1. Fill from a gap-free SST analysis at the scene's date and the tile's position,
-   e.g. the Copernicus Marine OSTIA L4 product (0.05 degree, daily; the same
-   account as the currents). It blends SLSTR with other sensors, so it is close to
-   what Granite was trained on, and differs from the tile's true SST by a fraction
-   of a degree in clear-sky conditions.
-2. Fill from the nearest tile of the same cruise and day that has SST.
-3. Keep the current fill but give downstream models an explicit SST-missing
-   indicator, so the confound is visible rather than hidden.
+Chosen fix (2026-10-21): fill from the closest-in-time SLSTR SST over the same
+spot (`scripts/fill_missing_sst.py`). For each tile without SST, the catalogue is
+searched for SL_2_WST products of either satellite whose footprint contains the
+tile centre, within 48 h of the OLCI scene. Candidates are tried in order:
+daytime overpasses (local solar time 06-18, as for OLCI) closest in time first,
+then night-time ones, since night-time skin SST lacks the daytime warming. The
+first candidate with acceptable SST (quality level 4-5) on at least half the tile
+fills it, resampled onto the tile's own OLCI pixels exactly as paired SST is. Each
+tile records the source product, the time gap and day/night, so filled tiles can
+be compared with paired ones or excluded. This keeps the SST from the same sensor
+Granite was trained on. Alternatives kept in reserve: a gap-free SST analysis
+(Copernicus Marine OSTIA L4) for tiles no overpass can fill, and an explicit
+SST-missing indicator for downstream models. In-situ temperature must not be used
+for filling: it is a target.
 
-In-situ temperature must not be used for filling: it is a target.
+**Result:** not run yet.
 
 ### Ways to improve Granite for this data
 

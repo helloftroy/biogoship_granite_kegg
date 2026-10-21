@@ -7,6 +7,11 @@ to regenerate it. Outputs go to `figures/output/` (committed). Inputs under
 Shared conventions: Arial, no titles baked into the image (captions go in the
 text), observed values in black, model-derived values in blue (#2a78d6) and dashed.
 
+The figure scripts need numpy, pandas, matplotlib and scikit-learn. Run them with
+a Python that has these; on the project owner's laptop that is
+`/Users/hellpark/miniforge3/bin/python` (the default `python3` there lacks
+matplotlib).
+
 ## Spectral recovery from Granite embeddings
 
 ![Observed vs recovered spectra](figures/output/spectral_recovery.png)
@@ -33,7 +38,17 @@ text), observed values in black, model-derived values in blue (#2a78d6) and dash
   `spectral_recovery_tiles.csv` (the four tiles: sample, scene, date, position,
   tile path).
 
-### Companion: natural-colour images of those four tiles (to do)
+### Companion: natural-colour images of those four tiles
+
+![Natural-colour tiles](figures/output/spectral_recovery_tile_rgb.png)
+
+- **Shows:** the four 42 x 42-pixel tiles (12.6 km across) behind panels a-d, in
+  natural colour with one shared stretch, so differences in colour are real:
+  deep blue for the South Pacific gyre (a), blue-green off southern California
+  (b), lighter blue for the Bay of Bengal (c) and the Antarctic margin (d). Flagged
+  pixels are grey (a few at the left edge of d). The pixel-to-pixel speckle is
+  sensor noise at 300 m; open-ocean tiles have little real structure at this
+  scale.
 
 - **Code:** `figures/make_tile_rgb.py figures/output/spectral_recovery_tiles.csv`
 - **Inputs:** the four tile files listed in `spectral_recovery_tiles.csv`, copied

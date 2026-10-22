@@ -1019,7 +1019,9 @@ to be matched to sequencing accessions once they are.
 | I09N 2025 | 2025-03-24 to 04-23 | 99 | 114 | 3,760 | 135 | 113 | 26% |
 | A16S 2026 | | | | | | | no bottle file on CCHDO yet |
 
-917 surface casts become sites for the Sentinel-3 search (A16S excluded).
+917 surface casts become sites for the Sentinel-3 search (A16S excluded). The
+search (+/-3 days, same rules as for the main cruises) found 723 OLCI scenes and
+489 paired SST files, about 610 GB, none yet downloaded.
 Temperature, salinity and oxygen are present for every surface event. The
 nutrient gaps are bottles without nutrient samples: on P02, 81% of the 1,047
 bottles at or above 10 m have no nitrate, but most casts have at least one that

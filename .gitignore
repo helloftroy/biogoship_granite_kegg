@@ -23,3 +23,6 @@ __pycache__/
 .DS_Store
 .ipynb_checkpoints/
 catboost_info/
+
+# Embedding bundles copied back from the cluster
+*_bundle.zip

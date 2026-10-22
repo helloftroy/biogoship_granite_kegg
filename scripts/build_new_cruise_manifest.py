@@ -12,8 +12,10 @@ Sources (all public):
       cruise summary (*su.txt) for each leg. No login.
   SeaBASS, experiment BIO-GO-SHIP: biological sampling files (HPLC pigments; on
       I09N 2025 also IFCB imaging, particle backscatter and VSF). Downloads need a
-      free NASA Earthdata login (EARTHDATA_USERNAME / EARTHDATA_PASSWORD; see
-      cdse_credentials.sh.example). Without it, SeaBASS is skipped and flagged.
+      free NASA Earthdata login (EARTHDATA_USERNAME / EARTHDATA_PASSWORD, or an
+      EARTHDATA_TOKEN; see cdse_credentials.sh.example), with the "OB.DAAC Data
+      Access" application approved in the Earthdata profile. Without credentials,
+      SeaBASS is listed but not downloaded.
 
 Outputs in data/new_cruises/ (sources kept under sources/ with their identifiers):
   cchdo_bottles.csv        every bottle, selected variables, all depths
@@ -305,15 +307,44 @@ def surface_bottle_events(bottles: pd.DataFrame, max_depth: float) -> pd.DataFra
 # ----------------------------------------------------------------------------
 # SeaBASS
 # ----------------------------------------------------------------------------
+class _EarthdataRedirect(urllib.request.HTTPRedirectHandler):
+    """Send the Earthdata credentials when, and only when, a download is redirected to the login server.
+
+    The login server answers an unauthenticated request with a login web page (HTTP 200)
+    rather than an HTTP 401 challenge, so urllib's standard basic-auth handler never
+    sends the credentials. They are attached up front to requests for that one host.
+    """
+
+    def __init__(self, authorization: str) -> None:
+        super().__init__()
+        self.authorization = authorization
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and urllib.parse.urlparse(newurl).hostname == urllib.parse.urlparse(URS).hostname:
+            new.add_unredirected_header("Authorization", self.authorization)
+        return new
+
+
 def earthdata_opener():
+    """An opener that can download from NASA Earthdata, or None without credentials.
+
+    EARTHDATA_TOKEN (a user token from the Earthdata profile page) is sent as a bearer
+    token; otherwise EARTHDATA_USERNAME / EARTHDATA_PASSWORD are used at the login server.
+    """
+    cookies = urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    token = os.getenv("EARTHDATA_TOKEN", "").strip()
+    if token:
+        opener = urllib.request.build_opener(cookies)
+        opener.addheaders = [("Authorization", f"Bearer {token}")]
+        return opener
     user, password = os.getenv("EARTHDATA_USERNAME"), os.getenv("EARTHDATA_PASSWORD")
     if not user or not password:
         return None
-    manager = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-    manager.add_password(None, URS, user, password)
-    return urllib.request.build_opener(
-        urllib.request.HTTPBasicAuthHandler(manager), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
-    )
+    import base64
+
+    basic = "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+    return urllib.request.build_opener(_EarthdataRedirect(basic), cookies)
 
 
 def seabass_cruise(name: str, folder: Path, opener, args: argparse.Namespace) -> tuple[list[dict], str]:

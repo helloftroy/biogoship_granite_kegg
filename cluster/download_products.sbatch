@@ -16,7 +16,8 @@
 #   sbatch --account=191001-364393 --export=ALL,MAX_PRODUCTS=2 cluster/download_products.sbatch   # smoke test
 #   sbatch --account=191001-364393 cluster/download_products.sbatch                               # everything
 #
-# Other overrides: NO_SST=1, CONNECTIONS=4.
+# Other overrides: NO_SST=1, CONNECTIONS=4, MANIFEST_DIR (e.g. data/new_cruises/manifests
+# for the 2022-2025 cruises; archives go to the same data/products/ store).
 
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
@@ -41,6 +42,7 @@ fi
 echo "Job started: $(date)"
 echo "Free space:"; df -h "${REPO_ROOT}" | tail -1
 python scripts/download_products.py \
+  --manifest-dir "${MANIFEST_DIR:-data/manifests}" \
   --max-products "${MAX_PRODUCTS:-0}" \
   --connections "${CONNECTIONS:-4}" \
   ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}

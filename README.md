@@ -319,6 +319,28 @@ Feature sets: `fixed` and `advected` (Granite embeddings), `raw_fixed` and
 Results go to `data/results/`. Later targets go in with
 `--targets-csv table.csv --targets NMF1 NMF2 ...` (a CSV keyed by `sample_id`).
 
+## Newer cruises (2022-2026)
+
+For P02 (2022), A16N (2023), I05 (2023), A13.5 (2024), I08S (2024), I09N (2025) and
+A16S (2026), sequencing runs are not (all) public yet, so candidate sampling
+events are built from public hydrographic and bio-optical records:
+
+```bash
+sbatch --account=191001-364393 cluster/new_cruises.sbatch
+```
+
+- CCHDO bottle files (`*_hy1.csv`) and cruise summaries (`*su.txt`) for every leg
+  (no login): positions, times, pressure and depth, temperature, salinity, oxygen,
+  nitrate, phosphate and silicate.
+- SeaBASS experiment BIO-GO-SHIP: biological sampling files (HPLC pigments; IFCB
+  imaging on I09N 2025). Needs a free NASA Earthdata login in `cdse_credentials.sh`.
+- Output in `data/new_cruises/`: `surface_candidates.csv` (events at or above 10 m:
+  merged hydrographic bottles and biological samples, with the source of each
+  timestamp and missing-data flags), `cruise_coverage.csv`, `cchdo_bottles.csv`,
+  the downloaded source files, and `manifests/` for the Sentinel-3 steps. No row is
+  assumed to be a metagenomic sample. A16S is catalogued but left out of
+  satellite matching.
+
 ## Data sources and citation
 
 - Bio-GO-SHIP metagenomes and amplicons: Larkin et al. 2021, *Scientific Data* 8, 107,
@@ -330,5 +352,8 @@ Results go to `data/results/`. Later targets go in with
 - Surface currents: Copernicus Marine Service, MULTIOBS_GLO_PHY_MYNRT_015_003,
   [doi:10.48670/mds-00327](https://doi.org/10.48670/mds-00327).
 - Particle tracking: [OceanParcels](https://oceanparcels.org) v3.
+- Hydrographic bottle data and cruise summaries: CCHDO, https://cchdo.ucsd.edu.
+- Bio-GO-SHIP biological sampling records: SeaBASS, experiment BIO-GO-SHIP,
+  [doi:10.5067/SeaBASS/BIO-GO-SHIP/DATA001](https://doi.org/10.5067/SeaBASS/BIO-GO-SHIP/DATA001).
 - The Sentinel-3 handling is carried over from
   [helloftroy/multimodal_eDNA](https://github.com/helloftroy/multimodal_eDNA).

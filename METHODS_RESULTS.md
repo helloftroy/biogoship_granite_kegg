@@ -962,7 +962,70 @@ model evaluations. To revisit before any reported result: the unit of analysis
 (tile, site or sample), hyperparameters (fixed CatBoost settings so far),
 repeated runs with different seeds, and uncertainty on the scores.
 
-## 9. Planned next
+## 9. Newer cruises, 2022-2026 (candidate sampling events)
+
+`scripts/build_new_cruise_manifest.py`, 2026-10-22. The aim is satellite-ready
+candidate locations and times for cruises whose sequencing may not be public yet,
+to be matched to sequencing accessions once they are.
+
+**Cruises and sources.**
+
+| Cruise | CCHDO expocodes (legs) | SeaBASS (BIO-GO-SHIP) | Satellite matching |
+|---|---|---|---|
+| P02 2022 | 33RR20220430, 33RR20220613 | P02 (HPLC) | yes |
+| A16N 2023 | 33RO20230306, 33RO20230413 | A16N_L1_2023, A16N_L2_2023 (HPLC) | yes |
+| I05 2023 | 33RR20230722 | I05_2023 (HPLC) | yes |
+| A13.5 2024 | 33H320240201 | none | yes |
+| I08S 2024 | 325020240221 | I08S_2024 (HPLC) | yes |
+| I09N 2025 | 325020250321 | I09N (HPLC, 1,879 IFCB samples, backscatter, VSF) | yes |
+| A16S 2026 | 33RR20260309 | none | no (too recent) |
+
+**Method.**
+
+- CCHDO: the newest bottle file in WHP exchange format and the WOCE summary file
+  for each leg, chosen through the CCHDO API (no login). Per bottle: expocode,
+  station, cast, sample and bottle numbers, position, cast date and time, bottle
+  trip time, pressure, and temperature (CTD), salinity (bottle, else CTD), oxygen
+  (bottle, else CTD), nitrate, phosphate and silicate. Values flagged bad, not
+  reported or not sampled (WOCE 4, 5, 9) and -999 fill values are treated as
+  missing. Depth is computed from pressure (UNESCO 1983); the file's DEPTH column
+  is bottom depth and is not used.
+- Timestamps keep their source: the bottle file's DATE/TIME is the CTD cast time
+  (it equals the bottom-of-cast time in the summary), and cast begin, bottom and
+  end times from the summary are attached; bottle trip times are kept where
+  given.
+- Surface candidates: bottles at or above 10 m. Repeat bottles fired at the same
+  cast and depth (1 m bins) are merged into one event (values averaged, bottle
+  and sample numbers listed, `n_bottles`); distinct depths and casts stay
+  separate.
+- SeaBASS: the file list of each cruise page; files are fetched with a NASA
+  Earthdata login and parsed for identifiers, time, position and depth per
+  record. IFCB samples are indexed from their file names (time only) unless
+  `--ifcb-files` downloads them for positions.
+- Sites for satellite matching: one per surface cast (its shallowest event) and
+  one per biological sample with a position, A16S excluded, in the same format as
+  the main manifest.
+- Every candidate carries `confirmed_metagenome = no`.
+
+**Result (2026-10-22, CCHDO part; SeaBASS needs the Earthdata login):**
+
+| Cruise | Dates | Stations | Casts | Bottles | Surface events (<= 10 m) | Surface casts | Nitrate / phosphate / silicate missing at surface |
+|---|---|---:|---:|---:|---:|---:|---|
+| P02 2022 | 2022-05-01 to 07-15 | 204 | 276 | 8,766 | 319 | 259 | 39% / 41% / 39% |
+| A16N 2023 | 2023-03-09 to 05-08 | 149 | 149 | 3,516 | 151 | 147 | 3% |
+| I05 2023 | 2023-07-22 to 09-10 | 195 | 232 | 6,900 | 245 | 211 | 28% |
+| A13.5 2024 | 2024-02-10 to 03-16 | 112 | 112 | 2,666 | 112 | 112 | 0% |
+| I08S 2024 | 2024-03-04 to 03-28 | 66 | 75 | 2,514 | 90 | 75 | 26% |
+| I09N 2025 | 2025-03-24 to 04-23 | 99 | 114 | 3,760 | 135 | 113 | 26% |
+| A16S 2026 | | | | | | | no bottle file on CCHDO yet |
+
+917 surface casts become sites for the Sentinel-3 search (A16S excluded).
+Temperature, salinity and oxygen are present for every surface event. The
+nutrient gaps are bottles without nutrient samples: on P02, 81% of the 1,047
+bottles at or above 10 m have no nitrate, but most casts have at least one that
+does.
+
+## 10. Planned next
 
 - **Fixed vs advected.** Compare models trained on the two sets of embeddings,
   using the same overpass for both (`same_scene_as_best_fixed`).

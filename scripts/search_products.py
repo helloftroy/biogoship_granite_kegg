@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -67,6 +68,7 @@ def main() -> None:
 
     def search_site(site: dict[str, str]) -> list[dict[str, str]]:
         when = parse_utc(site["time_utc"])
+        time.sleep(args.pause)  # stay under the catalogue's rate limit on long runs
         return cdse.search_products(
             cdse.OLCI_WFR, when - window(site), when + window(site), point=(float(site["lon"]), float(site["lat"]))
         )
@@ -176,6 +178,7 @@ def parse_args() -> argparse.Namespace:
         help="Wider (or narrower) window for one section, e.g. I09N=10. May be repeated.",
     )
     parser.add_argument("--workers", type=int, default=4, help="Parallel catalogue requests.")
+    parser.add_argument("--pause", type=float, default=0.25, help="Seconds each worker waits before a request.")
     return parser.parse_args()
 
 

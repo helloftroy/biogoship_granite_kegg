@@ -335,7 +335,12 @@ def seabass_cruise(name: str, folder: Path, opener, args: argparse.Namespace) ->
             if not dest.exists():
                 data = fetch(GETFILE + Path(path).name, opener=opener)
                 if data.lstrip()[:1] == b"<":
-                    raise RuntimeError("got an HTML page instead of the file (login failed?)")
+                    # Keep the page: its title says whether the login, the app approval or the file is the problem.
+                    debug = folder.parent / "earthdata_response.html"
+                    debug.write_bytes(data)
+                    title = re.search(rb"<title>(.*?)</title>", data, re.S | re.I)
+                    title = title.group(1).decode("utf-8", "replace").strip() if title else "no title"
+                    raise RuntimeError(f"got a web page titled '{title}' instead of the file (saved as {debug})")
                 dest.write_bytes(data)
             rows += read_seabass(dest, name, path)
         except Exception as exc:  # noqa: BLE001 - keep going; report the count

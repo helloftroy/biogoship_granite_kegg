@@ -85,7 +85,8 @@ def main() -> None:
     log = latest_tile_log_rows(read_tile_log(args.tile_log))
     # SST added afterwards by fill_missing_sst.py overrides the tile log's (empty) SST fraction.
     fill_log = args.tile_log.with_name("sst_fill_log.csv")
-    filled = {r["tile_path"]: r for r in read_csv(fill_log) if r["status"] == "filled"} if fill_log.exists() else {}
+    latest_fill = {r["tile_path"]: r for r in read_csv(fill_log)} if fill_log.exists() else {}
+    filled = {p: r for p, r in latest_fill.items() if r["status"] == "filled"}
     for row in log:
         if row["tile_path"] in filled:
             row["sst_valid_fraction"] = filled[row["tile_path"]]["sst_valid_fraction"]

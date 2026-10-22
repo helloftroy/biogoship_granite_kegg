@@ -120,7 +120,7 @@ def main() -> None:
     bottles_df.to_csv(out / "cchdo_bottles.csv", index=False)
 
     surface = surface_bottle_events(bottles_df, args.max_depth)
-    bio_df = pd.DataFrame(bio)
+    bio_df = write_seabass_tables(pd.DataFrame(bio), out)
     if len(bio_df):
         bio_df = bio_df[(bio_df["depth_m"].isna()) | (bio_df["depth_m"] <= args.max_depth)]
     candidates = pd.concat([surface, bio_df], ignore_index=True, sort=False)
@@ -408,7 +408,7 @@ def seabass_listing(cruise: str) -> list[tuple[str, str, str]]:
 def ifcb_event(path: str, cruise: str) -> dict:
     m = re.search(r"D(\d{8}T\d{6})", path)
     when = pd.to_datetime(m.group(1), format="%Y%m%dT%H%M%S", utc=True).strftime("%Y-%m-%dT%H:%M:%SZ") if m else ""
-    return {"event_type": "biological_sample_ifcb", "source": "SeaBASS", "seabass_cruise": cruise, "event_id": Path(path).stem,
+    return {"event_type": "underway_ifcb", "source": "SeaBASS", "seabass_cruise": cruise, "event_id": Path(path).stem,
             "time_utc": when, "time_source": "IFCB sample time from the file name (UTC)", "source_file": path,
             "lat": np.nan, "lon": np.nan, "depth_m": np.nan, "position_note": "position in the file header; download with --ifcb-files"}  # fmt: skip
 
@@ -430,7 +430,7 @@ def read_seabass(path: Path, cruise: str, archive_path: str) -> list[dict]:
     fields = [f.strip().lower() for f in header.get("fields", "").split(",")]
     delimiter = {"comma": ",", "tab": "\t"}.get(header.get("delimiter", "").lower())
     missing = header.get("missing", "-9999")
-    kind = "biological_sample_hplc" if "hplc" in path.name.lower() else "biological_sample_" + path.stem.split("_")[-1].lower()
+    kind = seabass_kind(path.name, header)
     rows = []
     for line in data:
         values = line.split(delimiter) if delimiter else line.split()
@@ -448,9 +448,66 @@ def read_seabass(path: Path, cruise: str, archive_path: str) -> list[dict]:
             "lat": to_float(rec.get("lat")) if rec.get("lat") else to_float(header.get("north_latitude", "").split("[")[0]),
             "lon": to_float(rec.get("lon")) if rec.get("lon") else to_float(header.get("east_longitude", "").split("[")[0]),
             "depth_m": to_float(rec.get("depth")),
-            "identifiers": json.dumps(identifiers),
+            "identifiers": json.dumps(identifiers), "data_type": header.get("data_type", ""), "values": rec,
         })  # fmt: skip
     return rows
+
+
+def seabass_kind(name: str, header: dict) -> str:
+    """Event type of a SeaBASS file's rows.
+
+    HPLC pigments and other filtered samples (e.g. PIC) are discrete samples, one row
+    each. Flow-through instruments (backscattering bbp, inline AC-S absorption, VSF)
+    log continuously, a row every minute or so: those rows are measurements along the
+    ship track, not sampling events, and never become satellite-matching sites.
+    """
+    lower = name.lower()
+    data_type = header.get("data_type", "").lower()
+    if "hplc" in lower or data_type == "pigment":
+        return "biological_sample_hplc"
+    instrument = next((k for k in ("bbp", "acs", "vsf") if k in lower), "")
+    if instrument or "inline" in lower:
+        return "underway_" + (instrument or "optics")
+    measured = next((k for k in ("pic", "poc", "chl") if re.search(rf"(^|[-_]){k}([-_.]|$)", lower)), "")
+    if measured:  # filtered samples, often drawn from the underway line, so data_type may say flow_thru
+        return "discrete_sample_" + measured
+    return "underway_optics" if data_type == "flow_thru" else "discrete_sample_other"
+
+
+def write_seabass_tables(bio: pd.DataFrame, out: Path) -> pd.DataFrame:
+    """Write SeaBASS rows with all their measured values; return the discrete samples only.
+
+    seabass_hplc_pigments.csv  one row per HPLC sample, every pigment column
+    seabass_discrete.csv       other discrete samples (e.g. PIC), every column
+    seabass_underway.csv       one row per file of continuous flow-through records (counts, times)
+    underway/<file>.csv        those records with every column, for comparisons along the track
+    """
+    if not len(bio):
+        return bio
+    keys = ["event_type", "cruise", "section", "seabass_cruise", "source_file", "event_id", "time_utc", "lat", "lon", "depth_m"]
+
+    def expand(rows: pd.DataFrame) -> pd.DataFrame:
+        values = pd.DataFrame(list(rows["values"]), index=rows.index).drop(columns=["date", "time", "lat", "lon", "depth"], errors="ignore")
+        return pd.concat([rows[keys], values], axis=1)
+
+    has_values = bio["values"].notna() if "values" in bio else pd.Series(False, index=bio.index)
+    underway = bio["event_type"].astype(str).str.startswith("underway")
+    hplc = bio["event_type"] == "biological_sample_hplc"
+    if (hplc & has_values).any():
+        expand(bio[hplc & has_values]).to_csv(out / "seabass_hplc_pigments.csv", index=False)
+    other = ~hplc & ~underway & has_values
+    if other.any():
+        expand(bio[other]).to_csv(out / "seabass_discrete.csv", index=False)
+    (out / "underway").mkdir(exist_ok=True)
+    for source, rows in bio[underway & has_values].groupby("source_file"):
+        expand(rows).to_csv(out / "underway" / f"{Path(source).stem}.csv", index=False)
+    summary = (bio[underway].groupby(["cruise", "event_type", bio["source_file"].where(~bio["event_type"].eq("underway_ifcb"), "ifcb (one file per sample)")])
+               .agg(records=("time_utc", "size"), first_utc=("time_utc", "min"), last_utc=("time_utc", "max")).reset_index())  # fmt: skip
+    summary.to_csv(out / "seabass_underway.csv", index=False)
+    counts = bio.groupby(["cruise", "event_type"]).size()
+    print("SeaBASS records by type (only biological_sample_* and discrete_sample_* become candidate events):")
+    print(counts.to_string())
+    return bio[~underway].drop(columns=["values"], errors="ignore")
 
 
 def to_float(text) -> float:
@@ -466,7 +523,7 @@ def add_coverage_stats(coverage: pd.DataFrame, bottles: pd.DataFrame, candidates
     for _, c in coverage.iterrows():
         b = bottles[bottles["cruise"] == c["cruise"]] if len(bottles) else bottles
         s = candidates[(candidates["cruise"] == c["cruise"]) & (candidates["event_type"] == "hydrographic_bottle")]
-        bio = candidates[(candidates["cruise"] == c["cruise"]) & candidates["event_type"].astype(str).str.startswith("biological")]
+        bio = candidates[(candidates["cruise"] == c["cruise"]) & candidates["source"].eq("SeaBASS")]
         times = pd.to_datetime(b["cast_time_utc"], utc=True) if len(b) else pd.Series(dtype="datetime64[ns, UTC]")
         row = {**c.to_dict(),
                "start": times.min().strftime("%Y-%m-%d") if len(times) else "", "end": times.max().strftime("%Y-%m-%d") if len(times) else "",
@@ -474,7 +531,8 @@ def add_coverage_stats(coverage: pd.DataFrame, bottles: pd.DataFrame, candidates
                "casts": b[["expocode", "station", "cast"]].drop_duplicates().shape[0] if len(b) else 0,
                "bottles": len(b), f"surface_bottle_events_le_{max_depth:g}m": len(s),
                "surface_casts": s[["expocode", "station", "cast"]].drop_duplicates().shape[0] if len(s) else 0,
-               "seabass_events": len(bio),
+               "seabass_discrete_samples": len(bio),
+               "seabass_hplc_samples": int(bio["event_type"].eq("biological_sample_hplc").sum()),
                "has_bottle_file": "yes" if len(b) else "no"}  # fmt: skip
         for v in VARIABLES:
             row[f"missing_{v}"] = round(float(s[v].isna().mean()), 3) if len(s) else math.nan

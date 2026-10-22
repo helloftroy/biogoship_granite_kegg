@@ -427,6 +427,26 @@ class FillMissingSstTests(unittest.TestCase):
                 np.testing.assert_allclose(tile["data"][-1].mean(), expected, atol=0.01)
                 self.assertEqual(str(tile["sst_source"]), "filled")
                 np.testing.assert_allclose(tile["data"][:16], 0.0, atol=0.01)  # OLCI channels untouched
+            self.assertEqual(log[0]["tried"], "sst-day")
+
+            # A tile an earlier version filled from a night pass is redone; with no untried daytime pass left it is emptied.
+            fill_missing_sst.cdse.search_products = lambda *a, **k: [night, day]
+            try:
+                for tried in ("", "sst-day"):
+                    write_csv(data / "sst_fill_log.csv", [{**log[0], "night": "1", "tried": tried}], fill_missing_sst.LOG_FIELDS)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        LocalArchiveRunTests.run_script(self, fill_missing_sst, fill_args)
+                    last = read_csv(data / "sst_fill_log.csv")[-1]
+                    with np.load(tile_path) as tile:
+                        if not tried:
+                            self.assertEqual((last["status"], last["night"], last["tried"]), ("filled", "0", "sst-day"))
+                            self.assertTrue(np.isfinite(tile["data"][-1]).all())
+                        else:
+                            self.assertEqual(last["status"], "no_candidate")  # the night pass is never used
+                            self.assertFalse(np.isfinite(tile["data"][-1]).any())
+                            self.assertNotIn("sst_source", tile.files)
+            finally:
+                fill_missing_sst.cdse.search_products = real_search
 
 
 if __name__ == "__main__":

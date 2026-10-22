@@ -9,9 +9,11 @@ SST overpass (either satellite) whose footprint contains the tile, within
 --max-hours of the OLCI scene, and fills the tile's SST channel from the first
 one that has acceptable SST there (quality level 4 or 5).
 
-Order of preference: daytime overpasses (local solar time 06-18, like the OLCI
-scene itself) closest in time first, then night-time ones; night SST lacks the
-daytime warming of the skin layer, so it is only used when no daytime pass works.
+Only daytime overpasses are used (local solar time 06-18, like the OLCI scene
+itself), closest in time first: night-time skin SST lacks the daytime warming
+and would put a different kind of temperature in some tiles. Tiles filled from a
+night pass by an earlier version are redone, and emptied again if no daytime pass
+works. Overpasses already tried for a tile (recorded in the log) are not retried.
 
 The SST channel is resampled onto the tile's own OLCI pixels exactly as for
 paired SST (nearest neighbour). The tile file is updated in place (its SST channel
@@ -25,7 +27,7 @@ OLCI geolocation comes from data/products/olci/ archives.
 
 Usage:
     python scripts/fill_missing_sst.py --dry-run          # search only; counts and download size
-    python scripts/fill_missing_sst.py --max-hours 48
+    python scripts/fill_missing_sst.py --max-hours 120 --max-tries 8
 """
 
 from __future__ import annotations
@@ -54,16 +56,21 @@ from biogoship.tables import (  # noqa: E402
     read_tile_log,
 )
 
-LOG_FIELDS = ["tile_path", "status", "sst_product", "satellite", "gap_hours", "night", "sst_valid_fraction", "candidates"]
+LOG_FIELDS = ["tile_path", "status", "sst_product", "satellite", "gap_hours", "night", "sst_valid_fraction", "candidates", "tried"]
+LEGACY_TRIES = 4  # overpasses per tile tried by runs that did not record them (the first version's default)
 MIN_FILLED_FRACTION = 0.5  # accept a candidate only if it covers at least half the tile with acceptable SST
 
 
 def main() -> None:
     args = parse_args()
     log_path = args.data_dir / "sst_fill_log.csv"
-    done = {row["tile_path"] for row in read_csv(log_path) if row["status"] == "filled"} if log_path.exists() else set()
-    todo = tiles_without_sst(args, done)
-    print(f"Tiles without SST: {len(todo):,} to fill ({len(done):,} filled earlier)")
+    history = read_csv(log_path) if log_path.exists() else []
+    latest = {row["tile_path"]: row for row in history}
+    done = {p for p, row in latest.items() if row["status"] == "filled" and (row.get("night") != "1" or not args.day_only)}
+    redo = {p for p, row in latest.items() if row["status"] == "filled" and p not in done}  # filled from a night pass
+    todo = tiles_without_sst(args, done, redo)
+    print(f"Tiles to fill: {len(todo):,} ({len(redo):,} of them filled from a night pass before); "
+          f"{len(done):,} already filled from a daytime pass")  # fmt: skip
     if not todo:
         return
 
@@ -71,6 +78,7 @@ def main() -> None:
     # repeat them: hundreds of searches in a row trip the catalogue's rate limit (HTTP 429).
     cache_path = args.data_dir / "sst_fill_candidates.csv"
     cached = load_candidate_cache(cache_path, args.max_hours)
+    tried = tried_overpasses(history, cache_path)
     lock = threading.Lock()
 
     def search(tile: dict) -> list[dict] | None:
@@ -90,19 +98,25 @@ def main() -> None:
             save_candidates(cache_path, tile["tile_path"], args.max_hours, ranked)
         return ranked
 
+    def usable(tile: dict, candidates: list[dict]) -> list[dict]:
+        """Daytime overpasses (unless --allow-night), minus those tried before, best first."""
+        keep = [c for c in candidates if not (args.day_only and c["night"]) and c["product_id"] not in tried.get(tile["tile_path"], set())]
+        return keep[: args.max_tries]
+
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         for tile, candidates in zip(todo, pool.map(search, todo)):
-            tile["candidates"] = candidates
+            tile["candidates"] = None if candidates is None else usable(tile, candidates)
     unsearched = [tile for tile in todo if tile["candidates"] is None]
     todo = [tile for tile in todo if tile["candidates"] is not None]
     if unsearched:
         print(f"Catalogue search failed for {len(unsearched):,} tiles (rate limit or network); re-run later to retry them. "
               f"Searches done so far are saved in {cache_path.name}.")  # fmt: skip
-    unique = {c["product_id"]: c for tile in todo for c in tile["candidates"][args.first_try : args.first_try + args.max_tries]}
+    unique = {c["product_id"]: c for tile in todo for c in tile["candidates"]}
     local = {pid for pid, c in unique.items() if local_archive(args, c["product_name"]) is not None}
     no_candidate = sum(1 for tile in todo if not tile["candidates"])
-    print(f"Tiles with at least one SST overpass within +/-{args.max_hours:g} h: {len(todo) - no_candidate:,}; none: {no_candidate:,}")
-    print(f"SST products among the first {args.max_tries} candidates per tile: {len(unique):,} ({len(local):,} already on disk; "
+    kind = "daytime " if args.day_only else ""
+    print(f"Tiles with an untried {kind}SST overpass within +/-{args.max_hours:g} h: {len(todo) - no_candidate:,}; none: {no_candidate:,}")
+    print(f"SST products among up to {args.max_tries} candidates per tile: {len(unique):,} ({len(local):,} already on disk; "
           f"up to {sum(float(c['size_bytes'] or 0) for p, c in unique.items() if p not in local) / 1e9:,.0f} GB to fetch, "
           "less since only the L2P file is fetched and tiles stop at the first usable one)")  # fmt: skip
     if args.dry_run:
@@ -110,13 +124,17 @@ def main() -> None:
 
     filler = Filler(args)
     todo.sort(key=lambda tile: tile["time"])  # neighbouring tiles tend to share SST orbits; keeps the cache warm
-    counts = {"filled": 0, "no_usable_sst": 0, "no_candidate": 0, "error": 0}
+    counts = {"filled": 0, "no_usable_sst": 0, "no_candidate": 0, "error": 0, "emptied": 0}
     for i, tile in enumerate(todo, start=1):
         row = {"tile_path": tile["tile_path"], "candidates": len(tile["candidates"])}
         try:
             row.update(filler.fill(tile))
+            if row["status"] != "filled" and tile["tile_path"] in redo:
+                filler.empty_sst(tile)  # its night-pass SST is removed rather than kept
+                counts["emptied"] += 1
         except Exception as exc:  # noqa: BLE001 - one bad tile must not stop the run
             row.update(status="error", sst_product=str(exc)[:200])
+        row["tried"] = ";".join(c["product_id"] for c in tile.get("tried_now", []))
         counts[row["status"]] = counts.get(row["status"], 0) + 1
         append_csv(log_path, [row], LOG_FIELDS)
         if i % 25 == 0 or i == len(todo):
@@ -125,19 +143,20 @@ def main() -> None:
     print(f"Log: {log_path}\nNext: build_tile_manifest.py, pool_tile_features.py and embed_tiles.py to refresh downstream tables.")
 
 
-def tiles_without_sst(args: argparse.Namespace, done: set[str]) -> list[dict]:
+def tiles_without_sst(args: argparse.Namespace, done: set[str], redo: set[str]) -> list[dict]:
     log = latest_tile_log_rows(read_tile_log(args.data_dir / "tile_log.csv"))
     out = []
     for row in log:
         if row["status"] != "valid" or row["tile_path"] in done:
             continue
-        if row.get("sst_valid_fraction") and float(row["sst_valid_fraction"]) > 0:
+        again = row["tile_path"] in redo
+        if not again and row.get("sst_valid_fraction") and float(row["sst_valid_fraction"]) > 0:
             continue
         path = from_repo(row["tile_path"])
         if not path.exists():
             continue
         with np.load(path, allow_pickle=False) as tile:
-            if np.isfinite(tile["data"][-1]).any():
+            if not again and np.isfinite(tile["data"][-1]).any():
                 continue
             out.append({
                 "tile_path": row["tile_path"], "time": parse_utc(str(tile["date"])), "granule": str(tile["granule_id"]),
@@ -171,6 +190,27 @@ def save_candidates(path: Path, tile_path: str, max_hours: float, ranked: list[d
     rows = [{**c, "tile_path": tile_path, "max_hours": max_hours, "gap_hours": f"{c['gap_hours']:.3f}",
              "night": int(c["night"])} for c in ranked]  # fmt: skip
     append_csv(path, rows or [{"tile_path": tile_path, "max_hours": max_hours}], CANDIDATE_FIELDS)
+
+
+def tried_overpasses(history: list[dict], cache_path: Path) -> dict[str, set[str]]:
+    """Per tile, the SST products tried by earlier runs.
+
+    Runs since this version record them; for older log rows, the first LEGACY_TRIES
+    candidates of that run's cached ranking are assumed tried.
+    """
+    tried: dict[str, set[str]] = {}
+    legacy = {row["tile_path"] for row in history if not row.get("tried")}
+    if legacy and cache_path.exists():
+        by_tile: dict[str, list[str]] = {}
+        for row in read_csv(cache_path):
+            if row["tile_path"] in legacy and row["product_id"] and float(row["max_hours"]) == 48.0:
+                by_tile.setdefault(row["tile_path"], []).append(row["product_id"])
+        for tile_path, ids in by_tile.items():
+            tried.setdefault(tile_path, set()).update(ids[:LEGACY_TRIES])
+    for row in history:
+        if row.get("tried"):
+            tried.setdefault(row["tile_path"], set()).update(row["tried"].split(";"))
+    return tried
 
 
 def rank_candidates(tile: dict, products: list[dict]) -> list[dict]:
@@ -207,7 +247,9 @@ class Filler:
         if not tile["candidates"]:
             return {"status": "no_candidate"}
         lat, lon = self.tile_grid(tile)
-        for candidate in tile["candidates"][self.args.first_try : self.args.first_try + self.args.max_tries]:
+        tile["tried_now"] = []
+        for candidate in tile["candidates"]:
+            tile["tried_now"].append(candidate)
             sst = self.swath(candidate).resample(lat, lon)
             fraction = float(np.isfinite(sst).mean())
             if fraction >= MIN_FILLED_FRACTION:
@@ -277,6 +319,18 @@ class Filler:
             if old != keep:
                 shutil.rmtree(old, ignore_errors=True)
 
+    def empty_sst(self, tile: dict) -> None:
+        """Remove an earlier fill: SST channel back to missing, fill metadata dropped."""
+        path = from_repo(tile["tile_path"])
+        with np.load(path, allow_pickle=False) as npz:
+            contents = {key: npz[key] for key in npz.files if not key.startswith("sst_fill_") and key != "sst_source"}
+        contents["data"] = contents["data"].copy()
+        contents["data"][-1] = np.nan
+        contents["sst_valid_fraction"] = np.array(0.0, dtype=np.float32)
+        temporary = path.with_name(path.stem + ".tmp.npz")
+        np.savez_compressed(temporary, **contents)
+        temporary.replace(path)
+
     def write(self, tile: dict, sst_kelvin: np.ndarray, candidate: dict) -> None:
         path = from_repo(tile["tile_path"])
         with np.load(path, allow_pickle=False) as npz:
@@ -310,13 +364,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", type=Path, default=REPO_ROOT / "data")
     parser.add_argument("--products-dir", type=Path, default=REPO_ROOT / "data" / "products")
-    parser.add_argument("--max-hours", type=float, default=48.0, help="Largest time gap to the OLCI scene. Default 48 h.")
-    parser.add_argument("--max-tries", type=int, default=4, help="SST overpasses to try per tile before giving up.")
+    parser.add_argument("--max-hours", type=float, default=120.0, help="Largest time gap to the OLCI scene. Default 120 h.")
+    parser.add_argument("--max-tries", type=int, default=8, help="Untried SST overpasses to try per tile in this run.")
     parser.add_argument(
-        "--first-try",
-        type=int,
-        default=0,
-        help="Skip this many of each tile's best-ranked overpasses (e.g. 4 after a run with --max-tries 4).",
+        "--allow-night", dest="day_only", action="store_false", help="Also use night-time overpasses (not recommended)."
     )
     parser.add_argument("--sst-cache", type=int, default=6, help="Downloaded SST files kept for reuse.")
     parser.add_argument("--workers", type=int, default=2, help="Parallel catalogue searches.")

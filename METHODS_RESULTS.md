@@ -830,8 +830,20 @@ I07N (May-June 2018, Indian Ocean during the monsoon onset) gained least, 32 of
 493: consistent with persistent cloud as screened by SLSTR, which is stricter
 than OLCI's flags. The re-embedded filled tiles moved little (median cosine 0.99
 to their previous embedding); other tiles were unchanged. Next: a second pass
-over overpasses 5 to 16 (`--first-try 4 --max-tries 12`), then OSTIA for what
-remains.
+over overpasses 5 to 16, then OSTIA for what remains.
+
+**Change (2026-10-22): daytime overpasses only.** Night-time skin SST is cooler
+than the daytime skin (no diurnal warming) and comes from a different overpass
+geometry, so a night fill would put a systematically different temperature into
+some tiles than the daytime SST every other tile has. The fill now uses daytime
+overpasses only (local solar time 06-18) and widens the window to 120 h to
+compensate. Tiles filled from a night pass in the first run are redone; if no
+daytime pass works, their SST channel is emptied again rather than kept. The log
+now records which overpasses were tried per tile (`tried`), so re-running
+continues with untried ones (for first-run rows, the 4 best-ranked of the 48 h
+search are taken as tried). Paired SST was already daytime: it comes from the
+same daytime overpass as the OLCI scene, or from the other satellite within
+180 min of it.
 
 ### Ways to improve Granite for this data
 
@@ -1011,9 +1023,17 @@ to be matched to sequencing accessions once they are.
   Earthdata login and parsed for identifiers, time, position and depth per
   record. IFCB samples are indexed from their file names (time only) unless
   `--ifcb-files` downloads them for positions.
+- SeaBASS files are sorted by what they hold. HPLC pigments, and other filtered
+  samples such as PIC, are discrete samples: one row each, and they become
+  candidate events. Flow-through instruments (backscattering bbp, inline AC-S
+  absorption, VSF) log a row every minute or so along the track; these are
+  measurements, not sampling events, and never become sites. IFCB is also
+  underway sampling. All measured values are kept: `seabass_hplc_pigments.csv`
+  (every pigment), `seabass_discrete.csv`, and `underway/<file>.csv` per
+  flow-through file, summarised in `seabass_underway.csv`.
 - Sites for satellite matching: one per surface cast (its shallowest event) and
-  one per biological sample with a position, A16S excluded, in the same format as
-  the main manifest.
+  one per discrete SeaBASS sample with a position, A16S excluded, in the same
+  format as the main manifest.
 - Every candidate carries `confirmed_metagenome = no`.
 
 **Result (2026-10-22, CCHDO part; SeaBASS needs the Earthdata login):**
@@ -1035,6 +1055,16 @@ Temperature, salinity and oxygen are present for every surface event. The
 nutrient gaps are bottles without nutrient samples: on P02, 81% of the 1,047
 bottles at or above 10 m have no nitrate, but most casts have at least one that
 does.
+
+**SeaBASS (2026-10-22).** The first full run added about 83,000 sites, because
+every row of every SeaBASS file was taken as a sample. The BIO-GO-SHIP SeaBASS
+holdings are one HPLC pigment file per cruise (P02, A16N legs 1 and 2, I05, I08S,
+I09N) plus, for I09N only, continuous flow-through optics (bbp, inline AC-S
+particulate absorption, VSF), a PIC file and 1,879 IFCB sample files. The rows
+were almost all flow-through records. Only the discrete samples are now sites.
+HPLC pigments could be a useful target alongside the microbial data: pigments
+are an independent, phytoplankton-group-level measure of the community, and they
+are what ocean-colour algorithms are built on.
 
 ## 10. Planned next
 

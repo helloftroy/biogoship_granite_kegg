@@ -822,7 +822,16 @@ Granite was trained on. Alternatives kept in reserve: a gap-free SST analysis
 SST-missing indicator for downstream models. In-situ temperature must not be used
 for filling: it is a target.
 
-**Result:** not run yet.
+**Result (2026-10-22, first pass: 48 h window, 4 tries per tile).** Every one of
+the 861 tiles had SST overpasses within 48 h (11 to 55 each, median 22), but only
+157 (18%) found acceptable SST in their 4 best-ranked overpasses; 704 did not.
+Remaining tiles without SST: I07N 461, C13.5/A13.5 163, AMT28 60, I09N 16, P18 4.
+I07N (May-June 2018, Indian Ocean during the monsoon onset) gained least, 32 of
+493: consistent with persistent cloud as screened by SLSTR, which is stricter
+than OLCI's flags. The re-embedded filled tiles moved little (median cosine 0.99
+to their previous embedding); other tiles were unchanged. Next: a second pass
+over overpasses 5 to 16 (`--first-try 4 --max-tries 12`), then OSTIA for what
+remains.
 
 ### Ways to improve Granite for this data
 

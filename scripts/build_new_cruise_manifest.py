@@ -58,7 +58,7 @@ from biogoship.tables import REPO_ROOT  # noqa: E402
 
 CCHDO = "https://cchdo.ucsd.edu"
 SEABASS = "https://seabass.gsfc.nasa.gov"
-GETFILE = "https://oceandata.sci.gsfc.nasa.gov/getfile/"
+GETFILE = "https://oceandata.sci.gsfc.nasa.gov/ob/getfile/"  # + "<submission id>_<file name>"
 URS = "https://urs.earthdata.nasa.gov"
 
 # (section, year, CCHDO expocodes per leg, SeaBASS cruise names, fetch satellite data?)
@@ -350,9 +350,10 @@ def earthdata_opener():
 def seabass_cruise(name: str, folder: Path, opener, args: argparse.Namespace) -> tuple[list[dict], str]:
     """Biological sampling events from one SeaBASS cruise. Returns (rows, note)."""
     folder.mkdir(parents=True, exist_ok=True)
-    page = fetch(f"{SEABASS}/cruise/{urllib.parse.quote(name)}").decode("utf-8", "replace")
-    paths = sorted(set(re.findall(r"[A-Z_]+/[A-Za-z_]+/BIO-GO-SHIP/[^/\s<\"']+/archive/[^\s<\"']+\.sb", page)))
-    (folder / "file_list.txt").write_text("\n".join(paths) + "\n")
+    listing = seabass_listing(name)
+    (folder / "file_list.csv").write_text("folder,file,download_id\n" + "".join(f"{a},{b},{c}\n" for a, b, c in listing))
+    ids = {f"{a}/{b}": c for a, b, c in listing}
+    paths = sorted(ids)
     ifcb = [p for p in paths if p.endswith("_ifcb.sb")]
     others = [p for p in paths if p not in ifcb]
     rows = [ifcb_event(p, name) for p in ifcb]  # timestamps from file names; positions need the file
@@ -364,7 +365,7 @@ def seabass_cruise(name: str, folder: Path, opener, args: argparse.Namespace) ->
         dest = folder / Path(path).name
         try:
             if not dest.exists():
-                data = fetch(GETFILE + Path(path).name, opener=opener)
+                data = fetch(f"{GETFILE}{ids[path]}_{Path(path).name}", opener=opener)
                 if data.lstrip()[:1] == b"<":
                     # Keep the page: its title says whether the login, the app approval or the file is the problem.
                     debug = folder.parent / "earthdata_response.html"
@@ -378,6 +379,30 @@ def seabass_cruise(name: str, folder: Path, opener, args: argparse.Namespace) ->
             failed += 1
             print(f"  SeaBASS {Path(path).name}: {exc}", flush=True)
     return rows, f"SeaBASS {name}: {failed} of {len(wanted)} downloads failed" if failed else ""
+
+
+def seabass_listing(cruise: str) -> list[tuple[str, str, str]]:
+    """(archive folder, file name, download id) for every BIO-GO-SHIP file of one SeaBASS cruise.
+
+    Uses SeaBASS's own file search (the cruise page's "Quick File Search"): its results
+    carry the submission id that the download address needs (<id>_<file name>).
+    """
+    query = {
+        "keyword1": cruise, "keyandor": "or", "searchType": "bio", "search_type": "Perform File Search",
+        "startdate": "1930-01-01", "enddate": "2051-08-30", "startarcdate": "2000-01-01", "endarcdate": "2051-08-30",
+        "north": "90", "south": "-90", "east": "180", "west": "-180", "bio_sdepth": "0.0", "bio_edepth": "10000",
+        "bio_productType": "any", "bio_spectrum": "all", "bio_measurement_type": "all",
+        "bio_include_optically_shallow": "0", "bio_include_experimental": "0", "bio_products_custom_text1": "",
+    }  # fmt: skip
+    request = urllib.request.Request(f"{SEABASS}/search_results", data=urllib.parse.urlencode(query).encode(), method="POST")
+    with urllib.request.urlopen(request, timeout=300) as resp:
+        page = resp.read().decode("utf-8", "replace")
+    match = re.search(r"myID\s*=\s*['\"]([^'\"]+)", page)
+    if not match:
+        raise RuntimeError(f"SeaBASS search for {cruise} returned no result id")
+    rows = json.loads(fetch(f"{SEABASS}/output/bio/{match.group(1)}.json")).get("aaData", [])
+    # A keyword search can also match other experiments' cruises; keep this experiment's cruise folder only.
+    return sorted({(r[1], r[2], r[-1]) for r in rows if f"/BIO-GO-SHIP/{cruise}/" in r[1] + "/"})
 
 
 def ifcb_event(path: str, cruise: str) -> dict:

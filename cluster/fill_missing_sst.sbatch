@@ -16,7 +16,9 @@
 #   sbatch --account=191001-364393 cluster/fill_missing_sst.sbatch
 #   sbatch --account=191001-364393 cluster/embed_tiles.sbatch
 #
-# Overrides: MAX_HOURS=48 (largest gap to the OLCI scene), MAX_TRIES=4.
+# Overrides: MAX_HOURS=48 (largest gap to the OLCI scene), MAX_TRIES=4, FIRST_TRY=0.
+# Second pass for tiles still without SST, trying the next 12 overpasses:
+#   sbatch --account=191001-364393 --export=ALL,FIRST_TRY=4,MAX_TRIES=12 cluster/fill_missing_sst.sbatch
 
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
@@ -33,7 +35,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
 fi
 
 echo "Job started: $(date)"
-python scripts/fill_missing_sst.py --max-hours "${MAX_HOURS:-48}" --max-tries "${MAX_TRIES:-4}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+python scripts/fill_missing_sst.py --max-hours "${MAX_HOURS:-48}" --max-tries "${MAX_TRIES:-4}" --first-try "${FIRST_TRY:-0}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 if [ "${DRY_RUN:-0}" != "1" ]; then
   python scripts/build_tile_manifest.py
   python scripts/pool_tile_features.py

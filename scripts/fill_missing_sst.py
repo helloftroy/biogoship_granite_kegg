@@ -98,7 +98,7 @@ def main() -> None:
     if unsearched:
         print(f"Catalogue search failed for {len(unsearched):,} tiles (rate limit or network); re-run later to retry them. "
               f"Searches done so far are saved in {cache_path.name}.")  # fmt: skip
-    unique = {c["product_id"]: c for tile in todo for c in tile["candidates"][: args.max_tries]}
+    unique = {c["product_id"]: c for tile in todo for c in tile["candidates"][args.first_try : args.first_try + args.max_tries]}
     local = {pid for pid, c in unique.items() if local_archive(args, c["product_name"]) is not None}
     no_candidate = sum(1 for tile in todo if not tile["candidates"])
     print(f"Tiles with at least one SST overpass within +/-{args.max_hours:g} h: {len(todo) - no_candidate:,}; none: {no_candidate:,}")
@@ -207,7 +207,7 @@ class Filler:
         if not tile["candidates"]:
             return {"status": "no_candidate"}
         lat, lon = self.tile_grid(tile)
-        for candidate in tile["candidates"][: self.args.max_tries]:
+        for candidate in tile["candidates"][self.args.first_try : self.args.first_try + self.args.max_tries]:
             sst = self.swath(candidate).resample(lat, lon)
             fraction = float(np.isfinite(sst).mean())
             if fraction >= MIN_FILLED_FRACTION:
@@ -312,6 +312,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--products-dir", type=Path, default=REPO_ROOT / "data" / "products")
     parser.add_argument("--max-hours", type=float, default=48.0, help="Largest time gap to the OLCI scene. Default 48 h.")
     parser.add_argument("--max-tries", type=int, default=4, help="SST overpasses to try per tile before giving up.")
+    parser.add_argument(
+        "--first-try",
+        type=int,
+        default=0,
+        help="Skip this many of each tile's best-ranked overpasses (e.g. 4 after a run with --max-tries 4).",
+    )
     parser.add_argument("--sst-cache", type=int, default=6, help="Downloaded SST files kept for reuse.")
     parser.add_argument("--workers", type=int, default=2, help="Parallel catalogue searches.")
     parser.add_argument("--search-pause", type=float, default=1.0, help="Seconds each worker waits between searches.")

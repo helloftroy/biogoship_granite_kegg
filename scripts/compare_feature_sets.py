@@ -31,8 +31,8 @@ Outputs in data/results/:
   feature_set_comparison_summary.csv  mean and s.d. over folds
 
 Usage:
-    python scripts/compare_feature_sets.py                   # hold out one cruise at a time
-    python scripts/compare_feature_sets.py --unique-tiles    # one row per distinct tile
+    python scripts/compare_feature_sets.py                   # one cruise held out at a time, unique tiles
+    python scripts/compare_feature_sets.py --all-samples     # one row per sample instead of per tile
     python scripts/compare_feature_sets.py --cv block        # spatial blocks instead
     python scripts/compare_feature_sets.py --targets-csv nmf_scores.csv --targets NMF1 NMF2
 """
@@ -241,9 +241,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--folds", type=int, default=5, help="Folds for block CV.")
     parser.add_argument(
-        "--unique-tiles",
-        action="store_true",
-        help="One row per distinct best fixed tile, by content (targets averaged over the samples sharing it).",
+        "--all-samples",
+        dest="unique_tiles",
+        action="store_false",
+        help="One row per sample. Default: one row per distinct best fixed tile, by content, with targets "
+        "averaged over the samples sharing it (replicates and neighbours snapped to one clear window).",
     )
     parser.add_argument("--iterations", type=int, default=600)
     parser.add_argument("--threads", type=int, default=-1)

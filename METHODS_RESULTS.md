@@ -954,8 +954,13 @@ identical tiles becomes one row, its targets averaged:
 Removing duplicates changes the scores by a few hundredths at most, within the
 cruise-to-cruise spread: phosphate from embeddings rises slightly (fixed 0.40 to
 0.46), position + season falls slightly (it benefited from repeated samples at
-the same place). Not a material effect; unique tiles are the cleaner unit and
-can be used by default for reporting.
+the same place). Not a material effect; unique tiles are the cleaner unit and are
+now the default (`--all-samples` restores one row per sample).
+
+Note: these comparisons are tests of the dataset and pipeline, not rigorous
+model evaluations. To revisit before any reported result: the unit of analysis
+(tile, site or sample), hyperparameters (fixed CatBoost settings so far),
+repeated runs with different seeds, and uncertainty on the scores.
 
 ## 9. Planned next
 

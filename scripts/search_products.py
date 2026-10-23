@@ -43,6 +43,7 @@ from biogoship.tables import MANIFEST_DIR, parse_utc, read_csv, write_csv  # noq
 SENTINEL3_LAUNCH = datetime(2016, 2, 16, tzinfo=timezone.utc)
 # The OLCI and SLSTR products of one overpass overlap in time; allow a little slack.
 MAX_SST_GAP_MINUTES = 180.0
+SST_CHUNK = timedelta(days=5)
 
 SITE_PRODUCT_FIELDS = ["site_id", "product_id", "product_name", "satellite", "start_utc", "time_gap_hours"]
 PRODUCT_FIELDS = [
@@ -159,13 +160,20 @@ def search_sst(olci: list[dict[str, str]], cache: SearchCache | None = None) -> 
             ranges[-1][1] = start + 2 * day
         else:
             ranges.append([start - day, start + 2 * day])
-    found: dict[str, dict[str, str]] = {}
+    # The catalogue pages no further than 10,000 results ($skip; HTTP 422 beyond), so long
+    # ranges (a two-month cruise holds more SST files than that) are searched in short chunks.
+    chunks = []
     for start, end in ranges:
+        while start < end:
+            chunks.append((start, min(start + SST_CHUNK, end)))
+            start += SST_CHUNK
+    found: dict[str, dict[str, str]] = {}
+    for start, end in chunks:
         query = lambda start=start, end=end: cdse.search_products(cdse.SLSTR_WST, start, end)  # noqa: E731
         key = f"sst|{start.isoformat()}|{end.isoformat()}"
         for product in cache.get_or_search(key, query) if cache else query():
             found[product["product_id"]] = product
-    print(f"SST orbit files in {len(ranges)} date range(s): {len(found):,}", flush=True)
+    print(f"SST orbit files in {len(ranges)} date range(s), {len(chunks)} searches: {len(found):,}", flush=True)
     return list(found.values())
 
 

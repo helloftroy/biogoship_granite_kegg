@@ -1102,6 +1102,42 @@ HPLC pigments could be a useful target alongside the microbial data: pigments
 are an independent, phytoplankton-group-level measure of the community, and they
 are what ocean-colour algorithms are built on.
 
+### FAIRe-NOAA sample metadata (2026-10-23)
+
+`FAIRe-NOAA_uci-ess-biogoship.xlsx` (tab sampleMetadata, generated 2026-09-16)
+lists every sequenced sample of every cruise: 3,463 samples (metagenomes and, on
+A16N, I09N 2025 and P02, metatranscriptomes) with time, position, depth,
+collection method, station/cast/bottle and environmental values. It is not
+public, so it and everything derived from it (`data/faire/`) stay out of git.
+`scripts/build_faire_manifest.py` turns it into `faire_samples.csv` and a site
+list for the cruises not yet matched to Sentinel-3.
+
+Cross-checks:
+
+- **Original cruises.** 930 of 937 FAIRe samples on AE1319, AMT28, BVAL46,
+  C13.5/A13.5, I07N, I09N 2016, NH1418 and P18 match a sample of our ENA-based
+  manifest within 1 h and 2 km. One NH1418 sample has no date. The other six are
+  the same samples with different dates. For four C13.5 samples (007, 086, 129, 130), ENA is a
+  day early and FAIRe fits the ship track. For two P18 samples (041, 049), FAIRe
+  is 12-18 h early and ENA fits the track. Our manifest has 32 samples FAIRe
+  lacks (16 amplicon-only).
+- **Newer cruises vs the CCHDO candidates.** CTD and bio-cast samples sit at a
+  cast (median 0-0.3 km, 0.5-2 h). Many underway samples do not: on A13.5 2024,
+  41 of 73 are more than 20 km or 12 h from any cast (median 21 km), and on
+  A16N 2023, 84 of 187. On I08S 2024, the 24 inline samples were taken during
+  the transit, a median 218 km and 9 days from the nearest cast. The candidate
+  list built from casts would have missed these.
+- **Cruises we did not have:** GOMECC4 (2021, Gulf of Mexico and US East Coast,
+  472 samples, many deep), HLY2202 (2022, Arctic, 150), P04E (May-June 2026,
+  279) and InterCal (30, no position: intercalibration samples).
+
+Result: 1,193 sites (unique time and position) on A13.5 2024 (121), A16N 2023
+(216), GOMECC4 (54), HLY2202 (116), I05 2023 (166), I08S 2024 (30), I09N 2025
+(101), P02 2022 (194) and P04E 2026 (195). These replace the CCHDO-cast candidates
+for the satellite search. The SeaBASS HPLC tables from `build_new_cruise_manifest.py`
+stay as a separate data source. FAIRe also carries environmental values (chlorophyll,
+carbonate system, oxygen, nutrients) for many samples.
+
 ## 10. Planned next
 
 - **Fixed vs advected.** Compare models trained on the two sets of embeddings,

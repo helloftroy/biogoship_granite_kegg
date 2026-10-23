@@ -331,6 +331,18 @@ files to each sample of AMT28, I07N, I09N 2016, P18 and C13.5/A13.5:
 number and depth, underway samples to the nearest cast (within 30 km and 12 h);
 `match_method`, `distance_km` and `gap_hours` record how.
 
+## Sequenced samples of the newer cruises (FAIRe-NOAA metadata)
+
+The FAIRe-NOAA workbook lists every sequenced sample. Build the sites locally (needs
+openpyxl), copy them to the cluster, then search and download:
+
+```bash
+python scripts/build_faire_manifest.py FAIRe-NOAA_uci-ess-biogoship.xlsx
+scp -r data/faire hpc2:/scratch/morrill/users/hmp278/biogoship_granite_kegg/data/
+sbatch --account=191001-364393 cluster/faire_search.sbatch
+sbatch --account=191001-364393 --export=ALL,MANIFEST_DIR=data/faire/manifests cluster/download_products.sbatch
+```
+
 ## Newer cruises (2022-2026)
 
 For P02 (2022), A16N (2023), I05 (2023), A13.5 (2024), I08S (2024), I09N (2025) and

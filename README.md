@@ -333,12 +333,11 @@ number and depth, underway samples to the nearest cast (within 30 km and 12 h);
 
 ## Sequenced samples of the newer cruises (FAIRe-NOAA metadata)
 
-The FAIRe-NOAA workbook lists every sequenced sample. Build the sites locally (needs
-openpyxl), copy them to the cluster, then search and download:
+The FAIRe-NOAA workbook lists every sequenced sample. The sites built from it are in
+git (`data/faire/`; rebuild with `python scripts/build_faire_manifest.py
+FAIRe-NOAA_uci-ess-biogoship.xlsx`, which needs openpyxl). Search and download:
 
 ```bash
-python scripts/build_faire_manifest.py FAIRe-NOAA_uci-ess-biogoship.xlsx
-scp -r data/faire hpc2:/scratch/morrill/users/hmp278/biogoship_granite_kegg/data/
 sbatch --account=191001-364393 cluster/faire_search.sbatch
 sbatch --account=191001-364393 --export=ALL,MANIFEST_DIR=data/faire/manifests cluster/download_products.sbatch
 ```

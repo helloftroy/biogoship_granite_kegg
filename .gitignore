@@ -27,5 +27,3 @@ catboost_info/
 # Embedding bundles copied back from the cluster
 *_bundle.zip
 data/cchdo/
-data/faire/
-*.xlsx

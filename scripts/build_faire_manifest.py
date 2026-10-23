@@ -9,7 +9,7 @@ chlorophyll). It replaces the candidate events built from CCHDO casts for the
 newer cruises: about a third to half of their samples were taken from the
 underway line between stations, where no cast is.
 
-Outputs in data/faire/ (not in git: unpublished metadata):
+Outputs in data/faire/:
   sampleMetadata.csv            the tab as it is, for reference
   faire_samples.csv             one row per sample: identifiers, time, position,
                                 depth, method, numeric environmental values (units

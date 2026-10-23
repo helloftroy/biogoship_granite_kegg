@@ -1107,9 +1107,8 @@ are what ocean-colour algorithms are built on.
 `FAIRe-NOAA_uci-ess-biogoship.xlsx` (tab sampleMetadata, generated 2026-09-16)
 lists every sequenced sample of every cruise: 3,463 samples (metagenomes and, on
 A16N, I09N 2025 and P02, metatranscriptomes) with time, position, depth,
-collection method, station/cast/bottle and environmental values. It is not
-public, so it and everything derived from it (`data/faire/`) stay out of git.
-`scripts/build_faire_manifest.py` turns it into `faire_samples.csv` and a site
+collection method, station/cast/bottle and environmental values. The workbook
+and `data/faire/` are in git. `scripts/build_faire_manifest.py` turns it into `faire_samples.csv` and a site
 list for the cruises not yet matched to Sentinel-3.
 
 Cross-checks:

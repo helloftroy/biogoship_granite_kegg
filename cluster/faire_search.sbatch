@@ -12,9 +12,8 @@
 # I08S 2024, I09N 2025, P02 2022, P04E 2026). Ends with what download_products.py
 # would fetch; nothing is downloaded here.
 #
-# data/faire/ is built off the cluster (the workbook needs openpyxl) and copied in:
-#   python scripts/build_faire_manifest.py FAIRe-NOAA_uci-ess-biogoship.xlsx      # locally
-#   scp -r data/faire hpc2:/scratch/morrill/users/hmp278/biogoship_granite_kegg/data/
+# data/faire/ is in git (built off the cluster, since reading the workbook needs
+# openpyxl: python scripts/build_faire_manifest.py FAIRe-NOAA_uci-ess-biogoship.xlsx).
 #
 #   sbatch --account=191001-364393 cluster/faire_search.sbatch
 #
@@ -25,7 +24,7 @@ set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
 DIR="data/faire/manifests"
 if [ ! -f "${DIR}/biogoship_sites.csv" ]; then
-  echo "Missing ${DIR}/biogoship_sites.csv: build it locally and copy data/faire/ here (see the header)." >&2
+  echo "Missing ${DIR}/biogoship_sites.csv: git pull (see the header)." >&2
   exit 1
 fi
 

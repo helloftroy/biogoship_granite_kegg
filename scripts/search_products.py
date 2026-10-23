@@ -9,6 +9,12 @@ temperature (SL_2_WST) orbit file of the same overpass.
 Re-running this rewrites both output files from scratch, which drops any pairs
 added later by search_trajectory_products.py; re-run that afterwards if needed.
 
+Each answer from the catalogue is cached in search_cache.jsonl next to the outputs,
+keyed by site, time, position and window, so a run stopped by the catalogue's rate
+limit ("Too Many Requests") continues where it stopped when re-run. Sites whose
+search still fails are skipped and counted; the outputs are then not written and
+the run exits with an error, so re-run it. Delete the cache to search afresh.
+
 No credentials are needed: the catalogue is public. Outputs in data/manifests/:
   site_products.csv   one row per (site, candidate OLCI scene), with the time gap
   products.csv        one row per unique OLCI scene, with its paired SST product
@@ -21,7 +27,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -66,12 +74,25 @@ def main() -> None:
     print(f"Sites: {len(sites):,} total, {len(queryable):,} sampled close enough to the Sentinel-3 era to query")
     print(f"Window: +/-{args.max_days:g} days" + "".join(f"; {name} +/-{days:g}" for name, days in section_days.items()))
 
+    cache = SearchCache(args.out_dir / "search_cache.jsonl")
+    print(f"Cached searches from earlier runs: {len(cache):,}")
+    failed: list[str] = []
+
     def search_site(site: dict[str, str]) -> list[dict[str, str]]:
         when = parse_utc(site["time_utc"])
-        time.sleep(args.pause)  # stay under the catalogue's rate limit on long runs
-        return cdse.search_products(
-            cdse.OLCI_WFR, when - window(site), when + window(site), point=(float(site["lon"]), float(site["lat"]))
-        )
+        key = f"olci|{site['site_id']}|{site['time_utc']}|{site['lat']}|{site['lon']}|{window(site).total_seconds():g}"
+
+        def query() -> list[dict[str, str]]:
+            time.sleep(args.pause)  # stay under the catalogue's rate limit on long runs
+            point = (float(site["lon"]), float(site["lat"]))
+            return cdse.search_products(cdse.OLCI_WFR, when - window(site), when + window(site), point=point)
+
+        try:
+            return cache.get_or_search(key, query)
+        except Exception as exc:  # noqa: BLE001 - keep going; the site is searched again on the next run
+            failed.append(site["site_id"])
+            print(f"  search failed for {site['site_id']}: {exc}", flush=True)
+            return []
 
     site_products: list[dict] = []
     olci: dict[str, dict] = {}
@@ -85,7 +106,10 @@ def main() -> None:
             if done % 50 == 0 or done == len(queryable):
                 print(f"  searched {done:,}/{len(queryable):,} sites; {len(olci):,} unique OLCI scenes", flush=True)
 
-    sst = search_sst(list(olci.values()))
+    if failed:
+        raise SystemExit(f"{len(failed):,} site searches failed (rate limit?); outputs not written. "
+                         "Re-run: finished searches are cached.")  # fmt: skip
+    sst = search_sst(list(olci.values()), cache)
     products = []
     for product in sorted(olci.values(), key=lambda row: row["start_utc"]):
         gaps = [abs(float(r["time_gap_hours"])) for r in site_products if r["product_id"] == product["product_id"]]
@@ -97,7 +121,35 @@ def main() -> None:
     summarise(sites, site_products, products, args)
 
 
-def search_sst(olci: list[dict[str, str]]) -> list[dict[str, str]]:
+class SearchCache:
+    """Catalogue answers by key, appended to a JSON-lines file as they arrive."""
+
+    def __init__(self, path: Path) -> None:
+        self.path, self.lock, self.answers = path, threading.Lock(), {}
+        if path.exists():
+            for line in path.read_text().splitlines():
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:  # a line cut short when a job was killed
+                    continue
+                self.answers[entry["key"]] = entry["products"]
+
+    def __len__(self) -> int:
+        return len(self.answers)
+
+    def get_or_search(self, key: str, query) -> list[dict[str, str]]:
+        if key in self.answers:
+            return self.answers[key]
+        products = query()
+        with self.lock:
+            self.answers[key] = products
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a") as handle:
+                handle.write(json.dumps({"key": key, "products": products}) + "\n")
+        return products
+
+
+def search_sst(olci: list[dict[str, str]], cache: SearchCache | None = None) -> list[dict[str, str]]:
     """All SST orbit files sensed around the OLCI scenes, fetched in a few date-range queries."""
     day = timedelta(days=1)
     days = sorted({parse_utc(row["start_utc"]).replace(hour=0, minute=0, second=0, microsecond=0) for row in olci})
@@ -109,7 +161,9 @@ def search_sst(olci: list[dict[str, str]]) -> list[dict[str, str]]:
             ranges.append([start - day, start + 2 * day])
     found: dict[str, dict[str, str]] = {}
     for start, end in ranges:
-        for product in cdse.search_products(cdse.SLSTR_WST, start, end):
+        query = lambda start=start, end=end: cdse.search_products(cdse.SLSTR_WST, start, end)  # noqa: E731
+        key = f"sst|{start.isoformat()}|{end.isoformat()}"
+        for product in cache.get_or_search(key, query) if cache else query():
             found[product["product_id"]] = product
     print(f"SST orbit files in {len(ranges)} date range(s): {len(found):,}", flush=True)
     return list(found.values())

@@ -449,6 +449,45 @@ class FillMissingSstTests(unittest.TestCase):
                 fill_missing_sst.cdse.search_products = real_search
 
 
+class SearchResumeTests(unittest.TestCase):
+    """A search stopped by the rate limit continues on re-run, querying only what is not cached."""
+
+    def test_failed_site_is_searched_again(self):
+        import contextlib
+        import io
+
+        from biogoship.tables import read_csv, write_csv
+
+        sites = [{"site_id": f"s{i}", "time_utc": "2020-03-29T06:00:00Z", "lat": "10", "lon": str(i), "section": "T"} for i in range(3)]
+        scene = {"product_id": "p", "product_name": OLCI_NAME, "satellite": "S3B", "start_utc": "2020-03-29T11:41:29Z",
+                 "end_utc": "2020-03-29T11:44:29Z", "size_bytes": "1", "timeliness": "NT"}  # fmt: skip
+        calls = []
+
+        def fake(product_type, start, end, point=None, **kwargs):
+            calls.append(point)
+            if point and point[0] == 1.0 and len(calls) <= 3:
+                raise RuntimeError("HTTP Error 429: Too Many Requests")
+            return [scene] if point else []
+
+        real = search_products.cdse.search_products
+        search_products.cdse.search_products = fake
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp)
+                write_csv(out / "sites.csv", sites)
+                argv = ["--sites-csv", str(out / "sites.csv"), "--out-dir", str(out), "--workers", "1", "--pause", "0"]
+                with contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaises(SystemExit):
+                        LocalArchiveRunTests.run_script(self, search_products, argv)
+                    self.assertFalse((out / "products.csv").exists())
+                    first = len(calls)
+                    LocalArchiveRunTests.run_script(self, search_products, argv)
+                self.assertEqual(calls[first:], [(1.0, 10.0), None])  # the failed site, then the SST search
+                self.assertEqual(len(read_csv(out / "site_products.csv")), 3)
+        finally:
+            search_products.cdse.search_products = real
+
+
 class CchdoMatchTests(unittest.TestCase):
     """CTD samples take their station's bottle at their depth; underway samples the nearest cast's surface bottle."""
 

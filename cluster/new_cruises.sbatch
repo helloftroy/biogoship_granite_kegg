@@ -17,7 +17,10 @@
 #   sbatch --account=191001-364393 cluster/new_cruises.sbatch
 #
 # SeaBASS needs EARTHDATA_USERNAME / EARTHDATA_PASSWORD in cdse_credentials.sh;
-# without them SeaBASS is listed but not downloaded. Overrides: MAX_DEPTH=10, MAX_DAYS=3.
+# without them SeaBASS is listed but not downloaded. Overrides: MAX_DEPTH=10, MAX_DAYS=3,
+# PAUSE=2 (seconds between catalogue requests). The scene search is cached: if the
+# catalogue's rate limit stops it, re-run; SEARCH_ONLY=1 skips rebuilding the sites:
+#   sbatch --account=191001-364393 --export=ALL,SEARCH_ONLY=1 cluster/new_cruises.sbatch
 
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
@@ -27,9 +30,11 @@ fi
 NEW="data/new_cruises"
 
 echo "Job started: $(date)"
-python scripts/build_new_cruise_manifest.py --out-dir "${NEW}" --max-depth "${MAX_DEPTH:-10}"
+if [ "${SEARCH_ONLY:-0}" != "1" ]; then
+  python scripts/build_new_cruise_manifest.py --out-dir "${NEW}" --max-depth "${MAX_DEPTH:-10}"
+fi
 python scripts/search_products.py --sites-csv "${NEW}/manifests/biogoship_sites.csv" --out-dir "${NEW}/manifests" \
-  --max-days "${MAX_DAYS:-3}" --workers 2 --pause 1
+  --max-days "${MAX_DAYS:-3}" --workers 1 --pause "${PAUSE:-2}"
 echo
 echo "Sentinel-3 products the new cruises would need:"
 python scripts/download_products.py --manifest-dir "${NEW}/manifests" --dry-run

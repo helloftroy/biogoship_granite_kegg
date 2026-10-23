@@ -95,8 +95,8 @@ Logs go to `logs/<job name>_<job id>.out` and `.err`.
 | 6 | `embed_tiles.sbatch` | gpu-a100 | embeddings for every clear tile | done 2026-10-20: 3,503 tiles in 101 s |
 | 6b | `check_granite_inputs.sbatch` | morrill (CPU) | due diligence: tiles vs the model's config, and MAE reconstruction under different gap-filling conventions | done 2026-10-20 (job 80958): inputs match; keep current gap filling |
 | 5c | `fill_missing_sst.sbatch` | service | fills tiles without SST from the nearest-in-time daytime SLSTR overpass of the same spot (120 h window; redoes night fills; skips overpasses already tried); refreshes manifest and raw features; then re-run 6 | not run |
-| 2b | `attach_cchdo.sbatch` | service | CCHDO bottle chemistry for the original cruises' samples (station or nearest cast) -> `data/manifests/biogoship_samples_cchdo.csv` | not run (tested locally) |
-| N1 | `new_cruises.sbatch` | service | newer cruises: CCHDO + SeaBASS candidate events, Sentinel-3 scene search, download size (no download) | done 2026-10-22 for CCHDO (917 sites; 723 OLCI + 489 SST, ~610 GB); SeaBASS failed at the Earthdata login, fixed in code, to re-run |
+| 2b | `attach_cchdo.sbatch` | service | CCHDO bottle chemistry for the original cruises' samples (station or nearest cast) -> `data/manifests/biogoship_samples_cchdo.csv` | done 2026-10-23 (604 matched by station or nearest cast) |
+| N1 | `new_cruises.sbatch` | service | newer cruises: CCHDO + SeaBASS candidate events, Sentinel-3 scene search (cached, resumable; `SEARCH_ONLY=1`), download size (no download) | done 2026-10-22 for CCHDO (917 sites; 723 OLCI + 489 SST, ~610 GB); SeaBASS failed at the Earthdata login, fixed in code, to re-run |
 | N2 | `download_products.sbatch` with `MANIFEST_DIR=data/new_cruises/manifests` | service | Sentinel-3 archives for the newer cruises | not run |
 | 7 | (no job) `python scripts/pool_tile_features.py` | login node is fine (a minute of file reading) | raw-channel summary per tile, for the baseline; copy `data/embeddings/tile_raw_features.csv` back | done 2026-10-20 |
 

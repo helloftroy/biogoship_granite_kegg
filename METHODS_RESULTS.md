@@ -1130,13 +1130,14 @@ Cross-checks:
   472 samples, many deep), HLY2202 (2022, Arctic, 150), P04E (May-June 2026,
   279) and InterCal (30, no position: intercalibration samples).
 
-Result: 1,128 sites (unique time and position with a sample at 10 m or
-shallower) on A13.5 2024 (121), A16N 2023 (210), GOMECC4 (53), HLY2202 (112),
-I05 2023 (165), I08S 2024 (29), I09N 2025 (101), P02 2022 (145) and P04E 2026
-(192); 1,418 samples. The depth cut removed only 65 of 1,193 sites, since most
-deeper samples come from casts that also sampled the surface. 75 samples have no
-depth and no surface sample at their site, so they are left out (P02 38 and
-A16N 1 metatranscriptomes, HLY2202 6, and the 30 InterCal samples). The full
+Result: 1,147 sites (unique time and position with a sample at 10 m or
+shallower, or without a recorded depth) on A13.5 2024 (121), A16N 2023 (211),
+GOMECC4 (53), HLY2202 (116), I05 2023 (165), I08S 2024 (29), I09N 2025 (101),
+P02 2022 (159) and P04E 2026 (192); 1,533 samples. The depth cut removed only 46
+of 1,193 sites, since most deeper samples come from casts that also sampled the
+surface. 115 samples have no recorded depth (54 A16N and 55 P02
+metatranscriptomes, 6 HLY2202) and are kept as surface samples; their depth
+should be confirmed. The 30 InterCal samples have no position. The full
 archives for the 1,193 sites came to 983 GB (1,199 OLCI scenes, 838 SST files);
 they are downloaded and kept until both fixed and advected tiles are cut. These replace the CCHDO-cast candidates
 for the satellite search. The SeaBASS HPLC tables from `build_new_cruise_manifest.py`

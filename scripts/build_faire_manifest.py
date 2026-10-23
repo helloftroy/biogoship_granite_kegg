@@ -119,10 +119,9 @@ def build_sites(samples: pd.DataFrame, max_depth: float) -> tuple[pd.DataFrame, 
 
     Only sites with at least one sample at or above max_depth are kept (surface water,
     what the satellite sees). Site ids are assigned before that cut, so they do not
-    change with it. Samples without a depth count as surface only through a sample of
-    known depth at the same site.
+    change with it. Samples without a recorded depth are kept as surface.
     """
-    samples["surface"] = samples["depth_min_m"] <= max_depth
+    samples["surface"] = (samples["depth_min_m"] <= max_depth) | samples["depth_min_m"].isna()
     usable = samples["time_utc"].notna() & samples["lat"].notna() & samples["lon"].notna()
     new = ~samples["cruise"].isin(list(ORIGINAL)) & samples["cruise"].notna()
     in_era = samples["time_utc"] >= SENTINEL3_START
@@ -169,9 +168,9 @@ def summarise(samples: pd.DataFrame, sites: pd.DataFrame) -> None:
     print(table.fillna({"sites": 0}).astype({"sites": int}).to_string())
     print(f"\nSites for satellite matching: {len(sites):,} (cruises not yet in data/manifests, sampled since "
           f"{SENTINEL3_START:%Y-%m-%d}, with a sample at or above the depth cut-off)")
-    unknown = samples[samples["depth_min_m"].isna() & samples["site_id"].isna() & ~samples["cruise"].isin(list(ORIGINAL))]
+    unknown = samples[samples["depth_min_m"].isna() & samples["site_id"].notna()]
     if len(unknown):
-        print(f"Left out for lack of a depth: {len(unknown)} samples (" +
+        print(f"Kept without a recorded depth: {len(unknown)} samples (" +
               ", ".join(f"{c} {a} {n}" for (c, a), n in unknown.groupby(["cruise", "assay"]).size().items()) + ")")  # fmt: skip
     have = samples[ENVIRONMENT].notna().sum()
     print("Samples with a value: " + ", ".join(f"{k} {v:,}" for k, v in have[have > 0].items()))

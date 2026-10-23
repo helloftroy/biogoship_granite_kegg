@@ -70,11 +70,11 @@ def main() -> None:
 
     samples = tidy(raw[raw["samp_category"] == "sample"])
     samples = link_original(samples, pd.read_csv(args.original_manifest / "biogoship_samples.csv"))
-    samples, sites = build_sites(samples)
+    samples, sites = build_sites(samples, args.max_depth)
     samples.to_csv(args.out_dir / "faire_samples.csv", index=False)
     (args.out_dir / "manifests").mkdir(exist_ok=True)
     sites.to_csv(args.out_dir / "manifests" / "biogoship_sites.csv", index=False)
-    pipeline_samples(samples).to_csv(args.out_dir / "manifests" / "biogoship_samples.csv", index=False)
+    pipeline_samples(samples[samples["surface"]]).to_csv(args.out_dir / "manifests" / "biogoship_samples.csv", index=False)
     summarise(samples, sites)
     print(f"\nWrote {args.out_dir / 'faire_samples.csv'} and {args.out_dir / 'manifests' / 'biogoship_sites.csv'}")
 
@@ -114,8 +114,15 @@ def link_original(samples: pd.DataFrame, original: pd.DataFrame) -> pd.DataFrame
     return samples
 
 
-def build_sites(samples: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """One site per unique time (minute) and position (4 decimals) on the cruises not yet in data/manifests."""
+def build_sites(samples: pd.DataFrame, max_depth: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """One site per unique time (minute) and position (4 decimals) on the cruises not yet in data/manifests.
+
+    Only sites with at least one sample at or above max_depth are kept (surface water,
+    what the satellite sees). Site ids are assigned before that cut, so they do not
+    change with it. Samples without a depth count as surface only through a sample of
+    known depth at the same site.
+    """
+    samples["surface"] = samples["depth_min_m"] <= max_depth
     usable = samples["time_utc"].notna() & samples["lat"].notna() & samples["lon"].notna()
     new = ~samples["cruise"].isin(list(ORIGINAL)) & samples["cruise"].notna()
     in_era = samples["time_utc"] >= SENTINEL3_START
@@ -124,8 +131,10 @@ def build_sites(samples: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     pick["site_key"] = key
     first = pick.groupby("site_key")["samp_name"].transform("first")
     pick["site_id"] = "site_" + first.str.replace(r"_(MG|MT)$", "", regex=True).map(lambda s: re.sub(r"[^A-Za-z0-9_.-]", "_", s))
+    surface_sites = set(pick.loc[pick["surface"], "site_id"])
+    pick = pick[pick["site_id"].isin(surface_sites)]
     samples = samples.join(pick["site_id"])
-    sites = pick.groupby("site_id").agg(
+    sites = pick[pick["surface"]].groupby("site_id").agg(
         time_utc=("time_utc", "first"), lat=("lat", "first"), lon=("lon", "first"), section=("cruise", "first"),
         n_samples=("samp_name", "size"), n_metagenome_samples=("assay", lambda s: int((s == "MG").sum())),
         sample_ids=("samp_name", lambda s: ";".join(s)),
@@ -151,14 +160,19 @@ def pipeline_samples(samples: pd.DataFrame) -> pd.DataFrame:
 def summarise(samples: pd.DataFrame, sites: pd.DataFrame) -> None:
     table = samples.groupby("cruise").agg(
         samples=("samp_name", "size"), MG=("assay", lambda s: int((s == "MG").sum())), MT=("assay", lambda s: int((s == "MT").sum())),
-        no_time_or_position=("lat", lambda s: int(s.isna().sum())), at_or_above_10m=("depth_min_m", lambda s: int((s <= 10).sum())),
+        no_time_or_position=("lat", lambda s: int(s.isna().sum())), surface=("surface", "sum"),
         start=("time_utc", lambda s: s.dropna().min()[:10] if s.notna().any() else ""),
         end=("time_utc", lambda s: s.dropna().max()[:10] if s.notna().any() else ""),
         in_original_manifest=("original_sample_id", lambda s: int(s.notna().sum())),
     )  # fmt: skip
     table = table.join(sites.groupby("section").size().rename("sites"))
     print(table.fillna({"sites": 0}).astype({"sites": int}).to_string())
-    print(f"\nSites for satellite matching: {len(sites):,} (cruises not yet in data/manifests, sampled since {SENTINEL3_START:%Y-%m-%d})")
+    print(f"\nSites for satellite matching: {len(sites):,} (cruises not yet in data/manifests, sampled since "
+          f"{SENTINEL3_START:%Y-%m-%d}, with a sample at or above the depth cut-off)")
+    unknown = samples[samples["depth_min_m"].isna() & samples["site_id"].isna() & ~samples["cruise"].isin(list(ORIGINAL))]
+    if len(unknown):
+        print(f"Left out for lack of a depth: {len(unknown)} samples (" +
+              ", ".join(f"{c} {a} {n}" for (c, a), n in unknown.groupby(["cruise", "assay"]).size().items()) + ")")  # fmt: skip
     have = samples[ENVIRONMENT].notna().sum()
     print("Samples with a value: " + ", ".join(f"{k} {v:,}" for k, v in have[have > 0].items()))
 
@@ -167,6 +181,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("workbook", type=Path, help="FAIRe-NOAA_uci-ess-biogoship.xlsx")
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "faire")
+    parser.add_argument("--max-depth", type=float, default=10.0, help="Deepest sample counted as surface (m). Default 10.")
     parser.add_argument("--original-manifest", type=Path, default=MANIFEST_DIR, help="Folder with the ENA-based biogoship_samples.csv.")
     return parser.parse_args()
 

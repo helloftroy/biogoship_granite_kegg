@@ -27,3 +27,13 @@ catboost_info/
 # Embedding bundles copied back from the cluster
 *_bundle.zip
 data/cchdo/
+
+# Tiles and logs for the FAIRe sample set (manifests stay tracked)
+data/faire/tiles/
+data/faire/work/
+data/faire/*_log.csv
+data/faire/manifests/products.csv
+data/faire/manifests/site_products.csv
+data/faire/manifests/search_cache.jsonl
+data/faire/manifests/biogoship_tile_manifest.csv
+data/faire/manifests/site_tile_status.csv

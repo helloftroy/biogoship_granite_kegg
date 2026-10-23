@@ -26,6 +26,9 @@
 #
 # Other overrides: POSITIONS="fixed advected" (or just "fixed"), MIN_VALID=0.8,
 # DOWNLOAD_MODE=files|zip, NO_SST=1, CONNECTIONS=4.
+#
+# Another sample set, with its own tiles, logs and tile manifest (MANIFEST_DIR and DATA_DIR):
+#   sbatch --account=191001-364393 --export=ALL,POSITIONS=fixed,MANIFEST_DIR=data/faire/manifests,DATA_DIR=data/faire cluster/download_tiles.sbatch
 
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
@@ -54,7 +57,12 @@ fi
 echo "Job started: $(date)"
 df -h "${REPO_ROOT}" | tail -1
 # shellcheck disable=SC2086  # POSITIONS is a space-separated list
+MANIFEST_DIR="${MANIFEST_DIR:-data/manifests}"
+DATA_DIR="${DATA_DIR:-data}"
 python scripts/download_tiles.py \
+  --manifest-dir "${MANIFEST_DIR}" \
+  --data-dir "${DATA_DIR}" \
+  --products-dir data/products \
   --positions ${POSITIONS:-fixed advected} \
   --min-valid "${MIN_VALID:-0.8}" \
   --max-offset-km "${MAX_OFFSET_KM:-20}" \
@@ -63,5 +71,6 @@ python scripts/download_tiles.py \
   --connections "${CONNECTIONS:-4}" \
   ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 
-python scripts/build_tile_manifest.py
+python scripts/build_tile_manifest.py --manifest-dir "${MANIFEST_DIR}" --tile-log "${DATA_DIR}/tile_log.csv" \
+  --out-csv "${MANIFEST_DIR}/biogoship_tile_manifest.csv"
 echo "Job finished: $(date)"

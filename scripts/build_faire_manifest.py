@@ -16,6 +16,8 @@ Outputs in data/faire/:
                                 in <name>_unit), assay (MG/MT), site_id, and the
                                 matching sample_id of data/manifests/biogoship_samples.csv
                                 for the original cruises (same site within 1 h, 2 km)
+  manifests/biogoship_samples.csv  the samples with a site, in the columns of
+                                data/manifests/biogoship_samples.csv (for build_tile_manifest.py)
   manifests/biogoship_sites.csv one row per unique time and position on the cruises
                                 not yet matched to Sentinel-3, in the format
                                 search_products.py and download_tiles.py read
@@ -72,6 +74,7 @@ def main() -> None:
     samples.to_csv(args.out_dir / "faire_samples.csv", index=False)
     (args.out_dir / "manifests").mkdir(exist_ok=True)
     sites.to_csv(args.out_dir / "manifests" / "biogoship_sites.csv", index=False)
+    pipeline_samples(samples).to_csv(args.out_dir / "manifests" / "biogoship_samples.csv", index=False)
     summarise(samples, sites)
     print(f"\nWrote {args.out_dir / 'faire_samples.csv'} and {args.out_dir / 'manifests' / 'biogoship_sites.csv'}")
 
@@ -131,6 +134,18 @@ def build_sites(samples: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     samples["time_utc"] = samples["time_utc"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     sites = sites[["site_id", "time_utc", "lat", "lon", "section", "n_samples", "n_metagenome_samples", "sample_ids"]]
     return samples, sites.sort_values("time_utc")
+
+
+def pipeline_samples(samples: pd.DataFrame) -> pd.DataFrame:
+    """Samples with a site, in the column layout of the ENA-based biogoship_samples.csv."""
+    s = samples[samples["site_id"].notna()]
+    return pd.DataFrame({
+        "sample_id": s["samp_name"], "biosample": s.get("biosample_accession"), "collection_time_utc": s["time_utc"],
+        "lat": s["lat"], "lon": s["lon"], "assay": s["assay"], "cruise_code": s["cruise"], "section": s["cruise"],
+        "depth_m": s["depth_min_m"], "sample_method": s["collection_method"], "expocode": "", "ocean": "",
+        "temperature_c": s["temp"], "phosphate_umol_kg": s["phosphate"], "nitrate_nitrite_umol_l": s["nitrate_plus_nitrite"],
+        "site_id": s["site_id"],
+    })  # fmt: skip
 
 
 def summarise(samples: pd.DataFrame, sites: pd.DataFrame) -> None:

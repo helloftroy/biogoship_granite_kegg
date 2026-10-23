@@ -80,6 +80,10 @@ VARIABLES = {
     "nitrate_umol_kg": ["NITRAT", "NO2+NO3"],
     "phosphate_umol_kg": ["PHSPHT"],
     "silicate_umol_kg": ["SILCAT"],
+    "nitrite_umol_kg": ["NITRIT"],
+    "dic_umol_kg": ["TCARBN"],
+    "alkalinity_umol_kg": ["ALKALI"],
+    "ph_total": ["PH_TOT"],
 }
 BAD_FLAGS = {"4", "5", "9"}  # WOCE: 4 bad, 5 not reported, 9 not sampled
 
@@ -167,7 +171,12 @@ def cchdo_files(expocode: str, folder: Path) -> dict[str, Path]:
         cruise = cchdo_cruise_record(expocode, folder.parent / "cruises_all.json")
         chosen = {}
         for file_id in cruise.get("files", []):
-            meta = json.loads(fetch(f"{CCHDO}/api/v1/file/{file_id}"))
+            try:
+                meta = json.loads(fetch(f"{CCHDO}/api/v1/file/{file_id}"))
+            except urllib.error.HTTPError as exc:
+                if exc.code in (401, 403, 404):  # unpublished or withdrawn file records
+                    continue
+                raise
             if meta.get("role") != "dataset":
                 continue
             kind = {("bottle", "exchange"): "bottle", ("summary", "woce"): "summary"}.get(

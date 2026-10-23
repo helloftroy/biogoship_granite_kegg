@@ -449,5 +449,32 @@ class FillMissingSstTests(unittest.TestCase):
                 fill_missing_sst.cdse.search_products = real_search
 
 
+class CchdoMatchTests(unittest.TestCase):
+    """CTD samples take their station's bottle at their depth; underway samples the nearest cast's surface bottle."""
+
+    def test_station_and_nearest_cast(self):
+        import pandas as pd
+
+        import attach_cchdo_bottles as acb
+
+        def bottle(station, lat, time, depth, temp):
+            return {"station": station, "cast": "1", "station_key": station, "lat": lat, "lon": 0.0,
+                    "cast_time_utc": time, "depth_m": depth, **{v: np.nan for v in acb.VARIABLES}, "temperature_c": temp}  # fmt: skip
+
+        bottles = pd.DataFrame([bottle("1", 0.0, "2020-01-01T00:00:00Z", 3.0, 20.0), bottle("1", 0.0, "2020-01-01T00:00:00Z", 50.0, 15.0),
+                                bottle("2", 1.0, "2020-01-02T00:00:00Z", 4.0, 25.0)])  # fmt: skip
+        args = argparse.Namespace(max_km=30.0, max_hours=12.0, max_depth=10.0, depth_tolerance=5.0)
+        ctd = pd.Series({"collection_time_utc": "2020-01-01T01:00:00Z", "lat": 0.0, "lon": 0.0, "depth_m": 48.0,
+                         "ctd_station": "1", "sample_method": "CTD"})  # fmt: skip
+        row = acb.match_sample(ctd, bottles, args)
+        self.assertEqual((row["match_method"], row["cchdo_temperature_c"]), ("station", 15.0))
+        underway = pd.Series({**ctd, "lat": 1.05, "depth_m": 5.0, "ctd_station": None, "sample_method": "underway",
+                              "collection_time_utc": "2020-01-02T02:00:00Z"})  # fmt: skip
+        row = acb.match_sample(underway, bottles, args)
+        self.assertEqual((row["match_method"], row["station"], row["cchdo_temperature_c"]), ("nearest_cast", "2", 25.0))
+        far = pd.Series({**underway, "collection_time_utc": "2020-01-03T12:00:00Z"})
+        self.assertEqual(acb.match_sample(far, bottles, args)["match_method"], "none")
+
+
 if __name__ == "__main__":
     unittest.main()

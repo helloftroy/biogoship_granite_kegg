@@ -53,6 +53,42 @@ Most samples are near-surface: median depth 7 m (underway intake); the deepest
 is 80 m. Samples below the surface layer are kept in the manifest with their
 depth so they can be filtered later.
 
+### CCHDO bottle chemistry for the original cruises (2026-10-23)
+
+The curated table holds only temperature, phosphate and nitrate+nitrite; its
+other columns are sample and sequencing details. `scripts/attach_cchdo_bottles.py`
+adds salinity, oxygen, nitrate, nitrite, phosphate, silicate, DIC, alkalinity
+and pH from each cruise's CCHDO bottle file, for the five Sentinel-3-era cruises
+(AMT28 74JC20180923, I07N 33RO20180423, I09N 33RR20160321, P18 33RO20161119,
+C13.5/A13.5 33RO20200321). CTD samples with a station number
+(`ctd_station_no_pub`) take that station's cast closest in time, and per variable
+the bottle closest in depth (within 5 m or 20%). Underway samples take the
+nearest cast in space-time (distance + 2 km per hour of gap) if within 30 km and
+12 h, and its shallowest valid bottle at or above 10 m: the surface water at the
+nearest station, not the sample's own water. Output:
+`data/manifests/biogoship_samples_cchdo.csv` with `match_method`, distance, gap
+and bottle depth, so matches can be filtered.
+
+Result (run locally):
+
+| Cruise | By station | Nearest cast | None | Notes |
+|---|---:|---:|---:|---|
+| AMT28 | 62 | 1 | 0 | no carbonate data |
+| I07N | 51 | 190 | 20 | DIC and alkalinity, no pH |
+| I09N 2016 | 3 | 204 | 35 | full carbonate set |
+| P18 | 95 | 7 | 2 | DIC and alkalinity |
+| C13.5/A13.5 | 0 | 13 | 250 | casts only on 24-27 March 2020 |
+
+C13.5/A13.5 has CCHDO casts only on 24-27 March 2020; the 250 samples after
+that have no cast to match. Matched underway samples sat a median 0.7 km and
+1.4 h from their cast (90th percentile 26 km, 3.6 h). Phosphate agrees with the
+curated values (median difference 0.000 by station, 0.017 umol/kg by nearest
+cast), which checks the matching. Temperature agrees on AMT28 and I07N, but not
+on P18: same station and position, yet the curated temperatures are given to
+0.1 C and differ from the calibrated CTD by a median 0.4 C, more than 1 C for
+28 of 95 samples. The curated P18 temperature is probably not the CTD value; the
+CCHDO temperature is the better target there.
+
 ## 3. Matching sites to Sentinel-3
 
 **Products.**

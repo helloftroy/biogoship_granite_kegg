@@ -319,6 +319,18 @@ Feature sets: `fixed` and `advected` (Granite embeddings), `raw_fixed` and
 Results go to `data/results/`. Later targets go in with
 `--targets-csv table.csv --targets NMF1 NMF2 ...` (a CSV keyed by `sample_id`).
 
+## More chemistry for the original cruises
+
+```bash
+sbatch --account=191001-364393 cluster/attach_cchdo.sbatch
+```
+
+Adds salinity, oxygen, nutrients, DIC, alkalinity and pH from the CCHDO bottle
+files to each sample of AMT28, I07N, I09N 2016, P18 and C13.5/A13.5:
+`data/manifests/biogoship_samples_cchdo.csv`. CTD samples are matched by station
+number and depth, underway samples to the nearest cast (within 30 km and 12 h);
+`match_method`, `distance_km` and `gap_hours` record how.
+
 ## Newer cruises (2022-2026)
 
 For P02 (2022), A16N (2023), I05 (2023), A13.5 (2024), I08S (2024), I09N (2025) and

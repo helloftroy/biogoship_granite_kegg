@@ -2,7 +2,8 @@
 #SBATCH --job-name=gpu4_test
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:4
+#SBATCH --partition=gpu-a100
+#SBATCH --gres=gpu:a100:4
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=00:20:00
@@ -10,12 +11,13 @@
 #SBATCH --error=logs/%x_%j.err
 
 # Can this account get 4 GPUs on one node at once? Needs no Python.
-# Pick the partition from check_cluster.sh output, then:
+# Ptolemy: partition gpu-a100 (4 nodes x 8 whole A100s); QOS "normal" allows at most
+# 4 A100s per user, 128 CPUs, 1 TB memory and 2 days per job. Account 191001-366746
+# (not Morrill's 191001-364393).
 #
 #   cd /scratch/ptolemy/users/$USER/biogoship_granite_kegg
-#   sbatch --account=<account> --partition=<gpu partition> cluster/ptolemy/gpu4_test.sbatch
+#   sbatch --account=191001-366746 cluster/ptolemy/gpu4_test.sbatch
 #
-# If the partition names GPU types, ask for them explicitly, e.g. --gres=gpu:a100:4.
 # With a PyTorch environment, set TORCH_ENV=/path/to/env to also run a 4-GPU NCCL check.
 
 echo "Job $SLURM_JOB_ID on $(hostname), partition $SLURM_JOB_PARTITION, account $SLURM_JOB_ACCOUNT"

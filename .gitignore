@@ -40,3 +40,4 @@ data/faire/manifests/site_tile_status.csv
 data/faire/currents/
 data/faire/advection/
 data/faire/manifests/advected_positions.csv
+data/faire/embeddings/

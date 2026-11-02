@@ -37,3 +37,6 @@ data/faire/manifests/site_products.csv
 data/faire/manifests/search_cache.jsonl
 data/faire/manifests/biogoship_tile_manifest.csv
 data/faire/manifests/site_tile_status.csv
+data/faire/currents/
+data/faire/advection/
+data/faire/manifests/advected_positions.csv

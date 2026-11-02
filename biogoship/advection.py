@@ -22,6 +22,11 @@ from .tables import haversine_km, parse_utc, wrap_lon_delta
 
 CURRENTS_PRODUCT = "MULTIOBS_GLO_PHY_MYNRT_015_003"
 CURRENTS_DATASET = "cmems_obs-mob_glo_phy-cur_my_0.25deg_P1D-m"  # multi-year, daily means
+CURRENTS_DATASET_NRT = "cmems_obs-mob_glo_phy-cur_nrt_0.25deg_P1D-m"  # near-real-time, daily means
+# Time coverage seen in the catalogue on 2026-11-02: multi-year from 1993-01-01 to
+# 2026-03-31 (it is extended now and then); near-real-time from 2022-05-01 to the present.
+CURRENTS_MY_END = datetime(2026, 3, 31, tzinfo=timezone.utc)
+CURRENTS_NRT_START = datetime(2022, 5, 1, tzinfo=timezone.utc)
 CURRENT_VARIABLES = ["uo", "vo"]  # total eastward / northward velocity, m/s
 
 
@@ -37,6 +42,10 @@ def section_boxes(
     The box is the sites' extent plus margin_deg, so water can drift without leaving
     it. The time span runs from the earliest to the latest of all sampling and
     overpass times, plus pad_days at each end.
+
+    A section whose sites lie on both sides of the 180 degree meridian (a Pacific
+    crossing) gets its box in 0 to 360 degrees longitude, so it stays narrow; such
+    boxes have lon_max above 180 and box["wraps"] True.
     """
     by_site = {site["site_id"]: site for site in sites}
     boxes: dict[str, dict] = {}
@@ -49,6 +58,9 @@ def section_boxes(
     for box in boxes.values():
         lats = [float(site["lat"]) for site in box["sites"].values()]
         lons = [float(site["lon"]) for site in box["sites"].values()]
+        wraps = max(lons) - min(lons) > 180.0 and narrower_in_360(lons)
+        if wraps:
+            lons = [lon % 360.0 for lon in lons]
         out.append(
             {
                 "section": box["section"],
@@ -59,9 +71,26 @@ def section_boxes(
                 "lon_max": max(lons) + margin_deg,
                 "start": min(box["times"]) - timedelta(days=pad_days),
                 "end": max(box["times"]) + timedelta(days=pad_days),
+                "wraps": wraps,
             }
         )
     return sorted(out, key=lambda box: box["start"])
+
+
+def narrower_in_360(lons: list[float]) -> bool:
+    """Do these longitudes span less in 0-360 than in -180-180 (i.e. they straddle the dateline)?"""
+    shifted = [lon % 360.0 for lon in lons]
+    return max(shifted) - min(shifted) < max(lons) - min(lons)
+
+
+def currents_dataset(start: datetime, end: datetime) -> str:
+    """Multi-year currents where they reach; near-real-time for spans past their end."""
+    if end <= CURRENTS_MY_END:
+        return CURRENTS_DATASET
+    if start >= CURRENTS_NRT_START:
+        return CURRENTS_DATASET_NRT
+    raise ValueError(f"{start:%Y-%m-%d} to {end:%Y-%m-%d} spans the end of the multi-year currents and "
+                     "starts before the near-real-time ones; split the section")  # fmt: skip
 
 
 def section_filename(section: str) -> str:

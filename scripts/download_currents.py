@@ -4,7 +4,10 @@
 Product: Copernicus Marine MULTIOBS_GLO_PHY_MYNRT_015_003 (GlobCurrent total
 velocity from altimetry, wind-driven Ekman currents and drifters; 0.25 degree).
 One NetCDF subset per cruise section, covering the sites plus a margin and the
-full span of sampling and overpass times:
+full span of sampling and overpass times. The multi-year dataset is used where it
+reaches, the near-real-time one after its end (2026 cruises). A section that
+crosses the 180 degree meridian is fetched in two pieces and stored in 0 to 360
+degrees longitude.
 
     data/currents/currents_<section>.nc     variables uo, vo at 0 m and 15 m
 
@@ -42,25 +45,50 @@ def main() -> None:
             f"-> {dest.name} ({state})",
             flush=True,
         )
+        dataset = args.dataset_id or advection.currents_dataset(box["start"], box["end"])
+        print(f"{'':12s} dataset {dataset}" + (" | crosses 180 degrees: two pieces, stored in 0-360" if box["wraps"] else ""))
         if args.dry_run or (state == "on disk, covers the request" and not args.overwrite):
             continue
-        import copernicusmarine
-
-        copernicusmarine.subset(
-            dataset_id=args.dataset_id,
-            variables=advection.CURRENT_VARIABLES,
-            minimum_longitude=box["lon_min"],
-            maximum_longitude=box["lon_max"],
-            minimum_latitude=box["lat_min"],
-            maximum_latitude=box["lat_max"],
-            start_datetime=box["start"].strftime("%Y-%m-%dT%H:%M:%S"),
-            end_datetime=box["end"].strftime("%Y-%m-%dT%H:%M:%S"),
-            output_directory=str(args.out_dir),
-            output_filename=dest.name,
-            overwrite=True,
-            disable_progress_bar=True,
-        )
+        if not box["wraps"]:
+            fetch(dataset, box, box["lon_min"], box["lon_max"], args.out_dir, dest.name)
+            continue
+        west, east = dest.with_suffix(".west.nc"), dest.with_suffix(".east.nc")
+        fetch(dataset, box, box["lon_min"], 180.0, args.out_dir, west.name)
+        fetch(dataset, box, -180.0, box["lon_max"] - 360.0, args.out_dir, east.name)
+        join_across_dateline(west, east, dest)
     print(f"Currents in {args.out_dir}")
+
+
+def fetch(dataset: str, box: dict, lon_min: float, lon_max: float, out_dir: Path, name: str) -> None:
+    import copernicusmarine
+
+    copernicusmarine.subset(
+        dataset_id=dataset,
+        variables=advection.CURRENT_VARIABLES,
+        minimum_longitude=lon_min,
+        maximum_longitude=lon_max,
+        minimum_latitude=box["lat_min"],
+        maximum_latitude=box["lat_max"],
+        start_datetime=box["start"].strftime("%Y-%m-%dT%H:%M:%S"),
+        end_datetime=box["end"].strftime("%Y-%m-%dT%H:%M:%S"),
+        output_directory=str(out_dir),
+        output_filename=name,
+        overwrite=True,
+        disable_progress_bar=True,
+    )
+
+
+def join_across_dateline(west: Path, east: Path, dest: Path) -> None:
+    """One file in 0-360 longitude from the pieces west (up to 180) and east (from -180) of the dateline."""
+    import xarray as xr
+
+    with xr.open_dataset(west) as w, xr.open_dataset(east) as e:
+        e = e.assign_coords(longitude=e["longitude"] + 360.0)
+        w = w.sel(longitude=w["longitude"] < e["longitude"].min())  # drop the shared 180 degree column
+        joined = xr.concat([w, e], dim="longitude").sortby("longitude").load()
+    joined.to_netcdf(dest)
+    west.unlink()
+    east.unlink()
 
 
 def covers(path: Path, box: dict) -> bool:
@@ -95,7 +123,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "currents")
-    parser.add_argument("--dataset-id", default=advection.CURRENTS_DATASET)
+    parser.add_argument(
+        "--dataset-id", default=None, help="Force one currents dataset (default: multi-year, near-real-time past its end)."
+    )
     parser.add_argument("--margin-deg", type=float, default=5.0, help="Room around the sites for water to drift into.")
     parser.add_argument(
         "--pad-days",

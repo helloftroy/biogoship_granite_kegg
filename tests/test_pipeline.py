@@ -449,6 +449,29 @@ class FillMissingSstTests(unittest.TestCase):
                 fill_missing_sst.cdse.search_products = real_search
 
 
+class CurrentsBoxTests(unittest.TestCase):
+    """A Pacific crossing gets a narrow box in 0-360; 2026 sections use the near-real-time currents."""
+
+    def test_dateline_box_and_dataset(self):
+        from datetime import datetime, timezone
+
+        sites = [{"site_id": f"s{i}", "lat": "10", "lon": lon, "time_utc": "2026-05-20T00:00:00Z", "section": "P"}
+                 for i, lon in enumerate(["170.0", "179.5", "-179.0", "-160.0"])]  # fmt: skip
+        sites.append({"site_id": "a", "lat": "0", "lon": "-30.0", "time_utc": "2023-03-10T00:00:00Z", "section": "A"})
+        links = [{"site_id": s["site_id"], "product_id": s["site_id"]} for s in sites]
+        times = {s["site_id"]: advection.parse_utc(s["time_utc"]) for s in sites}
+        boxes = {b["section"]: b for b in advection.section_boxes(sites, links, times, margin_deg=5.0, pad_days=8.0)}
+        self.assertTrue(boxes["P"]["wraps"])
+        self.assertEqual((boxes["P"]["lon_min"], boxes["P"]["lon_max"]), (165.0, 205.0))
+        self.assertFalse(boxes["A"]["wraps"])
+        self.assertEqual(advection.currents_dataset(boxes["P"]["start"], boxes["P"]["end"]), advection.CURRENTS_DATASET_NRT)
+        self.assertEqual(advection.currents_dataset(boxes["A"]["start"], boxes["A"]["end"]), advection.CURRENTS_DATASET)
+        with self.assertRaises(ValueError):
+            advection.currents_dataset(datetime(2022, 1, 1, tzinfo=timezone.utc), datetime(2026, 5, 1, tzinfo=timezone.utc))
+        track = np.array([[0.0, 10.0, 179.0], [1.0, 10.0, 181.0]])  # a track in 0-360 crossing the dateline
+        self.assertAlmostEqual(advection.position_at(track, 1.0)[1], -179.0)
+
+
 class SearchResumeTests(unittest.TestCase):
     """A search stopped by the rate limit continues on re-run, querying only what is not cached."""
 

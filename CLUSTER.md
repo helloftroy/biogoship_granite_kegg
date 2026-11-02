@@ -93,8 +93,11 @@ Marine download fails with `open_group() got an unexpected keyword argument
    bundle and `tile_raw_features.csv` for the comparison tables.
 5. After 3 finishes: `download_tiles.sbatch` with `POSITIONS=fixed`,
    `MANIFEST_DIR=data/faire/manifests`, `DATA_DIR=data/faire`.
-6. Advected tiles for the FAIRe cruises: currents and back-tracking for
-   2021-2026 are not yet set up for this sample set.
+6. Advected tiles for the FAIRe cruises: `backtrack.sbatch` with
+   `MANIFEST_DIR=data/faire/manifests,DATA_DIR=data/faire` (currents and tracks),
+   then `download_tiles.sbatch` with `POSITIONS=advected` and the same two
+   settings. Crosses the dateline on P02, P04E and HLY2202 (handled: those
+   currents are stored in 0-360); P04E uses the near-real-time currents.
 
 ## Jobs, in order
 

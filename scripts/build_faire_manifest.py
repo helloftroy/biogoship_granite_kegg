@@ -86,6 +86,7 @@ def tidy(raw: pd.DataFrame) -> pd.DataFrame:
     out["time_utc"] = pd.to_datetime(raw["eventDate"], errors="coerce", utc=True)
     out["lat"] = pd.to_numeric(raw["decimalLatitude"], errors="coerce")
     out["lon"] = pd.to_numeric(raw["decimalLongitude"], errors="coerce")
+    out["lon"] = out["lon"].where(out["lon"] <= 180.0, out["lon"] - 360.0)  # a few are given in 0-360 (197 on HLY2202)
     out["depth_min_m"] = pd.to_numeric(raw["minimumDepthInMeters"], errors="coerce")
     out["depth_max_m"] = pd.to_numeric(raw["maximumDepthInMeters"], errors="coerce")
     for name in ENVIRONMENT:

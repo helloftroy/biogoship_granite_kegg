@@ -1144,6 +1144,25 @@ for the satellite search. The SeaBASS HPLC tables from `build_new_cruise_manifes
 stay as a separate data source. FAIRe also carries environmental values (chlorophyll,
 carbonate system, oxygen, nutrients) for many samples.
 
+### Back-tracking the FAIRe cruises (set up 2026-11-02)
+
+Same method as for the original cruises (section 5), with two additions:
+
+- **Currents past March 2026.** The multi-year GlobCurrent daily dataset ended
+  on 2026-03-31 when checked (2026-11-02), so P04E (May-June 2026) uses the
+  near-real-time dataset of the same product (`..._nrt_0.25deg_P1D-m`, from
+  2022-05-01). Every other cruise stays on the multi-year one.
+- **Dateline.** P02, P04E and HLY2202 have sites on both sides of 180 degrees.
+  Their currents are fetched as two pieces, joined and stored in 0-360 degrees
+  longitude; particles are released in that frame, and positions are written
+  back in -180 to 180. Without this, the box would span the globe and water
+  crossing 180 degrees would leave the domain.
+
+One HLY2202 site had longitude 197 in FAIRe (at 90 N, where longitude is
+arbitrary); FAIRe longitudes above 180 are now shifted by -360. HLY2202 is an
+Arctic cruise: the currents product has no data under sea ice, so expect many
+of its tracks to stall (status `stalled`) and few advected tiles.
+
 ## 10. Planned next
 
 - **Fixed vs advected.** Compare models trained on the two sets of embeddings,

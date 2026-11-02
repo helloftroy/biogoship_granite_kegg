@@ -39,7 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from biogoship import advection  # noqa: E402
-from biogoship.tables import MANIFEST_DIR, REPO_ROOT, format_utc, parse_utc, read_csv, write_csv  # noqa: E402
+from biogoship.tables import MANIFEST_DIR, REPO_ROOT, format_utc, parse_utc, read_csv, wrap_lon_delta, write_csv  # noqa: E402
 
 TRAJECTORY_FIELDS = ["site_id", "hours_from_sample", "time_utc", "lat", "lon"]
 
@@ -68,11 +68,13 @@ def main() -> None:
         started = time.time()
         # Long enough for every overpass already matched, and for the wider trajectory search.
         max_hours = max(args.track_days * 24.0, max(abs(float(link["time_gap_hours"])) for link in section_links) + 1.0)
-        releases = [
-            {"id": s["site_id"], "lat": float(s["lat"]), "lon": float(s["lon"]), "time": parse_utc(s["time_utc"])}
-            for s in box["sites"]
-        ]
         currents = advection.load_currents(currents_path, args.depth_m)
+        in_360 = float(currents["longitude"].max()) > 180.0  # a section stored in 0-360 (crosses the dateline)
+        releases = [
+            {"id": s["site_id"], "lat": float(s["lat"]), "lon": float(s["lon"]) % 360.0 if in_360 else float(s["lon"]),
+             "time": parse_utc(s["time_utc"])}
+            for s in box["sites"]
+        ]  # fmt: skip
         section_tracks = advection.advect(currents, releases, max_hours, dt_minutes=args.dt_minutes)
         tracks.update(section_tracks)
 
@@ -88,7 +90,7 @@ def main() -> None:
                         "hours_from_sample": f"{hours:.3f}",
                         "time_utc": format_utc(sampled + timedelta(hours=float(hours))),
                         "lat": f"{lat:.5f}",
-                        "lon": f"{lon:.5f}",
+                        "lon": f"{wrap_lon_delta(lon):.5f}",
                     }
                 )
         full = sum(1 for start, end in ends if start <= -max_hours + 1 and end >= max_hours - 1)

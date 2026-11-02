@@ -15,6 +15,9 @@
 #   sbatch --account=191001-364393 cluster/backtrack.sbatch
 #
 # Overrides: DEPTH_M=15 (or 0), MARGIN_DEG=5, TRACK_DAYS=7 (days tracked each way).
+#
+# Another sample set, with its own currents and tracks (MANIFEST_DIR and DATA_DIR):
+#   sbatch --account=191001-364393 --export=ALL,MANIFEST_DIR=data/faire/manifests,DATA_DIR=data/faire cluster/backtrack.sbatch
 
 set -euo pipefail
 export BGS_CONDA_ENV="${BGS_CONDA_ENV:-/scratch/morrill/users/${USER}/conda_envs/biogoship}"
@@ -34,6 +37,10 @@ mkdir -p "${COPERNICUSMARINE_CREDENTIALS_DIRECTORY}"
 
 echo "Job started: $(date)"
 TRACK_DAYS="${TRACK_DAYS:-7}"
-python scripts/download_currents.py --margin-deg "${MARGIN_DEG:-5}" --pad-days "$((TRACK_DAYS + 1))"
-python scripts/backtrack_sites.py --depth-m "${DEPTH_M:-15}" --track-days "${TRACK_DAYS}"
+MANIFEST_DIR="${MANIFEST_DIR:-data/manifests}"
+DATA_DIR="${DATA_DIR:-data}"
+python scripts/download_currents.py --manifest-dir "${MANIFEST_DIR}" --out-dir "${DATA_DIR}/currents" \
+  --margin-deg "${MARGIN_DEG:-5}" --pad-days "$((TRACK_DAYS + 1))"
+python scripts/backtrack_sites.py --manifest-dir "${MANIFEST_DIR}" --currents-dir "${DATA_DIR}/currents" \
+  --out-dir "${DATA_DIR}/advection" --depth-m "${DEPTH_M:-15}" --track-days "${TRACK_DAYS}"
 echo "Job finished: $(date)"

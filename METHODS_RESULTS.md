@@ -1,5 +1,8 @@
 # Methods and results log
 
+From 2026-11-04, results are recorded with their settings in [RESULTS.md](RESULTS.md);
+this file keeps the narrative and methods.
+
 Working notes for the Bio-GO-SHIP x Sentinel-3 x Granite project: what was done,
 why, and what came out. Running instructions are in [README.md](README.md).
 Newest results are added at the end of each section, with the date.

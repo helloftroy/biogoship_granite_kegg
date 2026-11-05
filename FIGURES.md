@@ -12,6 +12,55 @@ a Python that has these; on the project owner's laptop that is
 `/Users/hellpark/miniforge3/bin/python` (the default `python3` there lacks
 matplotlib).
 
+## Contents
+
+| Figure | Script | Output | Result entry |
+|---|---|---|---|
+| Predictability: in-situ variables and KOs | `figures/make_predictability.py` | `figures/output/predictability.png`, `.pdf` | RESULTS.md R1.3, R3.1 |
+| Spectral recovery from Granite embeddings | `figures/make_spectral_recovery.py` | `figures/output/spectral_recovery.png`, `.pdf` | METHODS_RESULTS.md section 7 |
+| Natural-colour tiles (companion) | `figures/make_tile_rgb.py` | `figures/output/spectral_recovery_tile_rgb.png` | - |
+
+Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
+band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
+`#9a9993`; fixed position filled markers, advected hollow. Set at the top of
+`figures/make_predictability.py` (`GRANITE`, `RAW`, `META`, `NULL`).
+
+## Predictability: in-situ variables and KOs
+
+![Predictability](figures/output/predictability.png)
+
+- **Shows:**
+  - **a** In-situ temperature, phosphate and nitrate + nitrite, original 5
+    cruises, one cruise held out at a time: R2 per held-out cruise (small dots)
+    and mean +/- s.d. over cruises (large marker and line; value at right) for the
+    Granite embedding and the raw band averages at the fixed (filled) and advected
+    (hollow) position, and for position + season. Values below -1 are drawn at -1
+    as left-pointing markers (raw bands on I07N, about -3).
+  - **b** The 20 KOs best predicted by the embedding over 13 cruises, labelled
+    with KEGG gene symbol, name and KO: pooled R2 of the embedding (blue) against
+    position + season (aqua).
+  - **c** Pooled R2 of all 3,921 screened KOs for the embedding, position + season
+    and the shuffled embedding (chance). Values below -0.6 drawn at -0.6.
+- **Settings:** option A (closest-in-time tile with SST; tiles without SST not
+  used), unique tiles, fixed position for b and c. Full settings: RESULTS.md R1.3
+  (panel a) and R3.1 (panels b, c).
+- **Code:** `figures/make_predictability.py`. Where to edit:
+  - panel a: `panel_insitu()`; rows in `FEATURE_SETS` and `TARGETS`; floor `R2_FLOOR`.
+  - panel b: `panel_top_kos()`; number of KOs `N_TOP_KOS`; label text `label_ko()`.
+  - panel c: `panel_ko_distribution()`; bins and clipping in its first lines.
+  - layout (panel positions, figure size): the `fig.add_axes` calls in `main()`.
+- **Inputs:**
+  - `data/results/sst_only_prefer/feature_set_comparison_section_unique_tiles.csv`
+    from `python scripts/compare_feature_sets.py --require-sst --best-tile prefer-sst --out-dir data/results/sst_only_prefer`
+  - `data/results/ko_screen/ko_screen.csv` from `python scripts/screen_ko_predictability.py`
+    (needs `data/targets/ko_clr.csv` from `python scripts/build_ko_targets.py`)
+  - `data/reference/kegg_ko_list.tsv`, KEGG KO names, downloaded from
+    https://rest.kegg.jp/list/ko on first run (copy of 2026-11-04 in place).
+- **Regenerate:** `python figures/make_predictability.py`
+- **To switch to option B** (closest tile, SST-only): point `INSITU` at
+  `data/results/sst_only_closest/...`; for the KO panels re-run the screen with
+  `--best-tile closest --out-dir data/results/ko_screen_closest` and point `KO_SCREEN` there.
+
 ## Spectral recovery from Granite embeddings
 
 ![Observed vs recovered spectra](figures/output/spectral_recovery.png)

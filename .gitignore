@@ -43,3 +43,4 @@ data/faire/manifests/advected_positions.csv
 data/faire/embeddings/
 data/targets/
 *_counts_cov50_all.tsv
+data/reference/

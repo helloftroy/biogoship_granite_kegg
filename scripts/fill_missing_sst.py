@@ -315,8 +315,9 @@ class Filler:
 
     def trim_cache(self, keep: Path) -> None:
         folders = sorted((p for p in self.work.iterdir() if p.is_dir() and "_SL_2_WST_" in p.name), key=lambda p: p.stat().st_mtime)
+        in_use = {swath.path.parent for swath in self.swaths.values()}  # swaths read SST lazily from their file
         for old in folders[: max(0, len(folders) - self.args.sst_cache)]:
-            if old != keep:
+            if old != keep and old not in in_use:
                 shutil.rmtree(old, ignore_errors=True)
 
     def empty_sst(self, tile: dict) -> None:

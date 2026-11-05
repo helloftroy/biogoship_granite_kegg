@@ -449,6 +449,34 @@ class FillMissingSstTests(unittest.TestCase):
                 fill_missing_sst.cdse.search_products = real_search
 
 
+class SstCacheTrimTests(unittest.TestCase):
+    """The SST cache must not delete a file a cached swath still reads from."""
+
+    def test_trim_keeps_swaths_in_use(self):
+        import os
+        import types
+
+        import fill_missing_sst
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            folders = []
+            for i in range(5):
+                folder = work / f"S3A_SL_2_WST____2018010{i}T000000"
+                folder.mkdir()
+                (folder / "x.nc").write_bytes(b"")
+                os.utime(folder, (1000 + i, 1000 + i))
+                folders.append(folder)
+            filler = fill_missing_sst.Filler.__new__(fill_missing_sst.Filler)
+            filler.work, filler.args = work, argparse.Namespace(sst_cache=2)
+            filler.swaths = {"oldest": types.SimpleNamespace(path=folders[0] / "x.nc")}
+            filler.trim_cache(keep=folders[-1])
+            self.assertTrue(folders[0].exists())  # in use, though the oldest
+            self.assertFalse(folders[1].exists())
+            self.assertFalse(folders[2].exists())
+            self.assertTrue(folders[3].exists() and folders[4].exists())
+
+
 class CurrentsBoxTests(unittest.TestCase):
     """A Pacific crossing gets a narrow box in 0-360; 2026 sections use the near-real-time currents."""
 

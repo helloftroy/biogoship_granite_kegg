@@ -16,7 +16,9 @@ level 4-5 is what tiles use; level 3 is counted separately to show what relaxing
 would add.
 
 Outputs: data/sst_nearby_check.csv (one row per sample position, scene and SST
-source) and a summary per cruise in the log.
+source) and a summary per cruise in the log. Results are saved after each OLCI
+product and finished products are listed in data/sst_nearby_check_done.txt, so a
+resubmitted job continues where the last one stopped.
 
 Usage:
     python scripts/check_sst_nearby.py
@@ -40,6 +42,8 @@ from biogoship.tables import MANIFEST_DIR, REPO_ROOT, latest_tile_log_rows, read
 from fill_missing_sst import Filler, extract, load_candidate_cache, local_archive  # noqa: E402
 
 RADII_KM = (0.0, 10.0, 20.0, 40.0)
+OUT_FIELDS = ["site_id", "position", "product_id", "time_gap_hours", "scene_status", "sst_source", "sst_product",
+              "sst_gap_hours", "olci_clear_km", "sst_q4_km", "sst_q3_km"]  # fmt: skip
 STRIDE = 3  # window centres tested every 3 pixels (0.9 km)
 
 
@@ -61,12 +65,20 @@ def main() -> None:
     candidates = load_candidate_cache(args.data_dir / "sst_fill_candidates.csv", args.candidate_hours)
     print(f"Scenes to re-examine: {len(scenes):,} over {scenes['product_id'].nunique():,} OLCI products")
 
+    path = args.data_dir / "sst_nearby_check.csv"
+    done_path = args.data_dir / "sst_nearby_check_done.txt"
+    done = set(done_path.read_text().split()) if done_path.exists() else set()
+    if not done:  # a fresh start: no rows from an unrelated earlier run
+        path.unlink(missing_ok=True)
+    print(f"Products already checked by an earlier run: {len(done):,}")
+
     filler = Filler(argparse.Namespace(**vars(args), keep_work=False))
     filler.work = args.data_dir / "work" / "sst_nearby_check"
     filler.work.mkdir(parents=True, exist_ok=True)
-    rows = []
-    for i, (product_id, group) in enumerate(scenes.groupby("product_id"), start=1):
+    groups = [(pid, g) for pid, g in scenes.groupby("product_id") if pid not in done]
+    for i, (product_id, group) in enumerate(groups, start=1):
         product = products.loc[product_id]
+        rows = []
         try:
             lat, lon, clear = load_scene(args, filler.work, product["product_name"])
         except Exception as exc:  # noqa: BLE001 - one bad archive must not stop the check
@@ -80,24 +92,27 @@ def main() -> None:
             sources += [(f"candidate{k + 1}", c) for k, c in enumerate(daytime[: args.fill_candidates])]
             for source, sst_product in sources:
                 try:
-                    swath = filler.swath(sst_product)
-                except Exception as exc:  # noqa: BLE001
+                    found = nearest_windows(lat, lon, clear, int(scene["row"]), int(scene["col"]), filler.swath(sst_product), args)
+                except Exception as exc:  # noqa: BLE001 - a failed download or unreadable file skips this source only
                     print(f"  SST {sst_product['product_name'][:31]}: {exc}", flush=True)
+                    filler.swaths.pop(sst_product["product_id"], None)
                     continue
-                found = nearest_windows(lat, lon, clear, int(scene["row"]), int(scene["col"]), swath, args)
                 rows.append({"site_id": scene["site_id"], "position": scene["position"], "product_id": product_id,
                              "time_gap_hours": scene["time_gap_hours"], "scene_status": scene["status"],
                              "sst_source": source, "sst_product": sst_product["product_name"],
                              "sst_gap_hours": sst_product.get("gap_hours", ""), **found})  # fmt: skip
-        if i % 10 == 0 or i == scenes["product_id"].nunique():
-            print(f"  {i:,}/{scenes['product_id'].nunique():,} products", flush=True)
+        # Saved per product, so a resubmitted job continues where this one stopped.
+        if rows:
+            pd.DataFrame(rows, columns=OUT_FIELDS).to_csv(path, mode="a", header=not path.exists(), index=False)
+        with done_path.open("a") as f:
+            f.write(f"{product_id}\n")
+        if i % 10 == 0 or i == len(groups):
+            print(f"  {i:,}/{len(groups):,} products", flush=True)
     filler.cleanup()
 
-    out = pd.DataFrame(rows)
-    path = args.data_dir / "sst_nearby_check.csv"
-    out.to_csv(path, index=False)
+    out = pd.read_csv(path) if path.exists() else pd.DataFrame(columns=OUT_FIELDS)
     summarise(wanted, out)
-    print(f"\nWrote {path}")
+    print(f"\nWrote {path} (delete it and {done_path.name} to start over)")
 
 
 def load_scene(args: argparse.Namespace, work: Path, product_name: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

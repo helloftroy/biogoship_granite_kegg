@@ -12,6 +12,7 @@
 # Reads the OLCI and SST archives on disk; fetches up to FILL_CANDIDATES daytime SST
 # overpasses per scene (single L2P files, needs cdse_credentials.sh). Writes
 # data/sst_nearby_check.csv and prints recoveries per cruise at 10, 20 and 40 km.
+# Saved after each OLCI product: if the job stops, resubmit and it continues.
 #
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
 #   sbatch --account=191001-364393 cluster/check_sst_nearby.sbatch

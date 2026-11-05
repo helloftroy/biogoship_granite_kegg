@@ -64,6 +64,8 @@ def main() -> None:
         ranked = rows.assign(_no_sst=~has, _gap=rows["match_hour_gap"].abs()).sort_values(["_no_sst", "_gap"], kind="stable")
         rows["is_best"] = rows.index.isin(ranked.drop_duplicates(["sample_id", "position"]).index).astype(int)
     best = rows[rows["is_best"] == 1]
+    if args.require_sst:  # a sample whose chosen fixed or advected tile lacks SST drops out (it is then missing a feature set)
+        best = best[pd.to_numeric(best["sst_valid_fraction"], errors="coerce").fillna(0) > 0]
     samples = best.drop_duplicates("sample_id").set_index("sample_id")
 
     features: dict[str, pd.DataFrame] = {}
@@ -249,6 +251,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--best-tile", choices=["closest", "prefer-sst"], default="closest",
                         help="Tile per sample and position: closest in time, or closest in time among tiles with SST.")
+    parser.add_argument("--require-sst", action="store_true", help="Use only tiles with SST; samples whose chosen tile has none are dropped.")
     parser.add_argument("--folds", type=int, default=5, help="Folds for block CV.")
     parser.add_argument(
         "--all-samples",

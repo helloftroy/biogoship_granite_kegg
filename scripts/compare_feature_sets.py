@@ -9,7 +9,8 @@ Compares feature sets on the same samples, so differences come from the features
              (needs data/embeddings/tile_raw_features.csv from pool_tile_features.py)
   raw_advected  the same for the best advected tile
 
-"Best" is the clear tile closest in time to sampling. Only samples that have every
+"Best" is the clear tile closest in time to sampling (--best-tile closest), or the
+closest in time among tiles that have SST (--best-tile prefer-sst). Only samples that have every
 feature set compared are used, one row per sample.
 
 Cross-validation holds out one whole cruise at a time by default (--cv section):
@@ -58,6 +59,10 @@ def main() -> None:
 
     rows = pd.read_csv(args.embeddings_dir / "sample_embeddings.csv")
     embeddings = np.load(args.embeddings_dir / "tile_embeddings.npy")
+    if args.best_tile == "prefer-sst":  # closest in time among tiles with SST; closest overall if none has SST
+        has = pd.to_numeric(rows["sst_valid_fraction"], errors="coerce").fillna(0) > 0
+        ranked = rows.assign(_no_sst=~has, _gap=rows["match_hour_gap"].abs()).sort_values(["_no_sst", "_gap"], kind="stable")
+        rows["is_best"] = rows.index.isin(ranked.drop_duplicates(["sample_id", "position"]).index).astype(int)
     best = rows[rows["is_best"] == 1]
     samples = best.drop_duplicates("sample_id").set_index("sample_id")
 
@@ -126,7 +131,10 @@ def main() -> None:
         n_folds = blocks.loc[y.index].nunique() if args.cv == "section" else args.folds
         if args.cv == "section":
             report_coverage(samples, blocks.loc[y.index], y)
-        folds = assign_folds(blocks.loc[y.index], n_folds, args.seed, flag=~has_sst.loc[y.index])
+        if args.cv == "section":  # one fold per cruise; balancing could otherwise merge two cruises into one fold
+            folds = pd.factorize(blocks.loc[y.index], sort=True)[0]
+        else:
+            folds = assign_folds(blocks.loc[y.index], n_folds, args.seed, flag=~has_sst.loc[y.index])
         no_sst_share = [float((~has_sst.loc[y.index]).to_numpy()[folds == k].mean()) for k in range(n_folds)]
         print(f"\n{target}: {len(y):,} samples, {blocks.loc[y.index].nunique()} groups, {n_folds} folds ({args.cv} CV); "
               f"share without SST per test fold: {', '.join(f'{v:.0%}' for v in no_sst_share)}")  # fmt: skip
@@ -239,6 +247,8 @@ def parse_args() -> argparse.Namespace:
         default="section",
         help="block: 5 folds of section x 5-degree latitude blocks. section: hold out one cruise at a time.",
     )
+    parser.add_argument("--best-tile", choices=["closest", "prefer-sst"], default="closest",
+                        help="Tile per sample and position: closest in time, or closest in time among tiles with SST.")
     parser.add_argument("--folds", type=int, default=5, help="Folds for block CV.")
     parser.add_argument(
         "--all-samples",

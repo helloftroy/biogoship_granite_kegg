@@ -875,3 +875,42 @@ removes any per-sample scale. So "marker normalisation, then CLR" equals CLR,
 except for where the pseudocount lands. What matters for a joint CLR is the
 **same KO set** (the shared KOs) and the same pseudocount rule in both datasets.
 An alternative that does not depend on the KO set is log copies per cell.
+
+## R14. Other external sets: Tara Pacific and EMO BON (2026-11-06) - assessment
+
+**Tara Pacific** (2016-2018). The plankton metagenomes are ENA PRJEB64422
+(Genoscope, public 2025-05-19). There are 389 runs from 387 samples, all in the
+0.2-3 um fraction, NovaSeq, about 40 Gbp per run. **Raw reads only**: no KO or
+gene-abundance table was found. Sample titles carry the UTC timestamp and the
+station; ENA has lat/lon (383 of 387) but no depth or collection_date fields.
+Sampling depth from Lombard et al. 2023: about 2 m (pump), or 1.5 m (underway
+inlet).
+
+| Type (sample title code) | Samples | 2016 / 2017 / 2018 |
+|---|---:|---|
+| O-SRF, open-ocean surface | 36 | 21 / 8 / 7 |
+| I-SRF, island surface water (within 200 nmi of an island) | 75 | 29 / 36 / 10 |
+| S-SRF, reef surface water | 95 | 30 / 44 / 21 |
+| C-CSW, water just above coral colonies | 181 | 55 / 88 / 38 |
+
+Open-ocean plus island water is 111 samples. Reef and coral water (276) sits next
+to reefs and land, where a 300 m tile is mostly shallow bottom or land.
+
+**EMO BON** (from June 2021; coastal observatories in Europe and the Red Sea).
+Water is filtered at 0.2-3 um and 3-200 um, with 2 replicates sequenced.
+Per-sample MetaGOflow outputs are RO-Crates on GitHub (emo-bon/analysis-results-
+cluster-01-crate: 151 water crates; cluster-02-crate: 170). Files sit in S3 at
+s3.mesocentre.uca.fr, and each crate's ro-crate-metadata.json gives downloadUrls.
+The cluster-02 bucket (mgf-data-products-2) refused connections on 2026-11-06.
+- Each crate has `*.merged.summary.ko`: counts of predicted CDS on **merged reads**
+  per KO (KOfam hmmsearch with gathering thresholds). In 4 samples checked there
+  are 2,271-2,403 KOs and 0.1-0.9 million KO hits.
+- **6 of the 10 single-copy markers are always 0** (K06942, K01883, K01869,
+  K01873, K03106, K03110), probably because KOfam thresholds fail on read-length
+  fragments. So the profiles are not like ours, and marker normalisation is not
+  possible as is.
+- Crates also hold `final.contigs.fa` (assembly) and the CDS protein files, so
+  contigs could be re-annotated with our own KO pipeline.
+- Sampling metadata are in the observatory crates (`logsheets/raw/water_sampling.csv`:
+  collection_date, depth, size_frac, ENA accession; `water_observatory.csv`:
+  position; `water_measured.csv`: in-situ variables).

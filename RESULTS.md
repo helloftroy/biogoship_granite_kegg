@@ -21,6 +21,8 @@ Results that will change, and why:
   `cluster/embed_sst_variants.sbatch`): embeddings with the SST channel blanked,
   and with SST gaps filled from OSTIA; to compare with the current embeddings.
 - **CatBoost on a KO shortlist**: R3 uses ridge and nearest-neighbour models only.
+- **Model choice** (R8): reductions, other learners and metadata tested on 20 KOs
+  with the current embeddings; to be rerun on the SST variants.
 
 ---
 
@@ -473,3 +475,118 @@ cruises, and adding all 16 to temperature hurts (too many inputs for 5 cruises);
 the chlorophyll index adds little to temperature. On the middling KOs the
 embedding stays ahead of temperature + colour. To be rerun on 13 cruises.
 
+
+## R8. Reductions, other learners and metadata with the embedding, 20 KOs (2026-11-06)
+
+Question: does a different handling of the 512 embedding numbers (PCA or PLS,
+then kernel ridge, a small MLP or CatBoost), or adding metadata (position,
+season, in-situ temperature, salinity, and in a subset nitrate + nitrite and
+phosphate) to the embedding, make a better model than ridge on the embedding?
+
+Inputs: E-orig-1102 + E-faire-1103, KO targets as in R5/R6, option A, fixed
+position. Sample sets: **all** = samples with in-situ temperature and salinity,
+1,281 samples / 1,093 tiles / 13 cruises; **np** = also measured nitrate + nitrite
+and phosphate (manifest, filled from `faire_samples.csv`), 456 samples / 331
+tiles / 12 cruises. Settings: one fold per held-out cruise; PCA and PLS fitted on
+the standardized embedding of the training cruises only (k = 16, 32, 64 for PCA;
+32 for PLS). Kernel ridge: RBF, alpha and gamma picked by an inner split of the
+training cruises into 3 groups. MLP: one hidden layer of 64, weight decay picked
+the same way, early stopping. CatBoost: 500 trees, depth 6, rate 0.05, one
+multi-output model. "meta" = position + season features + temperature +
+salinity. KOs: 5 per category from R6's `ko_temperature_gap.csv`, spread in rank:
+**clear** (embedding clearly better, embedding R2 >= 0.2), **ahead** (embedding
+ahead by >= 0.1 pooled but not on 9 cruises, embedding R2 >= 0.2), **similar**
+(|difference| < 0.03, both >= 0.3), **worse** (temperature clearly better,
+temperature R2 >= 0.2).
+Files `data/results/model_experiments/` (scores.csv, per_cruise.csv). Command:
+`python scripts/model_experiments.py` (about 2.5 h on the laptop, mostly kernel ridge).
+
+Median over the KOs, pooled R2 (in brackets median R2 within a held-out cruise):
+
+| Features | Learner | Clear | Ahead | Similar | Worse | All 20 |
+|---|---|---:|---:|---:|---:|---:|
+| Embedding (512) | ridge | 0.25 (0.24) | 0.29 (0.37) | 0.37 (0.36) | 0.06 (0.07) | 0.29 (0.29) |
+| PCA 16 | ridge | 0.29 (0.26) | 0.29 (0.37) | 0.40 (0.33) | 0.18 (0.02) | 0.31 (0.24) |
+| PCA 32 | ridge | 0.27 (0.24) | 0.29 (0.37) | 0.40 (0.29) | 0.14 (-0.01) | **0.32** (0.28) |
+| PCA 64 | ridge | 0.29 (0.25) | 0.24 (0.39) | 0.34 (0.32) | 0.10 (0.04) | 0.28 (0.26) |
+| PCA 16 | kernel ridge | 0.17 (0.24) | 0.12 (0.19) | 0.36 (0.30) | 0.14 (0.17) | 0.22 (0.22) |
+| PCA 32 | kernel ridge | 0.21 (0.28) | 0.07 (0.05) | 0.33 (0.33) | 0.10 (0.18) | 0.18 (0.23) |
+| PCA 64 | kernel ridge | 0.20 (0.23) | -0.02 (-0.15) | 0.33 (0.21) | 0.05 (0.17) | 0.20 (0.18) |
+| PCA 16 | MLP | 0.15 (0.22) | 0.04 (0.04) | 0.37 (0.28) | 0.12 (0.03) | 0.23 (0.16) |
+| PCA 32 | MLP | 0.18 (0.23) | 0.10 (-0.02) | 0.36 (0.36) | 0.11 (0.07) | 0.20 (0.21) |
+| PCA 64 | MLP | 0.08 (0.09) | -0.89 (-0.01) | 0.32 (0.25) | 0.04 (0.10) | 0.03 (0.12) |
+| PCA 32 | CatBoost | 0.28 (0.26) | 0.21 (0.31) | 0.35 (0.31) | 0.17 (0.23) | 0.27 (**0.31**) |
+| PLS 32 | ridge | 0.27 (0.21) | 0.26 (0.32) | 0.37 (0.29) | 0.07 (0.02) | 0.26 (0.24) |
+| PLS 32 | kernel ridge | 0.16 (0.19) | 0.07 (0.08) | 0.35 (0.28) | 0.10 (0.16) | 0.16 (0.19) |
+| PLS 32 | CatBoost | 0.28 (0.20) | 0.20 (0.31) | 0.35 (0.31) | 0.14 (0.21) | 0.26 (0.30) |
+| Temperature | spline | 0.15 (0.11) | 0.10 (0.09) | 0.35 (0.33) | 0.22 (0.24) | 0.22 (0.25) |
+| Meta | ridge | 0.06 (0.09) | -0.10 (-0.03) | 0.31 (0.26) | **0.25** (0.22) | 0.22 (0.16) |
+| Meta | kernel ridge | -0.11 (0.08) | -0.35 (0.08) | 0.26 (0.27) | 0.12 (0.15) | 0.07 (0.15) |
+| Meta | CatBoost | 0.16 (0.25) | -0.02 (0.02) | 0.29 (0.28) | 0.03 (0.09) | 0.11 (0.19) |
+| Temp + PCA 4 | kernel ridge | 0.18 (0.18) | 0.13 (0.32) | 0.37 (0.32) | 0.21 (0.22) | 0.25 (0.26) |
+| Temp + PCA 8 | kernel ridge | 0.21 (0.22) | 0.17 (0.26) | 0.39 (0.31) | 0.19 (0.23) | 0.25 (0.26) |
+| Temp + PCA 8 | CatBoost | 0.30 (0.22) | 0.24 (0.26) | 0.35 (0.32) | 0.17 (0.16) | 0.26 (0.26) |
+| Embedding + meta | ridge | 0.19 (0.22) | 0.19 (0.21) | 0.35 (0.30) | 0.10 (0.11) | 0.21 (0.21) |
+| PCA 32 + meta | ridge | 0.32 (0.24) | 0.15 (0.19) | 0.37 (0.21) | 0.11 (0.12) | 0.26 (0.20) |
+| PCA 32 + meta | kernel ridge | 0.16 (0.14) | 0.09 (-0.16) | 0.37 (0.30) | 0.06 (0.09) | 0.16 (0.18) |
+| PCA 32 + meta | MLP | 0.01 (0.15) | -0.18 (-0.03) | 0.38 (0.29) | -0.03 (0.11) | 0.11 (0.17) |
+| PCA 32 + meta | CatBoost | 0.25 (0.28) | 0.07 (0.13) | 0.35 (0.31) | 0.10 (0.18) | 0.23 (0.22) |
+| PLS 32 + meta | kernel ridge | 0.14 (0.12) | 0.08 (0.02) | 0.37 (0.29) | 0.04 (0.12) | 0.15 (0.16) |
+| PLS 32 + meta | CatBoost | 0.26 (0.31) | 0.09 (0.15) | 0.37 (0.31) | 0.12 (0.26) | 0.24 (0.25) |
+
+Sample set np (456 samples, 12 cruises):
+
+| Features | Learner | Clear | Ahead | Similar | Worse | All 20 |
+|---|---|---:|---:|---:|---:|---:|
+| Embedding | ridge | 0.24 (0.31) | 0.21 (0.23) | 0.42 (0.40) | 0.18 (0.11) | 0.27 (0.27) |
+| Temperature | spline | 0.16 (0.16) | 0.14 (0.13) | 0.45 (0.38) | 0.27 (0.18) | 0.23 (0.19) |
+| Meta | CatBoost | 0.06 (0.04) | -0.07 (0.09) | 0.30 (0.30) | -0.03 (0.09) | 0.12 (0.11) |
+| Meta + N, P | ridge | -0.19 (-0.24) | -0.27 (-0.14) | 0.41 (0.39) | -0.00 (-0.13) | -0.02 (-0.02) |
+| Meta + N, P | kernel ridge | 0.05 (0.00) | -0.48 (-0.15) | 0.32 (0.40) | 0.11 (-0.04) | 0.09 (0.14) |
+| Meta + N, P | CatBoost | 0.19 (0.22) | 0.02 (0.07) | 0.33 (0.34) | 0.00 (0.09) | 0.14 (0.16) |
+| Embedding + meta + N, P | ridge | 0.26 (0.31) | 0.06 (0.23) | 0.43 (0.38) | 0.13 (0.13) | 0.29 (0.30) |
+| PCA 32 + meta + N, P | kernel ridge | 0.24 (0.24) | -0.49 (-0.03) | 0.29 (0.33) | 0.13 (-0.16) | 0.19 (0.18) |
+| PCA 32 + meta + N, P | CatBoost | 0.28 (0.32) | 0.04 (0.21) | 0.40 (0.39) | 0.16 (0.24) | 0.26 (**0.33**) |
+
+Per KO against embedding + ridge (set all): PCA 32 + ridge is ahead on 13 of 20
+KOs, median gain +0.006; PCA 16 + ridge 12 of 20, +0.003; PCA 32 + CatBoost 8 of
+20, -0.015; embedding + meta ridge 7 of 20, -0.016; PCA 32 + meta ridge 8 of 20,
+-0.030.
+
+Reading:
+- **No model is clearly better than ridge on the embedding.** PCA 16 or 32 +
+  ridge ties it (the median gain per KO is under 0.01). PCA 32 + CatBoost is a
+  little better within cruises (0.31 vs 0.29) and a little worse pooled.
+- **Kernel ridge and the MLP are worse**, pooled and mostly within cruises, at
+  every k; 64 PCs + MLP fails. With about 1,100 tiles and 12 training cruises the
+  extra flexibility overfits.
+- **PLS is no better than PCA** at k = 32.
+- **Adding metadata to the embedding lowers R2** (0.29 to 0.21 with ridge; 0.32 to
+  0.26 with PCA 32). Position and season do not carry over between cruises, as
+  in R5. The "worse" KOs are the only place a model with temperature helps.
+  There, temperature alone, or meta + ridge (0.25), is still best, and no
+  embedding model reaches it.
+- **N and P add little.** Meta + N, P is weak on its own (at best 0.14).
+  Embedding + meta + N, P (ridge, 0.29) and PCA 32 + meta + N, P (CatBoost,
+  within-cruise 0.33) are slightly ahead of the embedding on the same samples
+  (0.27). This is on 456 samples, and it loses on the "ahead" KOs.
+- The categories prefer different models: temperature-led for "worse", embedding
+  ridge for "ahead". So a per-KO choice or an ensemble could gain, but it was not
+  tested.
+
+Not tried yet:
+- Temperature + a chlorophyll index + PCs. This needs FAIRe band means from
+  `cluster/sst_variants.sbatch`.
+- PLS at k = 16 or 64. Reduced-rank regression or other supervised reductions.
+- Kernel ridge on the full embedding, or other kernels.
+- Deeper or wider MLPs, an MLP on the full 512 numbers, Gaussian processes.
+- Tuned CatBoost (default settings only).
+- Per-KO hyperparameters for kernel ridge. Here alpha and gamma are shared across
+  the KOs.
+- Stacking or averaging models, or a per-KO choice of model (needs a nested
+  choice to stay fair).
+- PCA fitted on all tiles of both sample sets. This leaks no targets, but these
+  runs used a fold-fitted PCA.
+- The advected position; the in-situ targets; all 3,921 KOs.
+- **Everything here to be rerun on the blank-SST and OSTIA-filled embeddings**
+  (the script takes `--embeddings-dirs`).

@@ -24,9 +24,23 @@ set -euo pipefail
 export BGS_CONDA_ENV="${BGS_CONDA_ENV:-/scratch/morrill/users/${USER}/conda_envs/biogoship}"
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
 
+if [ -f cdse_credentials.sh ]; then
+  source cdse_credentials.sh
+fi
+if [ -z "${COPERNICUSMARINE_SERVICE_USERNAME:-}" ] || [ -z "${COPERNICUSMARINE_SERVICE_PASSWORD:-}" ]; then
+  echo "No Copernicus Marine credentials: add them to cdse_credentials.sh (see cdse_credentials.sh.example)." >&2
+  exit 1
+fi
+# Keep the toolbox's own files off $HOME.
+export COPERNICUSMARINE_CREDENTIALS_DIRECTORY="${REPO_ROOT}/.cache/copernicusmarine"
+export COPERNICUSMARINE_CACHE_DIRECTORY="${REPO_ROOT}/.cache/copernicusmarine"
+mkdir -p "${COPERNICUSMARINE_CREDENTIALS_DIRECTORY}"
+
 echo "Job started: $(date)"
-python scripts/pool_tile_features.py --manifest-csv data/faire/manifests/biogoship_tile_manifest.csv \
-  --out-csv data/faire/embeddings/tile_raw_features.csv
+if [ ! -s data/faire/embeddings/tile_raw_features.csv ]; then
+  python scripts/pool_tile_features.py --manifest-csv data/faire/manifests/biogoship_tile_manifest.csv \
+    --out-csv data/faire/embeddings/tile_raw_features.csv
+fi
 python scripts/fill_sst_l4.py
 python scripts/fill_sst_l4.py --manifest-csv data/faire/manifests/biogoship_tile_manifest.csv \
   --tiles-root data/faire/tiles --out-root data/faire/tiles_sst_l4 \

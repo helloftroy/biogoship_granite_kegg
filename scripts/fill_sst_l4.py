@@ -196,6 +196,8 @@ def fetch(name, lon_min, lon_max, lat_min, lat_max, start, end, args) -> None:
                 start_datetime=start.strftime("%Y-%m-%dT%H:%M:%S"), end_datetime=end.strftime("%Y-%m-%dT%H:%M:%S"),
                 output_directory=str(args.l4_dir), output_filename=f"{name}.nc", overwrite=True, disable_progress_bar=True,
             )  # fmt: skip
+            if not (args.l4_dir / f"{name}.nc").exists():  # the toolbox can return without raising, e.g. no login
+                raise RuntimeError("no file written (no Copernicus Marine login?)")
             print(f"{'':18s} from {dataset}", flush=True)
             return
         except Exception as exc:  # e.g. dates outside this dataset; try the next one

@@ -14,9 +14,7 @@ Results that will change, and why:
   moving the window does not recover them; a gap-free SST product (e.g. OSTIA)
   would, and R1 and R3 would then gain samples, mostly on I07N.
 - **In-situ temperature as a baseline**: done for 20 KOs (R5) and all KOs (R6).
-- **Temperature + ocean colour** (R7): only the 5 original cruises have band means
-  so far; reruns on 13 cruises when `cluster/sst_variants.sbatch` has pooled the
-  FAIRe tiles.
+- **Temperature + ocean colour** (R7, R10): done on 13 cruises.
 - **SST variants** (`cluster/sst_variants.sbatch`, then
   `cluster/embed_sst_variants.sbatch`): embeddings with the SST channel blanked,
   and with SST gaps filled from OSTIA; to compare with the current embeddings.
@@ -450,7 +448,7 @@ embedding below 0.
 - Satellite SST is in the embedding; whether that is what carries the temperature
   signal is the SST-variant test (blanked vs OSTIA-filled).
 
-## R7. Temperature + ocean colour, 20 KOs, original 5 cruises only (2026-11-05) - preliminary
+## R7. Temperature + ocean colour, 20 KOs (2026-11-05; rerun on 13 cruises 2026-11-06)
 
 Question: is the embedding's "beyond temperature" just chlorophyll? Feature sets:
 temperature; band means (16 OLCI bands, mean over clear pixels, RAW-1103);
@@ -474,6 +472,34 @@ Reading (provisional, 5 cruises): band means on their own do not transfer betwee
 cruises, and adding all 16 to temperature hurts (too many inputs for 5 cruises);
 the chlorophyll index adds little to temperature. On the middling KOs the
 embedding stays ahead of temperature + colour. To be rerun on 13 cruises.
+
+**Rerun on all 13 cruises (2026-11-06)**, after `cluster/sst_variants.sbatch`
+pooled the FAIRe tiles (`data/faire/embeddings/tile_raw_features.csv`, 5,553
+tiles). It used the same feature sets, with learners ridge, spline, kNN and
+CatBoost, best per KO. Samples: 1,320 / 1,110 tiles / 13 cruises (every R5
+sample's tile has band means), so the scores are comparable to R5. Files
+`data/results/ko_colour/`. Command:
+`python scripts/test_ko_temperature.py --feature-sets temp colour temp_colour temp_chl embedding --out-dir data/results/ko_colour`
+
+| Group | Temperature | Band means | Temp + band means | Temp + chl index | Embedding |
+|---|---:|---:|---:|---:|---:|
+| Top 10 | 0.67 (0.37) | 0.05 (0.19) | 0.60 (0.37) | 0.69 (0.38) | 0.67 (0.35) |
+| Middle 10 | 0.16 (0.22) | 0.20 (0.25) | 0.24 (0.28) | 0.24 (0.26) | 0.31 (0.30) |
+
+Winning learners: spline for temperature and temperature + chl (15 and 16 of 20
+KOs), kNN or CatBoost for the band means, ridge for the embedding. Ridge and the
+spline fail on the band means pooled (median R2 far below 0), because some FAIRe
+tiles have extreme band means (up to 50 s.d. in Oa12-Oa21, probably glint, ice or
+cloud edges). Only the tree and neighbour learners cope with them.
+
+Reading:
+- On the top KOs, temperature already does everything. Colour adds nothing
+  (temperature + chl 0.69 against 0.67).
+- On the middling KOs, simple colour closes about half the gap between
+  temperature and the embedding pooled (0.16 to 0.24, against 0.31), and most of
+  it within cruises (0.22 to 0.26-0.28, against 0.30).
+- **So part of "beyond temperature" is chlorophyll / ocean colour, but not all
+  of it.** The embedding still leads on 8 of the 10 middling KOs.
 
 
 ## R8. Reductions, other learners and metadata with the embedding, 20 KOs (2026-11-06)
@@ -658,3 +684,46 @@ Reading:
   good as the embedding in every category and is the only change that helps both
   pooled and within cruises. The gain is small, on 20 KOs. To be rechecked on
   the SST variants: if the SST channel is blanked, in-situ T may matter more.
+
+## R10. Temperature + chlorophyll index + PCs, ridge, 20 KOs (2026-11-06)
+
+As R8/R9: the same 20 KOs, 1,281 samples / 1,093 tiles / 13 cruises (every tile
+has band means), PCA fitted on the training cruises. **chl** = R7's band-ratio
+index log10(max(Rrs443, 490, 510) / Rrs560); **bands** = the 16 band means.
+Files `data/results/model_experiments_colour/`. Command:
+`python scripts/model_experiments.py --only col:... --out-dir data/results/model_experiments_colour`
+(the `col` entries of EXPERIMENTS).
+
+Median over the KOs, pooled R2 (in brackets median within a held-out cruise):
+
+| Features | Learner | Clear | Ahead | Similar | Worse | All 20 |
+|---|---|---:|---:|---:|---:|---:|
+| Embedding | ridge | 0.25 (0.24) | 0.29 (0.37) | 0.37 (0.36) | 0.06 (0.07) | 0.29 (0.29) |
+| Embedding + chl | ridge | 0.25 (0.24) | 0.29 (0.37) | 0.39 (0.36) | 0.07 (0.07) | 0.29 (0.30) |
+| PCA 32 + temp | ridge | 0.27 (0.24) | 0.29 (0.37) | 0.42 (0.33) | 0.15 (0.06) | 0.32 (0.31) |
+| PCA 32 + chl | ridge | 0.26 (0.23) | 0.29 (0.39) | 0.40 (0.29) | 0.14 (0.00) | 0.32 (0.28) |
+| PCA 32 + temp + chl | ridge | 0.27 (0.24) | 0.29 (0.39) | 0.42 (0.33) | 0.15 (0.07) | 0.32 (0.31) |
+| PCA 16 + temp + chl | ridge | 0.30 (0.23) | 0.29 (0.33) | 0.43 (0.36) | 0.20 (0.13) | 0.31 (0.28) |
+| Temp + PCA 8 + chl | ridge | 0.30 (0.30) | 0.27 (0.36) | 0.42 (0.37) | 0.21 (0.06) | 0.31 (**0.32**) |
+| Temp + PCA 4 + chl | ridge | 0.16 (0.20) | 0.17 (0.28) | 0.40 (0.28) | 0.25 (0.17) | 0.22 (0.24) |
+| Temp + PCA 8 | CatBoost | 0.30 (0.18) | 0.24 (0.26) | 0.35 (0.34) | 0.17 (0.20) | 0.25 (0.26) |
+| Temp + PCA 8 + chl | CatBoost | 0.30 (0.22) | 0.24 (0.31) | 0.35 (0.35) | 0.16 (0.25) | 0.26 (0.25) |
+| Temp + PCA 4 + chl | CatBoost | 0.24 (0.21) | 0.08 (0.20) | 0.32 (0.30) | 0.11 (0.23) | 0.21 (0.22) |
+| Temp | spline | 0.15 (0.11) | 0.10 (0.09) | 0.35 (0.33) | 0.22 (0.24) | 0.22 (0.25) |
+| Temp + chl | spline | 0.23 (0.25) | 0.11 (0.20) | 0.35 (0.29) | 0.20 (0.26) | 0.27 (0.27) |
+| Temp + chl | ridge | 0.08 (0.17) | 0.15 (0.26) | 0.31 (0.34) | 0.27 (0.27) | 0.24 (0.27) |
+| Chl | ridge | -0.04 (0.05) | -0.08 (0.07) | -0.02 (0.04) | -0.03 (0.02) | -0.03 (0.05) |
+| Bands (16) | ridge | -13.5 (0.17) | -0.92 (0.26) | -41 (0.06) | -26 (-0.01) | -10.6 (0.11) |
+
+Reading:
+- **The chlorophyll index adds nothing once PCs are in.** PCA 32 + temp + chl is
+  the same as PCA 32 + temp, and embedding + chl the same as the embedding. The
+  embedding already carries what the band ratio says.
+- **A small model is as good as the best.** Temperature + 8 PCs + chl with ridge
+  (10 inputs) matches PCA 32 + temp (0.31 pooled, 0.32 within cruises). With 4
+  PCs it drops (0.22), so 8 or so PCs are needed.
+- Temperature + chl (spline) improves on temperature alone (0.22 to 0.27 pooled),
+  mostly on the "clear" KOs, but stays below the embedding. This agrees with R7.
+- CatBoost is again no better than ridge on the same inputs.
+- The band means need robust handling (clipping, or medians instead of means)
+  before any linear model can use them (see R7).

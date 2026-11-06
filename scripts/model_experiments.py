@@ -24,6 +24,8 @@ on the training cruises only, so the held-out cruise never shapes the features):
   temp       in-situ temperature
   ts         in-situ temperature and salinity
   season     sine and cosine of day of year
+  chl        band-ratio chlorophyll index log10(max(Oa03-05) / Oa06) (sample set col)
+  bands      the 16 OLCI band means over clear pixels (sample set col)
   np         in-situ nitrate + nitrite and phosphate (only some samples: set "np")
 
 Learners:
@@ -38,6 +40,8 @@ Learners:
 Sample sets:
   all   samples with a KO profile, an in-situ temperature and salinity, and a
         fixed tile with SST (option A); identical tiles merged
+  col   the subset whose tile has band means (tile_raw_features.csv in both
+        embeddings folders)
   np    the subset that also has nitrate + nitrite and phosphate (FAIRe sheet
         values where the manifest has none)
 
@@ -71,6 +75,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from biogoship.tables import REPO_ROOT  # noqa: E402
 from screen_ko_predictability import ALPHAS, load_embeddings, metadata_features  # noqa: E402
+from test_ko_temperature import BAND_MEANS, chlorophyll_index, load_raw_features  # noqa: E402
 
 # (sample set, feature blocks, learner)
 EXPERIMENTS = [
@@ -88,6 +93,11 @@ EXPERIMENTS = [
     *[("all", f"{base}{extra}", "ridge") for base in ("emb", "pca16", "pca32")
       for extra in ("+ts", "+ts+season", "+temp", "+temp+season")],
     ("all", "ts", "ridge"), ("all", "ts+season", "ridge"), ("all", "pca16+meta", "ridge"),
+    # temperature + chlorophyll index (+ PCs) on the tiles with band means (R10)
+    *[("col", f, "ridge") for f in ("emb", "pca16", "pca32", "pca16+temp", "pca32+temp", "chl", "temp+chl", "bands", "temp+bands",
+                                    "emb+chl", "pca16+temp+chl", "pca32+temp+chl", "pca32+chl", "temp+pca4+chl", "temp+pca8+chl")],
+    ("col", "temp", "spline"), ("col", "temp+chl", "spline"), ("col", "temp+pca8", "catboost"), ("col", "temp+pca8+chl", "catboost"),
+    ("col", "temp+pca4+chl", "catboost"),
     ("np", "emb", "ridge"), ("np", "temp", "spline"), ("np", "meta", "catboost"),
     ("np", "meta+np", "ridge"), ("np", "meta+np", "krr"), ("np", "meta+np", "catboost"),
     ("np", "emb+meta+np", "ridge"), ("np", "pca32+meta+np", "krr"), ("np", "pca32+meta+np", "catboost"),
@@ -149,8 +159,11 @@ def load(args: argparse.Namespace, kos: pd.DataFrame) -> dict:
     rows["nitrate_nitrite"] = pd.to_numeric(rows["nitrate_nitrite_umol_l"], errors="coerce").fillna(rows["sample_id"].map(extra["nitrate_nitrite"]))
     rows["phosphate"] = pd.to_numeric(rows["phosphate_umol_kg"], errors="coerce").fillna(rows["sample_id"].map(extra["phosphate"]))
     rows = rows[rows["temperature_c"].notna() & rows["salinity"].notna()]
+    raw = load_raw_features(args.embeddings_dirs)
+    has_colour = rows["tile_path"].isin(raw.index)
     data = {}
-    for name, keep in (("all", rows.index), ("np", rows.index[rows[["nitrate_nitrite", "phosphate"]].notna().all(axis=1)])):
+    for name, keep in (("all", rows.index), ("np", rows.index[rows[["nitrate_nitrite", "phosphate"]].notna().all(axis=1)]),
+                       ("col", rows.index[has_colour])):  # fmt: skip
         part = rows.loc[keep]
         content = pd.Series([v.tobytes() for v in X_embed[part["embedding_row"].to_numpy()].round(5)], index=part.index)
         part = part.assign(tile_key=content.map({k: i for i, k in enumerate(content.unique())}))
@@ -164,6 +177,9 @@ def load(args: argparse.Namespace, kos: pd.DataFrame) -> dict:
                       "ts": means[["temperature_c", "salinity"]].to_numpy(),
                       "season": metadata_features(unit)[:, 3:5],
                       "np": means[["nitrate_nitrite", "phosphate"]].to_numpy()}  # fmt: skip
+        if name == "col":
+            bands = raw.loc[unit["tile_path"], BAND_MEANS].to_numpy()
+            data[name].update({"bands": bands, "chl": chlorophyll_index(bands)[:, None]})
         print(f"Sample set {name}: {len(part):,} samples, {len(unit):,} tiles, {unit['section'].nunique()} cruises")
     return data
 

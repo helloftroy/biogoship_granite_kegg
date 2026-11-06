@@ -13,8 +13,7 @@ Results that will change, and why:
 - **SST for the samples that still have none** (about 105 per position, see R4):
   moving the window does not recover them; a gap-free SST product (e.g. OSTIA)
   would, and R1 and R3 would then gain samples, mostly on I07N.
-- **In-situ temperature as a baseline**: not yet run; tells whether a KO is
-  predictable beyond what temperature explains.
+- **In-situ temperature as a baseline**: run on 20 KOs (R5); not yet on all KOs.
 - **CatBoost on a KO shortlist**: R3 uses ridge and nearest-neighbour models only.
 
 ---
@@ -322,4 +321,71 @@ Other numbers:
 - Not worth building into `download_tiles`. Option A stays the standard; about
   half of these samples (53 fixed, 55 advected) have no SST by either route and
   drop out under SST-only. Recovering them needs a gap-free SST product.
+
+## R5. Position + season + in-situ temperature against Granite, 20 KOs (2026-11-05)
+
+Inputs E-orig-1102, E-faire-1103, KO-1104 (targets as in R3). KOs from the R3
+screen: the 10 best by embedding pooled R2, and 10 middling ones (embedding pooled
+R2 0.25-0.40, at least 0.15 above position + season), evenly spaced in rank.
+Samples as in R3 (fixed, prefer-SST, SST-only, identical tiles merged) **and with
+an in-situ temperature** (manifest `temperature_c`): 1,320 samples, 1,110 tiles,
+13 cruises; every feature set sees the same rows. Leave-one-cruise-out.
+Feature sets: metadata (position + season, as in R3); metadata + temperature;
+temperature alone; embedding; embedding + temperature. Learners: ridge, kNN
+(k = 15), CatBoost (500 trees, depth 6, lr 0.05, MultiRMSE); score = best learner
+per KO and feature set. Files `data/results/ko_temperature/`. Command:
+`python scripts/test_ko_temperature.py` (67 min locally; CatBoost on the
+embedding is most of it).
+
+Median over the 10 KOs of each group (pooled R2; in brackets median R2 within a
+held-out cruise):
+
+| Group | Position + season | + temperature | Temperature alone | Embedding | Embedding + temperature |
+|---|---:|---:|---:|---:|---:|
+| Top 10 | 0.31 (0.29) | 0.34 (0.24) | 0.64 (0.37) | 0.67 (0.36) | 0.67 (0.35) |
+| Middle 10 | -0.01 (0.03) | 0.19 (0.07) | 0.15 (0.24) | 0.33 (0.30) | 0.33 (0.31) |
+
+Per KO (pooled R2):
+
+| KO | Gene | Group | Pos + season | + temp | Temp | Embedding | Emb + temp |
+|---|---|---|---:|---:|---:|---:|---:|
+| K00436 | hoxH | top | 0.29 | 0.35 | 0.70 | 0.71 | 0.71 |
+| K05582 | ndhK | top | 0.32 | 0.34 | 0.65 | 0.69 | 0.69 |
+| K05581 | ndhJ | top | 0.31 | 0.34 | 0.70 | 0.70 | 0.70 |
+| K11602 | mntB | top | 0.43 | 0.44 | 0.61 | 0.69 | 0.68 |
+| K05575 | ndhD | top | 0.29 | 0.32 | 0.71 | 0.69 | 0.69 |
+| K14330 | acyl-ACP reductase | top | 0.32 | 0.34 | 0.67 | 0.66 | 0.66 |
+| K05382 | cpeS | top | 0.32 | 0.35 | 0.62 | 0.65 | 0.65 |
+| K11601 | mntC | top | 0.40 | 0.40 | 0.57 | 0.65 | 0.65 |
+| K07015 | (no KEGG name) | top | 0.25 | 0.28 | 0.63 | 0.65 | 0.65 |
+| K00524 | nrdJ | top | 0.30 | 0.31 | 0.63 | 0.65 | 0.65 |
+| K21147 | moeZR | middle | 0.28 | 0.24 | 0.39 | 0.41 | 0.41 |
+| K03523 | bioY | middle | 0.04 | 0.18 | 0.15 | 0.38 | 0.37 |
+| K06181 | rluE | middle | -0.04 | 0.11 | 0.28 | 0.36 | 0.36 |
+| K20222 | importin-5 | middle | -0.09 | 0.22 | 0.26 | 0.34 | 0.34 |
+| K21929 | udg | middle | 0.03 | 0.26 | 0.13 | 0.32 | 0.32 |
+| K01092 | suhB | middle | 0.10 | 0.17 | 0.10 | 0.30 | 0.30 |
+| K05380 | cpeE | middle | -0.16 | -0.07 | 0.15 | 0.34 | 0.37 |
+| K03526 | ispG | middle | -0.01 | 0.25 | 0.08 | 0.28 | 0.28 |
+| K01662 | dxs | middle | -0.19 | 0.03 | 0.06 | 0.27 | 0.27 |
+| K22125 | myoferlin | middle | -0.00 | 0.21 | 0.23 | 0.26 | 0.26 |
+
+Learners: CatBoost wins for position + season (ridge and kNN are below 0 there)
+and for temperature alone on the top KOs; ridge wins for the embedding (9 of 10 in
+each group).
+
+### Reading R5
+
+- For the top (cyanobacterial) KOs, in-situ temperature alone is as good as the
+  embedding (0.64 vs 0.67 pooled, 0.37 vs 0.36 within cruise): these KOs are
+  mostly a temperature signal.
+- For the middling KOs the embedding stays ahead (0.33 vs 0.15-0.19 pooled, 0.30
+  vs 0.24 within cruise): it carries something beyond temperature.
+- Adding position + season to temperature makes the top KOs worse (0.64 -> 0.34):
+  the models learn cruise-specific geography that does not carry to a new cruise.
+  Temperature alone transfers better.
+- Adding temperature to the embedding changes nothing: the embedding already
+  holds the temperature information (SST channel and/or ocean colour).
+- Open: whether the embedding without its SST channel keeps this (that decides
+  whether SST gaps matter); and temperature on all KOs, not just 20.
 

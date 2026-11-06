@@ -13,7 +13,13 @@ Results that will change, and why:
 - **SST for the samples that still have none** (about 105 per position, see R4):
   moving the window does not recover them; a gap-free SST product (e.g. OSTIA)
   would, and R1 and R3 would then gain samples, mostly on I07N.
-- **In-situ temperature as a baseline**: run on 20 KOs (R5); not yet on all KOs.
+- **In-situ temperature as a baseline**: done for 20 KOs (R5) and all KOs (R6).
+- **Temperature + ocean colour** (R7): only the 5 original cruises have band means
+  so far; reruns on 13 cruises when `cluster/sst_variants.sbatch` has pooled the
+  FAIRe tiles.
+- **SST variants** (`cluster/sst_variants.sbatch`, then
+  `cluster/embed_sst_variants.sbatch`): embeddings with the SST channel blanked,
+  and with SST gaps filled from OSTIA; to compare with the current embeddings.
 - **CatBoost on a KO shortlist**: R3 uses ridge and nearest-neighbour models only.
 
 ---
@@ -370,9 +376,12 @@ Per KO (pooled R2):
 | K01662 | dxs | middle | -0.19 | 0.03 | 0.06 | 0.27 | 0.27 |
 | K22125 | myoferlin | middle | -0.00 | 0.21 | 0.23 | 0.26 | 0.26 |
 
-Learners: CatBoost wins for position + season (ridge and kNN are below 0 there)
-and for temperature alone on the top KOs; ridge wins for the embedding (9 of 10 in
-each group).
+All values in both tables are the **best of the three learners** per KO and
+feature set, so the columns mix learners: CatBoost wins for position + season
+(ridge and kNN are below 0 there) and for temperature alone on the top KOs; ridge
+wins for the embedding (9 of 10 in each group). (R6 later found spline + ridge a
+little better than CatBoost on temperature alone: median 0.53 vs 0.48 over these
+20 KOs.)
 
 ### Reading R5
 
@@ -388,4 +397,79 @@ each group).
   holds the temperature information (SST channel and/or ocean colour).
 - Open: whether the embedding without its SST channel keeps this (that decides
   whether SST gaps matter); and temperature on all KOs, not just 20.
+
+## R6. In-situ temperature alone against Granite, all KOs (2026-11-05)
+
+As R5 (same 1,320 samples, 1,110 tiles, 13 cruises; leave-one-cruise-out), but
+all 3,921 KOs and two feature sets: in-situ temperature alone, and the embedding.
+Learners without CatBoost: temperature with ridge, spline + ridge (cubic
+B-spline, 8 knots) and kNN; embedding with ridge and kNN. Best learner per KO and
+feature set. Spline + ridge is a fair stand-in for CatBoost on temperature: on
+R5's 20 KOs it scores a median 0.53 against CatBoost's 0.48 (kNN 0.41, ridge 0.22).
+Files `data/results/ko_temperature_all/`. Command:
+`python scripts/test_ko_temperature.py --kos all --learners ridge spline knn --feature-sets temp embedding --out-dir data/results/ko_temperature_all`
+(a few minutes). Figure: FIGURES.md, "Embedding vs in-situ temperature, all KOs".
+
+"Clearly better": pooled R2 at least 0.1 higher **and** better in at least 9 of
+the 13 held-out cruises.
+
+| | KOs |
+|---|---:|
+| All | 3,921 |
+| Pooled R2 >= 0.1: embedding / temperature | 1,772 / 1,246 |
+| Embedding ahead by >= 0.1 (pooled) | 1,067 |
+| Temperature ahead by >= 0.1 (pooled) | 469 |
+| Embedding clearly better (also >= 9 of 13 cruises) | 299 (111 of them with embedding R2 >= 0.25) |
+| Temperature clearly better | 366 (38 with temperature R2 >= 0.25) |
+| Neither clearly | 3,256 |
+
+Median difference (embedding - temperature) +0.02; 10th to 90th percentile -0.11
+to +0.20. Among KOs with embedding R2 >= 0.25 (722) the median difference is +0.06.
+
+Embedding clearly better, highest embedding R2 (temperature R2 -> embedding R2):
+mannosyl-3-phosphoglycerate phosphatase K07026 (0.32 -> 0.59), aguB K12251
+(0.18 -> 0.51), pct K01026 (0.39 -> 0.50), ureB K01429 (0.22 -> 0.50), aliphatic
+nitrilase K01502, sucrose phosphorylase K00690, glsA K01425 (0.16 -> 0.47), minC,
+purL K01952 (0.17 -> 0.43, better in all 13 cruises), pheA2, citramalyl-CoA lyase.
+Temperature clearly better: gap2/gapB K00150 (0.72 vs 0.62), ndhF K05577 (0.64 vs
+0.50), fiu K16090, AGPAT, NOP2, TOP2, citT, and the purple-bacterial reaction
+centre genes puhA, pufL; most of the rest have temperature R2 near 0 and the
+embedding below 0.
+
+### Reading R6
+
+- Across all KOs the embedding adds little beyond temperature on average (median
+  +0.02); for most KOs whatever is predictable is mostly temperature.
+- It does add for a sizeable minority: about 1,070 KOs are 0.1 or more ahead, and
+  299 hold up in at least 9 of 13 cruises. Their median is temperature R2 -0.01 ->
+  embedding 0.20: KOs temperature cannot predict at all.
+- Where temperature clearly wins, the embedding is usually worse than the mean
+  (below 0): it overfits those KOs rather than missing a signal.
+- Satellite SST is in the embedding; whether that is what carries the temperature
+  signal is the SST-variant test (blanked vs OSTIA-filled).
+
+## R7. Temperature + ocean colour, 20 KOs, original 5 cruises only (2026-11-05) - preliminary
+
+Question: is the embedding's "beyond temperature" just chlorophyll? Feature sets:
+temperature; band means (16 OLCI bands, mean over clear pixels, RAW-1103);
+temperature + band means; temperature + a chlorophyll index
+log10(max(Rrs443, Rrs490, Rrs510)/Rrs560) (the OC4ME band ratio); embedding.
+Learners ridge, kNN, CatBoost (not on the embedding). R5's 20 KOs. **Only samples
+with band means: the 5 original cruises** (517 samples, 471 tiles), since the FAIRe
+tiles are not pooled yet; so 5 folds, and the scores are not comparable to R5.
+Files `data/results/ko_colour_orig5/`. Command:
+`python scripts/test_ko_temperature.py --feature-sets temp colour temp_colour temp_chl embedding --out-dir data/results/ko_colour_orig5`
+(run before the spline learner was added).
+
+Median over the 10 KOs (pooled R2; in brackets median within a held-out cruise):
+
+| Group | Temperature | Band means | Temp + band means | Temp + chl index | Embedding |
+|---|---:|---:|---:|---:|---:|
+| Top 10 | 0.37 (0.27) | -0.15 (-0.12) | 0.14 (0.21) | 0.37 (0.33) | 0.26 (0.16) |
+| Middle 10 | 0.03 (0.12) | 0.05 (0.12) | 0.09 (0.20) | 0.05 (0.10) | 0.17 (0.19) |
+
+Reading (provisional, 5 cruises): band means on their own do not transfer between
+cruises, and adding all 16 to temperature hurts (too many inputs for 5 cruises);
+the chlorophyll index adds little to temperature. On the middling KOs the
+embedding stays ahead of temperature + colour. To be rerun on 13 cruises.
 

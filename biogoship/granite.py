@@ -173,11 +173,16 @@ def pool(outputs) -> torch.Tensor:
     raise RuntimeError(f"Do not know how to pool encoder output of shape {tuple(x.shape)}")
 
 
-def load_tiles(paths: list[Path], nan_fill: float = 0.0) -> torch.Tensor:
-    """Stack tile .npz files into a batch. NaN (missing SST) becomes nan_fill, i.e. the channel mean."""
+def load_tiles(paths: list[Path], nan_fill: float = 0.0, blank_sst: bool = False) -> torch.Tensor:
+    """Stack tile .npz files into a batch. NaN (missing SST) becomes nan_fill, i.e. the channel mean.
+
+    blank_sst: treat every tile's SST channel (the last) as missing, so it carries no temperature.
+    """
     arrays = []
     for path in paths:
         with np.load(path, allow_pickle=False) as tile:
             data = tile["data"].astype(np.float32)
+        if blank_sst:
+            data[-1] = np.nan
         arrays.append(np.nan_to_num(data, nan=nan_fill, posinf=nan_fill, neginf=nan_fill))
     return torch.from_numpy(np.stack(arrays, axis=0))

@@ -19,10 +19,11 @@ matplotlib).
 | Predictability: in-situ variables and KOs | `figures/make_predictability.py` | `figures/output/predictability.png`, `.pdf` | RESULTS.md R1.3, R3.1 |
 | Spectral recovery from Granite embeddings | `figures/make_spectral_recovery.py` | `figures/output/spectral_recovery.png`, `.pdf` | METHODS_RESULTS.md section 7 |
 | Natural-colour tiles (companion) | `figures/make_tile_rgb.py` | `figures/output/spectral_recovery_tile_rgb.png` | - |
+| Embedding vs in-situ temperature, all KOs | `figures/make_temperature_gap.py` | `figures/output/temperature_gap.png`, `.pdf` | RESULTS.md R6 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
-`#9a9993`; fixed position filled markers, advected hollow. Set at the top of
+`#9a9993`, in-situ temperature magenta `#c0457e`; fixed position filled markers, advected hollow. Set at the top of
 `figures/make_predictability.py` (`GRANITE`, `RAW`, `META`, `NULL`).
 
 ## Predictability: in-situ variables and KOs
@@ -60,6 +61,34 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
 - **To switch to option B** (closest tile, SST-only): point `INSITU` at
   `data/results/sst_only_closest/...`; for the KO panels re-run the screen with
   `--best-tile closest --out-dir data/results/ko_screen_closest` and point `KO_SCREEN` there.
+
+## Embedding vs in-situ temperature, all KOs
+
+![Embedding vs temperature](figures/output/temperature_gap.png)
+
+- **Shows:**
+  - **a** Per KO (3,921): pooled R2 from in-situ temperature alone (x) against the
+    Granite embedding (y), cruises held out in turn; dashed line = equal. Blue:
+    embedding clearly better; magenta: temperature clearly better; grey: neither.
+    "Clearly" = pooled R2 differs by at least 0.1 and the same side wins in at
+    least 9 of the 13 held-out cruises. Values below -0.6 drawn at -0.6.
+  - **b** Distribution of R2(embedding) - R2(temperature) over all KOs; bars
+    beyond +/-0.1 coloured, counts beside them (by difference only, without the
+    9-of-13 rule).
+- **Settings:** RESULTS.md R6 (fixed position, option A tiles, samples with an
+  in-situ temperature; temperature: best of ridge, spline + ridge, kNN;
+  embedding: best of ridge, kNN).
+- **Code:** `figures/make_temperature_gap.py`. Where to edit:
+  - what counts as a clear win: `WIN_MARGIN`, `WIN_CRUISES`.
+  - colours: `GRANITE`, `TEMP` (`#c0457e`), `NEUTRAL` at the top.
+  - panel a: `panel_scatter()`; panel b: `panel_histogram()` (bins in its first line).
+  - layout: the `fig.add_axes` calls in `main()`.
+- **Inputs:** `data/results/ko_temperature_all/ko_temperature.csv` and
+  `ko_temperature_per_cruise.csv` from
+  `python scripts/test_ko_temperature.py --kos all --learners ridge spline knn --feature-sets temp embedding --out-dir data/results/ko_temperature_all`.
+  Also writes `data/results/ko_temperature_all/ko_temperature_gap.csv` (per KO:
+  both R2, difference, cruises won, verdict).
+- **Regenerate:** `python figures/make_temperature_gap.py`
 
 ## Spectral recovery from Granite embeddings
 

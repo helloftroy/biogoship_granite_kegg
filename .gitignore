@@ -44,3 +44,13 @@ data/faire/embeddings/
 data/targets/
 *_counts_cov50_all.tsv
 data/reference/
+# SST variants (cluster/sst_variants.sbatch, cluster/embed_sst_variants.sbatch)
+data/sst_l4/
+data/tiles_sst_l4/
+data/faire/tiles_sst_l4/
+data/embeddings_sst_*/
+data/faire/embeddings_sst_*/
+data/sst_l4_log.csv
+data/faire/sst_l4_log.csv
+data/sst_nearby_check*
+data/bgs_*.out

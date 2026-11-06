@@ -18,6 +18,7 @@ Outputs in data/embeddings/:
 Usage:
     python scripts/embed_tiles.py
     python scripts/embed_tiles.py --local-files-only     # no internet (GPU nodes)
+    python scripts/embed_tiles.py --blank-sst --out-dir data/embeddings_sst_blank   # SST channel blanked
 """
 
 from __future__ import annotations
@@ -82,7 +83,7 @@ def main() -> None:
     batches = []
     with torch.no_grad():
         for start in range(0, len(paths), args.batch_size):
-            batch = granite.load_tiles([from_repo(path) for path in paths[start : start + args.batch_size]]).to(device)
+            batch = granite.load_tiles([from_repo(path) for path in paths[start : start + args.batch_size]], blank_sst=args.blank_sst).to(device)
             batches.append(granite.encode(encoder, batch).cpu().numpy().astype(np.float32))
             if (start // args.batch_size) % 20 == 0:
                 print(f"  embedded {min(start + args.batch_size, len(paths)):,}/{len(paths):,}", flush=True)
@@ -105,6 +106,8 @@ def main() -> None:
         "n_sample_rows": len(sample_rows),
         "pooling": "mean over encoder output tokens",
         "nan_fill_value": 0.0,
+        "sst_channel": "blanked (all tiles filled with the channel mean)" if args.blank_sst else "as in the tiles",
+        "manifest_csv": str(args.manifest_csv),
         "device": str(device),
         "seconds": round(time.time() - started, 1),
     }
@@ -128,6 +131,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name", default=granite.MODEL_NAME)
     parser.add_argument("--local-files-only", action="store_true", help="Use the cached model; do not contact Hugging Face.")
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--blank-sst", action="store_true",
+                        help="Embed every tile with its SST channel set to missing (the channel mean): no temperature.")
     parser.add_argument("--device", help="cuda or cpu. Default: cuda if available.")
     return parser.parse_args()
 

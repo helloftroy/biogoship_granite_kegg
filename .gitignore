@@ -54,3 +54,4 @@ data/sst_l4_log.csv
 data/faire/sst_l4_log.csv
 data/sst_nearby_check*
 data/bgs_*.out
+data/model_fields/

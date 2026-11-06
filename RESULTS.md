@@ -15,9 +15,10 @@ Results that will change, and why:
   would, and R1 and R3 would then gain samples, mostly on I07N.
 - **In-situ temperature as a baseline**: done for 20 KOs (R5) and all KOs (R6).
 - **Temperature + ocean colour** (R7, R10): done on 13 cruises.
-- **SST variants** (`cluster/sst_variants.sbatch`, then
-  `cluster/embed_sst_variants.sbatch`): embeddings with the SST channel blanked,
-  and with SST gaps filled from OSTIA; to compare with the current embeddings.
+- **SST variants** (R11, R12): blanking loses a lot; the OSTIA fill adds samples
+  without loss and is proposed as the new standard. R1-R3, R5-R10 are on the
+  pre-OSTIA embeddings.
+- **Ocean-model fields** (GLORYS12, PISCES; `cluster/model_fields.sbatch`): pending.
 - **CatBoost on a KO shortlist**: R3 uses ridge and nearest-neighbour models only.
 - **Model choice** (R8): reductions, other learners and metadata tested on 20 KOs
   with the current embeddings; to be rerun on the SST variants.
@@ -36,6 +37,9 @@ Results that will change, and why:
 | E-orig-1020 | Earlier embeddings, before SST fill (backup in scratchpad only) | 2026-10-20 | 3,503 tiles; 861 without SST |
 | KO-1104 | KO counts `ko_counts_cov50_all.tsv` (repo root, not in git) | received 2026-11-04 | 3,081 libraries x 18,835 KOs, coverage-weighted counts |
 | PF-1104 | Pfam counts `pfam_counts_cov50_all.tsv` (repo root, not in git) | received 2026-11-04 | 3,084 libraries x 13,161 families (not yet analysed) |
+| E-orig-l4-1106 | Original cruises re-embedded, SST gaps from OSTIA (`data/embeddings_sst_l4/`) | 2026-11-06 | 3,503 tiles; 556 OSTIA-only tiles; log `data/sst_l4_log.csv` |
+| E-faire-l4-1106 | FAIRe cruises re-embedded, SST gaps from OSTIA (`data/faire/embeddings_sst_l4/`) | 2026-11-06 | 5,553 tiles; 1,552 OSTIA-only tiles; log `data/faire/sst_l4_log.csv` |
+| E-blank-1106 | Both sets re-embedded with the SST channel blanked (`data/embeddings_sst_blank/`, `data/faire/embeddings_sst_blank/`) | 2026-11-06 | 3,503 + 5,553 tiles |
 | SSTNEAR-1105 | SST check for moved windows (`data/sst_nearby_check.csv`, log `data/bgs_sst_nearby_83336.out`; not in git) | job 83336 finished 2026-11-05 | 2,195 rows: samples whose best tile has no SST x scene x SST source (paired + 2 fill candidates) |
 
 Embedding model: `ibm-granite/granite-geospatial-ocean` encoder, mean over output
@@ -764,3 +768,67 @@ Reading:
 - **Leaning: keep SST in the embedding, and drop samples rather than blank.** The
   OSTIA fill is the remaining option for keeping more samples.
 - To redo on 13 cruises when the original-cruise blank bundle is back.
+
+## R12. SST variants on 13 cruises: current, blanked, OSTIA-filled, ridge, 20 KOs (2026-11-06)
+
+Inputs: E-orig-1102 + E-faire-1103 (current), and the same tiles re-embedded by
+`cluster/embed_sst_variants.sbatch`. The variants are SST channel blanked
+(`data/*embeddings_sst_blank/`) and SST gaps filled from OSTIA shifted toward
+SLSTR skin SST (`data/*embeddings_sst_l4/`; logs `data/sst_l4_log.csv`,
+`data/faire/sst_l4_log.csv`). OSTIA changed only tiles with **no** SLSTR SST at all
+(556 original + 1,552 FAIRe tiles), because no tile had partial SST coverage. The
+offset applied was the tile's own where it had SLSTR pixels, otherwise the cruise
+median; the median SLSTR - OSTIA difference is -0.14 K (s.d. 0.5-0.6 K).
+
+Two sample sets:
+- **Shared:** the current tiles (option A), 1,281 samples / 1,093 tiles.
+- **Full:** with OSTIA every tile counts as having SST, so option A picks the
+  closest tile in time: 1,388 samples / 1,198 tiles, 253 of them OSTIA-only.
+  "Blank, full" uses the same tile choice with the SST channel blanked.
+
+R8's 20 KOs, ridge (spline for temperature alone). Files
+`data/results/sst_variants/<variant>/`. Commands:
+`python scripts/model_experiments.py --embeddings-dirs data/<dir> data/faire/<dir> --only all:emb:ridge all:pca32:ridge all:pca32+temp:ridge all:temp:spline col:temp+pca8+chl:ridge --out-dir data/results/sst_variants/<variant>`.
+The views `embeddings_sst_l4_shared` (OSTIA embeddings, current
+sst_valid_fraction) and `embeddings_sst_blank_full` (sst_valid_fraction = 1)
+contain only a sample table and a link to the embeddings.
+
+Median over the KOs, pooled R2 (in brackets median within a held-out cruise):
+
+| Features | Current | Blank | OSTIA, shared | OSTIA, full | Blank, full |
+|---|---:|---:|---:|---:|---:|
+| Embedding | 0.29 (0.29) | 0.10 (0.04) | 0.29 (0.29) | **0.32** (0.32) | 0.14 (0.10) |
+| PCA 32 | 0.32 (0.28) | 0.15 (0.11) | 0.32 (0.28) | 0.34 (0.29) | 0.18 (0.15) |
+| PCA 32 + temp | 0.32 (0.31) | 0.25 (0.22) | 0.32 (0.31) | **0.34** (0.32) | 0.26 (0.29) |
+| Temp + PCA 8 + chl | 0.31 (0.32) | 0.25 (0.28) | 0.31 (0.32) | **0.34** (0.34) | 0.28 (0.34) |
+| Temp alone (spline) | 0.22 (0.25) | 0.22 (0.25) | 0.22 (0.25) | 0.23 (0.28) | 0.23 (0.28) |
+
+"OSTIA, shared" equals current exactly, as expected: none of its tiles changed.
+
+Do the OSTIA-only tiles predict as well? In the full set, scored apart (median
+over KOs of pooled R2 within each group):
+
+| Features | Trained on | SLSTR tiles | OSTIA-only tiles | SLSTR tiles, same cruises |
+|---|---|---:|---:|---:|
+| Embedding, ridge | all tiles | 0.30 | 0.40 | 0.33 |
+| Embedding, ridge | SLSTR tiles only | 0.27 | 0.29 | 0.29 |
+| PCA 32 + temp, ridge | all tiles | 0.33 | 0.37 | 0.33 |
+| Temp + PCA 8 + chl, ridge | all tiles | 0.31 | 0.40 | 0.31 |
+| Temp alone, spline | all tiles | 0.23 | 0.31 | 0.20 |
+
+(The OSTIA-only tiles are spread over 12 cruises, most in A16N-2023, I07N and
+C13.5/A13.5. They score higher even for temperature alone, so R2 on them is not
+directly comparable to R2 on the SLSTR tiles; compare each row against the
+temperature row.)
+
+Reading:
+- **Blanking SST is out.** It costs 0.15-0.2 R2 everywhere, and in-situ
+  temperature only partly makes up for it (R11 now confirmed on 13 cruises).
+- **The OSTIA fill works.** It adds 107 samples and 105 tiles. The embedding on
+  OSTIA-filled tiles keeps its lead over temperature, and the gain over
+  temperature on those tiles is as large as on SLSTR tiles. Training on them
+  also improves the SLSTR tiles (0.27 to 0.30).
+- **Suggest the OSTIA-filled embeddings as the new standard** (E-orig-l4 +
+  E-faire-l4, option A = the closest tile in time). Re-baseline R1-R3 and the
+  KO screen on them when convenient. Best simple models on it: PCA 32 + temp or
+  temp + PCA 8 + chl, ridge (0.34).

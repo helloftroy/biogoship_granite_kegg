@@ -170,7 +170,7 @@ def load(args: argparse.Namespace, kos: pd.DataFrame) -> dict:
         Y = targets.loc[part["sample_id"]].set_axis(part.index).groupby(part["tile_key"]).mean()
         means = part.groupby("tile_key")[["temperature_c", "salinity", "nitrate_nitrite", "phosphate"]].mean().loc[Y.index]
         unit = part.drop_duplicates("tile_key").set_index("tile_key").loc[Y.index]
-        data[name] = {"Y": Y, "cruises": unit["section"].astype(str).to_numpy(),
+        data[name] = {"Y": Y, "cruises": unit["section"].astype(str).to_numpy(), "tile_path": unit["tile_path"].to_numpy(),
                       "emb": X_embed[unit["embedding_row"].to_numpy()],
                       "temp": means[["temperature_c"]].to_numpy(),
                       "meta": np.hstack([metadata_features(unit), means[["temperature_c", "salinity"]].to_numpy()]),

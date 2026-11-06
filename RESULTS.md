@@ -832,3 +832,46 @@ Reading:
   E-faire-l4, option A = the closest tile in time). Re-baseline R1-R3 and the
   KO screen on them when convenient. Best simple models on it: PCA 32 + temp or
   temp + PCA 8 + chl, ridge (0.34).
+
+## R13. JGI multi-environment KOs (Flinkstrom et al. 2024, mSystems): can they be a test set? (2026-11-06)
+
+Source: figshare project 187989, `adata_raw_filtered_v2.h5ad` (raw, unnormalised KO
+abundances, 6,539 metagenomes x 9,871 KOs; md5 9c4e85f1...) and the unfiltered
+`adata_raw.h5ad` (10,160 x 18,290). Both are in `data/external/jgi_flinkstrom/`,
+not in git.
+
+Samples usable with Sentinel-3 (marine water column, not vents, sediment or mats;
+collected from May 2016 on; with coordinates; depth <= 20 m or not given):
+
+| Step | Filtered v2 | Unfiltered |
+|---|---:|---:|
+| Marine | 1,184 | 1,938 |
+| Water column | 955 | |
+| From 2016-05 | 156 | |
+| + depth <= 20 m or unknown | **111** | **116** |
+
+The 111 are 83 Monterey Bay (coastal, 2016-09-26 to 11-16, S3A only), 11
+Marineland FL (Aug 2016), 7 South Atlantic transect, 6 Arctic Ocean (Jan-Feb 2020,
+polar night, so no OLCI), 3 North Sea, 1 other. Dates have no time of day. Most
+JGI marine metagenomes predate Sentinel-3 (2011-2016).
+
+KO tables compared:
+- IDs are `KO:Kxxxxx` (ours `count.ko.Kxxxxx`). The JGI KEGG release is older
+  (highest K19791, ours K22512).
+- 3,705 of our 3,921 target KOs are in JGI. 74% of the missing ones are KO
+  numbers newer than JGI's release.
+- All 10 single-copy marker KOs (K06942, K01889, K01887, K01875, K01883, K01869,
+  K01873, K01409, K03106, K03110; Salazar et al. 2019) are in both. Their spread
+  within a sample is similar (median CV 0.30 JGI, 0.34 ours).
+- Copies per cell (KO / median of the 10 markers), per-KO median, ours against
+  the 111 JGI samples: Pearson r 0.80, median log10 difference +0.04. So the
+  scales agree overall. A few KOs differ by about 1000-fold, probably annotation
+  differences (for example K02257, K18889/K18890, K13797 lower in JGI); these need
+  screening before any transfer.
+- 77% of the shared target KOs are present in at least 90% of the 111 samples.
+
+Normalisation note: dividing by the marker median is a per-sample scale, and CLR
+removes any per-sample scale. So "marker normalisation, then CLR" equals CLR,
+except for where the pseudocount lands. What matters for a joint CLR is the
+**same KO set** (the shared KOs) and the same pseudocount rule in both datasets.
+An alternative that does not depend on the KO set is log copies per cell.

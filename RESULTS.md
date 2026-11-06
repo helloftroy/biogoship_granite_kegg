@@ -10,9 +10,9 @@ Narrative, methods and earlier history (2026-10-20 to 10-23) are in
 [METHODS_RESULTS.md](METHODS_RESULTS.md). Figures are indexed in [FIGURES.md](FIGURES.md).
 
 Results that will change, and why:
-- **SST from moved windows** (`check_sst_nearby.sbatch`, running on Morrill
-  2026-11-04): may recover SST for more samples, especially I07N; R1 and R3 would
-  then gain samples.
+- **SST for the samples that still have none** (about 105 per position, see R4):
+  moving the window does not recover them; a gap-free SST product (e.g. OSTIA)
+  would, and R1 and R3 would then gain samples, mostly on I07N.
 - **In-situ temperature as a baseline**: not yet run; tells whether a KO is
   predictable beyond what temperature explains.
 - **CatBoost on a KO shortlist**: R3 uses ridge and nearest-neighbour models only.
@@ -31,6 +31,7 @@ Results that will change, and why:
 | E-orig-1020 | Earlier embeddings, before SST fill (backup in scratchpad only) | 2026-10-20 | 3,503 tiles; 861 without SST |
 | KO-1104 | KO counts `ko_counts_cov50_all.tsv` (repo root, not in git) | received 2026-11-04 | 3,081 libraries x 18,835 KOs, coverage-weighted counts |
 | PF-1104 | Pfam counts `pfam_counts_cov50_all.tsv` (repo root, not in git) | received 2026-11-04 | 3,084 libraries x 13,161 families (not yet analysed) |
+| SSTNEAR-1105 | SST check for moved windows (`data/sst_nearby_check.csv`, log `data/bgs_sst_nearby_83336.out`; not in git) | job 83336 finished 2026-11-05 | 2,195 rows: samples whose best tile has no SST x scene x SST source (paired + 2 fill candidates) |
 
 Embedding model: `ibm-granite/granite-geospatial-ocean` encoder, mean over output
 tokens, 512 numbers per tile; missing SST pixels filled with Granite's mean
@@ -275,3 +276,50 @@ amoA, narG and phnX are not screened: present in under 90% of samples.
   0.13-0.59 for the top 20.
 - Position + season does not transfer to unseen cruises for KOs (median pooled R2
   below 0), unlike for temperature and nutrients.
+
+## R4. Does moving the tile recover SST? (2026-11-05)
+
+Inputs SSTNEAR-1105, E-orig-1102 tile manifest. Samples: original cruises whose
+best tile (closest) has no SST: 103 fixed, 105 advected (site level). For every
+scene of the sample (tile_log valid, cloudy or edge) the check searched window
+positions up to 40 km from the current one (3-pixel steps) that are at least 80%
+clear in OLCI **and** have SST of quality 4 or higher (the level the pipeline uses)
+anywhere in the window's SST box (as in `SstSwath.resample`). SST sources: the
+paired SLSTR overpass and up to 2 daytime fill candidates. Compared with option A
+(prefer-SST: same position, tile from another scene that has SST).
+`python scripts/check_sst_nearby.py` (sbatch `cluster/check_sst_nearby.sbatch`);
+comparison against option A ad hoc.
+
+Samples recovered (counts; gaps are median hours from sampling to the scene used):
+
+| Position | Cruise | No SST | Option A (other scene) | Move <= 10 km | <= 20 km | <= 40 km | Only by moving <= 20 km | Option A or move <= 20 km | Gap option A (h) | Gap move <= 20 km (h) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fixed | AMT28 | 11 | 3 | 3 | 4 | 7 | 1 | 4 | 28 | 36 |
+| fixed | C13.5/A13.5 | 39 | 21 | 18 | 23 | 32 | 3 | 24 | 43 | 28 |
+| fixed | I07N | 52 | 20 | 10 | 19 | 33 | 1 | 21 | 60 | 57 |
+| fixed | I09N | 1 | 1 | 1 | 1 | 1 | 0 | 1 | 177 | 177 |
+| fixed | all | 103 | 45 | 32 | 47 | 73 | 5 | 50 | 46 | 38 |
+| advected | AMT28 | 11 | 2 | 2 | 3 | 8 | 1 | 3 | 47 | 3 |
+| advected | C13.5/A13.5 | 34 | 20 | 14 | 20 | 27 | 2 | 22 | 45 | 32 |
+| advected | I07N | 60 | 20 | 20 | 23 | 36 | 5 | 25 | 51 | 57 |
+| advected | all | 105 | 42 | 36 | 46 | 71 | 8 | 50 | 51 | 44 |
+
+Other numbers:
+- In the closest scene itself (the one that lacks SST), a move of <= 20 km finds
+  SST for only 25 of 208; quality 3 SST at the current window would add 17.
+- Fill candidates add nothing: candidate 1 is the paired overpass in 441 of 455
+  rows, and candidate 2 (about 2 h later) has SST near the sample once.
+- Moving gives a scene closer in time than option A for 10 fixed and 9 advected
+  samples.
+
+### Reading R4
+
+- SST gaps are not near misses: where SLSTR has no good SST at the sample, it
+  usually has none for tens of km (cloud masking by SLSTR is stricter than the OLCI
+  clear test). Moving <= 20 km recovers about the same samples as option A, adding
+  5 fixed and 8 advected; 40 km recovers more but the tile is then 3 tile-widths
+  from the sample.
+- Not worth building into `download_tiles`. Option A stays the standard; about
+  half of these samples (53 fixed, 55 advected) have no SST by either route and
+  drop out under SST-only. Recovering them needs a gap-free SST product.
+

@@ -727,3 +727,40 @@ Reading:
 - CatBoost is again no better than ridge on the same inputs.
 - The band means need robust handling (clipping, or medians instead of means)
   before any linear model can use them (see R7).
+
+## R11. SST channel blanked, FAIRe cruises only, ridge, 20 KOs (2026-11-06) - partial
+
+Question: how much does the embedding lose if the SST channel is blanked, so that
+every tile could be used and in-situ temperature could stand in for SST? Only the
+FAIRe blank-SST bundle is back so far (the original-cruise blank bundle and both
+OSTIA bundles are still on Morrill). **So this is 8 cruises, not 13**, and is not
+comparable to R8-R10. Embeddings: E-faire-1103 against the same 5,553 tiles
+embedded with the SST channel set to the channel mean
+(`cluster/embed_sst_variants.sbatch`, `data/faire/embeddings_sst_blank/`). The
+tiles chosen per sample are the same in both (option A), so this compares only
+the embedding: 803 samples / 639 tiles / 8 cruises. R8's 20 KOs, ridge (spline
+for temperature alone). Files `data/results/sst_blank_faire/`. Command:
+`python scripts/model_experiments.py --embeddings-dirs data/faire/<embeddings|embeddings_sst_blank> --only all:emb:ridge all:pca32:ridge all:pca32+temp:ridge all:temp:spline col:temp+pca8+chl:ridge --out-dir data/results/sst_blank_faire/<same>`
+
+Median over the KOs, pooled R2 (in brackets median within a held-out cruise):
+
+| Features | Current SST | SST blanked |
+|---|---:|---:|
+| Embedding | 0.26 (0.34) | -0.08 (0.03) |
+| PCA 32 | 0.24 (0.36) | -0.03 (0.18) |
+| PCA 32 + in-situ T | 0.26 (0.37) | 0.15 (0.23) |
+| T + PCA 8 + chl | 0.26 (0.27) | 0.11 (0.26) |
+| In-situ T alone (spline) | 0.22 (0.20) | 0.22 (0.20) |
+
+Reading:
+- **Blanking SST wrecks the embedding** (0.26 to -0.08 pooled). Even the
+  "similar" KOs drop, from 0.37 to 0.06, so this is not just KO selection.
+- Adding in-situ temperature back recovers only part of it (0.15), and stays
+  below temperature alone (0.22). So in-situ T cannot simply replace SST inside
+  the embedding.
+- A likely reason: Granite never saw tiles with a constant SST channel, so
+  blanking moves the whole embedding off its training distribution, not just the
+  temperature part.
+- **Leaning: keep SST in the embedding, and drop samples rather than blank.** The
+  OSTIA fill is the remaining option for keeping more samples.
+- To redo on 13 cruises when the original-cruise blank bundle is back.

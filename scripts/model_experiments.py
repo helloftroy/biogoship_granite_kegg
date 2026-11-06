@@ -22,6 +22,8 @@ on the training cruises only, so the held-out cruise never shapes the features):
   meta       position and season (lat/90, sine and cosine of longitude and day of
              year), in-situ temperature and salinity
   temp       in-situ temperature
+  ts         in-situ temperature and salinity
+  season     sine and cosine of day of year
   np         in-situ nitrate + nitrite and phosphate (only some samples: set "np")
 
 Learners:
@@ -82,6 +84,10 @@ EXPERIMENTS = [
     ("all", "emb+meta", "ridge"),
     ("all", "pca32+meta", "ridge"), ("all", "pca32+meta", "krr"), ("all", "pca32+meta", "mlp"), ("all", "pca32+meta", "catboost"),
     ("all", "pls32+meta", "krr"), ("all", "pls32+meta", "catboost"),
+    # metadata without position (ts+season) and without position and season (ts), ridge only (R9)
+    *[("all", f"{base}{extra}", "ridge") for base in ("emb", "pca16", "pca32")
+      for extra in ("+ts", "+ts+season", "+temp", "+temp+season")],
+    ("all", "ts", "ridge"), ("all", "ts+season", "ridge"), ("all", "pca16+meta", "ridge"),
     ("np", "emb", "ridge"), ("np", "temp", "spline"), ("np", "meta", "catboost"),
     ("np", "meta+np", "ridge"), ("np", "meta+np", "krr"), ("np", "meta+np", "catboost"),
     ("np", "emb+meta+np", "ridge"), ("np", "pca32+meta+np", "krr"), ("np", "pca32+meta+np", "catboost"),
@@ -155,6 +161,8 @@ def load(args: argparse.Namespace, kos: pd.DataFrame) -> dict:
                       "emb": X_embed[unit["embedding_row"].to_numpy()],
                       "temp": means[["temperature_c"]].to_numpy(),
                       "meta": np.hstack([metadata_features(unit), means[["temperature_c", "salinity"]].to_numpy()]),
+                      "ts": means[["temperature_c", "salinity"]].to_numpy(),
+                      "season": metadata_features(unit)[:, 3:5],
                       "np": means[["nitrate_nitrite", "phosphate"]].to_numpy()}  # fmt: skip
         print(f"Sample set {name}: {len(part):,} samples, {len(unit):,} tiles, {unit['section'].nunique()} cruises")
     return data

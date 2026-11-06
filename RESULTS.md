@@ -590,3 +590,71 @@ Not tried yet:
 - The advected position; the in-situ targets; all 3,921 KOs.
 - **Everything here to be rerun on the blank-SST and OSTIA-filled embeddings**
   (the script takes `--embeddings-dirs`).
+
+## R9. Which metadata helps the embedding? Ridge, 20 KOs (2026-11-06)
+
+As R8 (sample set all: 1,281 samples, 1,093 tiles, 13 cruises; the same 20 KOs;
+PCA fitted on the training cruises only), ridge only. Metadata blocks: **temp** =
+in-situ temperature; **ts** = temperature + salinity; **season** = sine and cosine
+of day of year; **meta** = ts + season + position (lat, sine and cosine of
+longitude). "ts + season" is the R8 metadata without latitude and longitude, and
+"ts" is without position and time. Each block is standardized and shares one
+ridge penalty with the embedding inputs.
+Files `data/results/model_experiments_meta/`. Command:
+`python scripts/model_experiments.py --only all:emb+ts:ridge ... --out-dir data/results/model_experiments_meta`
+(the R9 entries of EXPERIMENTS, plus the matching baselines).
+
+Median over the KOs, pooled R2 (in brackets median R2 within a held-out cruise):
+
+| Features | Clear | Ahead | Similar | Worse | All 20 |
+|---|---:|---:|---:|---:|---:|
+| Embedding | 0.25 (0.24) | 0.29 (0.37) | 0.37 (0.36) | 0.06 (0.07) | 0.29 (0.29) |
+| + temp | 0.25 (0.24) | 0.29 (0.39) | 0.39 (0.34) | 0.06 (0.07) | 0.29 (0.29) |
+| + ts | 0.24 (0.19) | 0.23 (0.23) | 0.39 (0.34) | 0.05 (0.04) | 0.27 (0.22) |
+| + temp + season | 0.23 (0.27) | 0.17 (0.29) | 0.37 (0.31) | 0.03 (0.02) | 0.24 (0.28) |
+| + ts + season | 0.21 (0.22) | 0.15 (0.10) | 0.37 (0.35) | 0.01 (-0.02) | 0.23 (0.23) |
+| + meta | 0.19 (0.22) | 0.19 (0.21) | 0.35 (0.30) | 0.10 (0.11) | 0.21 (0.21) |
+| PCA 16 | 0.29 (0.26) | 0.29 (0.37) | 0.40 (0.33) | 0.18 (0.02) | 0.31 (0.24) |
+| + temp | 0.30 (0.24) | 0.29 (0.33) | 0.43 (0.37) | 0.20 (0.12) | 0.30 (0.28) |
+| + ts | 0.33 (0.21) | 0.28 (0.28) | 0.42 (0.34) | 0.18 (0.14) | 0.32 (0.28) |
+| + temp + season | 0.27 (0.20) | 0.19 (0.23) | 0.41 (0.31) | 0.19 (0.03) | 0.29 (0.26) |
+| + ts + season | 0.30 (0.20) | 0.16 (0.15) | 0.40 (0.33) | 0.18 (0.20) | 0.30 (0.23) |
+| + meta | 0.32 (0.20) | 0.13 (0.07) | 0.36 (0.26) | 0.14 (0.05) | 0.27 (0.22) |
+| PCA 32 | 0.27 (0.24) | 0.29 (0.37) | 0.40 (0.29) | 0.14 (-0.01) | 0.32 (0.28) |
+| + temp | 0.27 (0.24) | 0.29 (0.37) | 0.42 (0.33) | 0.15 (0.06) | 0.32 (0.31) |
+| + ts | 0.32 (0.24) | 0.28 (0.20) | 0.42 (0.33) | 0.14 (0.15) | 0.33 (0.23) |
+| + temp + season | 0.26 (0.23) | 0.19 (0.25) | 0.41 (0.26) | 0.14 (0.09) | 0.28 (0.24) |
+| + ts + season | 0.30 (0.22) | 0.17 (0.21) | 0.40 (0.27) | 0.13 (0.11) | 0.28 (0.22) |
+| + meta | 0.32 (0.24) | 0.15 (0.19) | 0.37 (0.21) | 0.11 (0.12) | 0.26 (0.20) |
+| ts alone | 0.13 (0.19) | 0.05 (0.28) | 0.34 (0.28) | 0.24 (0.33) | 0.23 (0.27) |
+| ts + season alone | -0.04 (0.06) | -0.09 (0.12) | 0.33 (0.28) | 0.20 (0.25) | 0.16 (0.22) |
+| meta alone | 0.06 (0.09) | -0.10 (-0.03) | 0.31 (0.26) | 0.25 (0.22) | 0.22 (0.16) |
+| temp alone (spline) | 0.15 (0.11) | 0.10 (0.09) | 0.35 (0.33) | 0.22 (0.24) | 0.22 (0.25) |
+
+Per KO, change from adding a block, pooled R2 (KOs improved of 20, median change):
+
+| Added | Embedding | PCA 16 | PCA 32 |
+|---|---|---|---|
+| temp | 13, +0.000 | 15, +0.010 | 16, +0.008 |
+| ts | 8, -0.005 | 12, +0.004 | 12, +0.011 |
+| ts + season | 4, -0.032 | 5, -0.025 | 6, -0.038 |
+| meta | 7, -0.016 | 8, -0.050 | 6, -0.033 |
+
+Reading:
+- **Season is what hurts.** Adding season lowers R2 with every base, both pooled
+  and within cruises, and mostly on the "ahead" KOs (for example PCA 32 drops from
+  0.29 to 0.17-0.19). Each cruise samples one season, so day of year acts as a
+  cruise label and does not carry over to a held-out cruise. Position does the
+  same, but with season already in it adds little more.
+- **Temperature helps a little on the PCs** (16 of 20 KOs with PCA 32, median
+  +0.01; within cruises 0.28 to 0.31). It does nothing on the full embedding,
+  where it is one input among 513 under a shared penalty.
+- **Salinity is mixed.** PCA 32 + T + salinity is the best pooled result so far
+  (0.33), but within cruises it falls (0.31 with T alone to 0.23), mostly on the
+  "ahead" KOs. So salinity seems to help between cruises and not within them.
+- The "worse" KOs are still best served by temperature + salinity alone (within
+  cruises 0.33); no embedding model gets there.
+- **Best simple model: PCA 32 + in-situ temperature, ridge.** It is at least as
+  good as the embedding in every category and is the only change that helps both
+  pooled and within cruises. The gain is small, on 20 KOs. To be rechecked on
+  the SST variants: if the SST channel is blanked, in-situ T may matter more.

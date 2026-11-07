@@ -971,3 +971,58 @@ received 2026-11-07; the code is not available yet):
   eggNOG-mapper, count genes per KO with the 1/n split, and apply the cov50 rule
   once it is known.
 
+---
+
+## R16. All KOs, Granite vs in-situ temperature, on the OSTIA-filled embeddings (2026-11-07)
+
+As R6, but the embeddings are E-orig-l4-1106 + E-faire-l4-1106 and the tile is the
+closest in time (all tiles have SST). That gives 1,429 samples, 1,216 tiles and
+13 cruises. Learners are fixed rather than the best per KO: the embedding uses
+ridge, temperature uses spline + ridge. Held-out predictions are saved. Files
+are in `data/results/ko_temperature_all_ostia/`. Command:
+`python scripts/test_ko_temperature.py --kos all --learners ridge spline --feature-sets temp embedding --embeddings-dirs data/embeddings_sst_l4 data/faire/embeddings_sst_l4 --save-predictions --out-dir data/results/ko_temperature_all_ostia`
+(about 1 minute).
+
+The same rule as R6 (difference 0.1, 9 of 13 cruises), with the same learners, on
+the old and new embeddings:
+
+| | Pre-OSTIA (R6 data) | OSTIA |
+|---|---:|---:|
+| Median pooled R2: embedding / temperature | 0.07 / -0.01 | 0.10 / 0.01 |
+| KOs with embedding R2 >= 0.25 | 692 | 849 |
+| Embedding clearly better | 757 | 747 |
+| Temperature clearly better | 369 | 280 |
+| Both >= 0.5 and within 0.05 | 45 | 59 |
+
+Per-KO embedding R2, old vs new: r = 0.95.
+
+The heatmap's stricter categories are in `ko_categories.csv`. They are: Granite
+better by >= 0.15 in >= 10 cruises (360 KOs); both >= 0.6 and within 0.05 (37);
+temperature better by >= 0.1 in >= 9 cruises (280).
+
+Reading (figures: FIGURES.md, cruise line and KO heatmap):
+- **The OSTIA fill helps the embedding across all KOs.** 157 more KOs reach
+  R2 >= 0.25, and 89 fewer are clearly better predicted by temperature.
+- **The best-predicted KOs are cyanobacterial**, and temperature predicts them as
+  well as Granite does:
+  - NDH-1 subunits ndhD/J/K
+  - hoxH
+  - phycoerythrin linker cpeS
+  - Mn transport mntB/C
+  - nrdJ
+  - alkane synthesis K14330
+  In the example metagenome, 90-100% of their genes are cyanobacterial.
+- **Granite clearly wins on heterotroph genes** (mostly Pseudomonadota in the
+  example metagenome):
+  - phosphate transport pstS/A/B/C, which plausibly track P limitation
+  - amino-acid synthesis (arg, lys, pro, aromatic)
+  - purine synthesis
+  - glutaminase glsA
+  On P18, glsA follows the subtropical-gyre maximum near 25 S, which temperature
+  misses.
+- **Temperature wins on:**
+  - eukaryotic and giant-virus genes: POLD1, TOP2, RRM2, NOP2, GPAT
+  - purple-bacterial reaction-centre genes: puhA, pufL
+  - the siderophore receptor fiu
+  - ndhF
+

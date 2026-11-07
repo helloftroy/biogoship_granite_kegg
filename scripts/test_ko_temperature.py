@@ -116,6 +116,10 @@ def main() -> None:
                 per_cruise.append(pd.DataFrame({"ko": Y.columns, "feature_set": name, "learner": learner, "held_out": cruise,
                                                 "n": int(test.sum()), "r2": 1 - ss_res / ss_tot}))  # fmt: skip
             pooled = 1 - ((y - pred) ** 2).sum(axis=0) / ((y - y.mean(axis=0)) ** 2).sum(axis=0)
+            if args.save_predictions:
+                args.out_dir.mkdir(parents=True, exist_ok=True)
+                np.savez_compressed(args.out_dir / f"predictions_{name}_{learner}.npz", predicted=pred.astype(np.float32),
+                                    observed=y.astype(np.float32), ko=np.array(Y.columns))  # fmt: skip
             results.append(pd.DataFrame({"ko": Y.columns, "feature_set": name, "learner": learner, "r2_pooled": pooled}))
             print(f"  {name:15s} {learner:9s} median pooled R2 over KOs {np.median(pooled):6.3f}", flush=True)
 
@@ -124,6 +128,11 @@ def main() -> None:
         per_cruise.groupby(["ko", "feature_set", "learner"])["r2"].median().rename("r2_median_cruise").reset_index())
     args.out_dir.mkdir(parents=True, exist_ok=True)
     out.round(4).to_csv(args.out_dir / "ko_temperature.csv", index=False)
+    if args.save_predictions:  # the rows of the prediction files: one per distinct tile
+        cols = ["sample_id", "section", "sample_time", "sample_lat", "sample_lon", "tile_path"]
+        table = unit[[c for c in cols if c in unit]].assign(temperature_c=temp[:, 0])
+        table.assign(n_samples=rows.groupby("tile_key").size().loc[Y.index].to_numpy()).to_csv(
+            args.out_dir / "prediction_rows.csv", index=False)
     per_cruise.round(4).to_csv(args.out_dir / "ko_temperature_per_cruise.csv", index=False)
 
     best = out.loc[out.groupby(["ko", "feature_set"])["r2_pooled"].idxmax()]
@@ -207,6 +216,8 @@ def parse_args() -> argparse.Namespace:
                         help="Skip CatBoost for feature sets wider than this (the embedding). R5 ran it on all (1e9).")
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "results" / "ko_temperature")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--save-predictions", action="store_true",
+                        help="Write the held-out predictions (predictions_<features>_<learner>.npz, prediction_rows.csv).")
     return parser.parse_args()
 
 

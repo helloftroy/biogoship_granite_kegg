@@ -20,6 +20,8 @@ matplotlib).
 | Spectral recovery from Granite embeddings | `figures/make_spectral_recovery.py` | `figures/output/spectral_recovery.png`, `.pdf` | METHODS_RESULTS.md section 7 |
 | Natural-colour tiles (companion) | `figures/make_tile_rgb.py` | `figures/output/spectral_recovery_tile_rgb.png` | - |
 | Embedding vs in-situ temperature, all KOs | `figures/make_temperature_gap.py` | `figures/output/temperature_gap.png`, `.pdf` | RESULTS.md R6 |
+| Three KOs along a cruise line (P18) | `figures/make_cruise_line.py` | `figures/output/cruise_line.png`, `.pdf` | RESULTS.md R16 |
+| KO heatmap: Granite vs temperature by function | `figures/make_ko_heatmap.py` | `figures/output/ko_heatmap.png`, `.pdf` | RESULTS.md R16 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
@@ -135,3 +137,39 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   colour stretch, flagged pixels grey).
 - The full scenes (with a quick-look JPEG inside each archive) are the products
   named in the `granule_id` column, in `data/products/olci/` on the cluster.
+
+## Three KOs along a cruise line (P18)
+
+![Cruise line](figures/output/cruise_line.png)
+
+- **Shows:** P18 (eastern Pacific, 2016-11 to 2017-01, 64 tiles) held out, models
+  trained on the other 12 cruises (OSTIA-filled embeddings). **a** track; **b** in-situ
+  temperature; **c-e** observed CLR (black) with predictions from the Granite
+  embedding (ridge, blue) and from temperature (spline, magenta dashed), and the R2
+  on this cruise.
+  - cpeS (*Synechococcus* phycoerythrin linker): both about 0.9.
+  - glsA (glutaminase): Granite 0.50, temperature -0.15. It picks up the subtropical
+    gyre maximum near 25 S, which temperature misses.
+  - fiu (siderophore receptor): temperature 0.52, Granite 0.32.
+  Lines are broken where samples are more than 8 degrees of latitude apart.
+- **Inputs:** `data/results/ko_temperature_all_ostia/` (RESULTS.md R16; needs `--save-predictions`).
+- **Regenerate:** `python figures/make_cruise_line.py` (`--cruise`, `--kos` for others).
+
+## KO heatmap: Granite vs temperature by function
+
+![KO heatmap](figures/output/ko_heatmap.png)
+
+- **Shows:** pooled R2 (13 cruises, each held out) from the Granite embedding (ridge)
+  and from in-situ temperature (spline), and their difference, for three blocks of KOs.
+  - Granite clearly better: the 28 best of 360 (difference >= 0.15, ahead in >= 10 cruises).
+  - Both high, about equal: the 14 best of 37 (both >= 0.6, |difference| < 0.05).
+  - Temperature clearly better: the 12 best of 280 (difference <= -0.1, behind in >= 9 cruises).
+  Rows are grouped by KEGG BRITE level B (merged; a few KOs placed by hand).
+  The right column gives the phylum that carries most of the KO's genes in one
+  example metagenome (A392013_008).
+  The footnote names the best model so far (R12).
+- **Inputs:** as above, plus `data/reference/kegg_brite_ko00001.csv` (from
+  https://rest.kegg.jp/get/br:ko00001/json) and the example pipeline output's
+  `level_2_phylum_division_ko_counts.tsv` (not in git).
+- **Regenerate:** `python figures/make_ko_heatmap.py --taxa <A392013_008_meta>/level_2_phylum_division_ko_counts.tsv`
+

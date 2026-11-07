@@ -59,7 +59,9 @@ def main() -> None:
     manifest = pd.read_csv(args.manifest_csv, dtype={"sst_source": str})
     tile_table = manifest.drop_duplicates("tile_path").set_index("tile_path")
     tile_table["time"] = pd.to_datetime(tile_table["tile_date"], utc=True).dt.tz_localize(None)
-    print(f"{args.manifest_csv}: {len(tile_table):,} tiles in {tile_table['section'].nunique()} sections")
+    tile_table["subset"] = subsets(tile_table, args.split_gap_days)
+    print(f"{args.manifest_csv}: {len(tile_table):,} tiles in {tile_table['section'].nunique()} sections, "
+          f"{tile_table['subset'].nunique()} OSTIA subsets")
 
     files = download(tile_table, args)
     if args.dry_run:
@@ -75,7 +77,7 @@ def main() -> None:
             sst_norm = npz["data"][-1].astype(np.float32)
             lat_c, lon_c = float(npz["lat_center"]), float(npz["lon_center"])
         slstr = sst_norm * tiles.SST_STD_K + tiles.SST_MEAN_K
-        grid = choose_file(files[tile["section"]], lon_c, opened)
+        grid = choose_file(files[tile["subset"]], lon_c, opened)
         l4 = ostia_on_tile(opened[grid], tile["time"], lat_c, lon_c)
         both = np.isfinite(slstr) & np.isfinite(l4)
         l4_fields[path], slstr_fields[path] = l4, slstr
@@ -154,11 +156,26 @@ def main() -> None:
     print(f"Wrote {args.out_manifest} and {args.log_csv}")
 
 
+def subsets(tile_table: pd.DataFrame, split_gap_days: float) -> pd.Series:
+    """OSTIA subset of each tile: its section, or with split_gap_days > 0 one per run of tiles
+    in a section with no gap longer than that (a long expedition or a time series would
+    otherwise need one subset spanning years and an ocean basin)."""
+    if split_gap_days <= 0:
+        return tile_table["section"].astype(str)
+    out = pd.Series(index=tile_table.index, dtype=object)
+    for section, group in tile_table.groupby("section"):
+        times = group["time"].sort_values()
+        run = (times.diff() > pd.Timedelta(days=split_gap_days)).cumsum()
+        out[times.index] = [f"{section}_{k:03d}" for k in run]
+    return out
+
+
 def download(tile_table: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[Path]]:
-    """One OSTIA subset per cruise section (two if it crosses 180 degrees); returns section -> files."""
+    """One OSTIA subset per cruise section, or per run of it (--split-gap-days), two if it crosses
+    180 degrees; returns subset -> files."""
     args.l4_dir.mkdir(parents=True, exist_ok=True)
     files: dict[str, list[Path]] = {}
-    for section, group in tile_table.groupby("section"):
+    for section, group in tile_table.groupby("subset"):
         lon = group["tile_lon"].to_numpy(dtype=float)
         start = (group["time"].min() - pd.Timedelta(days=1)).floor("D")
         end = (group["time"].max() + pd.Timedelta(days=2)).floor("D")
@@ -256,6 +273,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--l4-dir", type=Path, default=REPO_ROOT / "data" / "sst_l4")
     parser.add_argument("--dataset-id", help=f"Copernicus Marine dataset. Default: {DATASETS[0]}, else {DATASETS[1]}.")
     parser.add_argument("--pad-deg", type=float, default=0.5)
+    parser.add_argument("--split-gap-days", type=float, default=0.0,
+                        help="Split a section's OSTIA subset wherever its tiles are more than this many days apart (0 = one per section).")
     parser.add_argument("--min-local-pixels", type=int, default=200,
                         help="SLSTR pixels a tile needs for its own offset (of 1,764). Default 200.")
     parser.add_argument("--max-offset-departure", type=float, default=2.0,

@@ -55,4 +55,17 @@ data/faire/sst_l4_log.csv
 data/sst_nearby_check*
 data/bgs_*.out
 data/model_fields/
-data/external/
+# External test sets: manifests, samples.csv and source/ are tracked; the rest stays local
+data/external/*/*.h5ad*
+data/external/*/tiles/
+data/external/*/tiles_sst_l4/
+data/external/*/sst_l4/
+data/external/*/work/
+data/external/*/embeddings*/
+data/external/*/*_log.csv
+data/external/*/targets/
+data/external/*/manifests/products.csv
+data/external/*/manifests/site_products.csv
+data/external/*/manifests/search_cache.jsonl
+data/external/*/manifests/biogoship_tile_manifest*.csv
+data/external/*/manifests/site_tile_status.csv

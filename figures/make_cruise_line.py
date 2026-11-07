@@ -13,14 +13,19 @@ high, Granite clearly better, temperature better. Chosen on P18 (2016-17, the
 eastern Pacific from 33 N to 70 S), where each category has a KO that varies
 strongly along the line.
 
-Input:   data/results/ko_temperature_all_ostia/ (scripts/test_ko_temperature.py --kos all
+--compare best draws the best model so far (32 PCs of the embedding + temperature,
+ridge) instead of the embedding alone: what Granite adds on top of temperature.
+
+Input:   data/results/ko_temperature_all_ostia_v2/ (scripts/test_ko_temperature.py --kos all
          --learners ridge spline --feature-sets temp embedding --embeddings-dirs
-         data/embeddings_sst_l4 data/faire/embeddings_sst_l4 --save-predictions)
+         data/embeddings_sst_l4 data/faire/embeddings_sst_l4 --save-predictions; feature sets
+         temp, embedding and, for --compare best, pca32_temp)
          Land outline: Natural Earth 110 m land (cartopy's cache), drawn if present.
 Outputs: figures/output/cruise_line.png and .pdf
 
 Usage:
     python figures/make_cruise_line.py
+    python figures/make_cruise_line.py --compare best
     python figures/make_cruise_line.py --cruise A16N-2023 --kos K05382 K04518 K02327
 """
 
@@ -38,7 +43,11 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-RESULTS = ROOT / "data" / "results" / "ko_temperature_all_ostia"
+RESULTS = ROOT / "data" / "results" / "ko_temperature_all_ostia_v2"
+MODELS = {  # --compare: the model drawn in blue against temperature alone
+    "granite": ("embedding", "ridge", "Granite embedding"),
+    "best": ("pca32_temp", "ridge", "Best model: 32 Granite PCs + temperature"),
+}
 OUT = ROOT / "figures" / "output"
 LAND = Path.home() / ".local/share/cartopy/shapefiles/natural_earth/physical/ne_110m_land.shp"
 
@@ -55,7 +64,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cruise", default="P18")
     parser.add_argument("--kos", nargs=3, default=["K05382", "K01425", "K16090"])
-    parser.add_argument("--out-name", default="cruise_line")
+    parser.add_argument("--compare", choices=list(MODELS), default="granite",
+                        help="granite: the embedding alone; best: 32 PCs of the embedding + temperature (RESULTS.md R12)")
+    parser.add_argument("--out-name", help="Default cruise_line (granite) or cruise_line_best (best).")
     args = parser.parse_args()
     plt.rcParams.update({
         "font.family": ["Arial", "DejaVu Sans"], "font.size": 8, "axes.labelsize": 8,
@@ -66,7 +77,9 @@ def main() -> None:
     })  # fmt: skip
 
     rows = pd.read_csv(RESULTS / "prediction_rows.csv")
-    granite = np.load(RESULTS / "predictions_embedding_ridge.npz", allow_pickle=True)
+    feature_set, learner, model_label = MODELS[args.compare]
+    out_name = args.out_name or ("cruise_line" if args.compare == "granite" else "cruise_line_best")
+    granite = np.load(RESULTS / f"predictions_{feature_set}_{learner}.npz", allow_pickle=True)
     temp = np.load(RESULTS / "predictions_temp_spline.npz", allow_pickle=True)
     kos = list(granite["ko"])
     per_cruise = pd.read_csv(RESULTS / "ko_temperature_per_cruise.csv")
@@ -100,12 +113,12 @@ def main() -> None:
         j = kos.index(ko)
         observed = granite["observed"][line["i"], j]
         ax.scatter(lat, observed, s=9, color=INK, zorder=4, linewidths=0, label="Observed")
-        ax.plot(lat_line, broken(granite["predicted"][line["i"], j]), color=GRANITE, lw=1.6, marker="o", ms=2.2, zorder=3, label="Granite embedding")
+        ax.plot(lat_line, broken(granite["predicted"][line["i"], j]), color=GRANITE, lw=1.6, marker="o", ms=2.2, zorder=3, label=model_label)
         ax.plot(lat_line, broken(temp["predicted"][line["i"], j]), color=TEMP, lw=1.6, ls=(0, (4, 2)), marker="o", ms=2.2, zorder=2, label="In-situ temperature")
         gene, what, who = LABELS.get(ko, (names.get(ko, ko).split(";")[0], names.get(ko, "").split(";")[-1].strip(), ""))
         ax.text(0.01, 0.97, rf"$\bf{{{gene}}}$   {ko} · {what}" + (f" ({who})" if who else ""),
                 transform=ax.transAxes, ha="left", va="top", fontsize=7.5, color=INK)  # fmt: skip
-        r2g = per_cruise.get((ko, "embedding", "ridge"), np.nan)
+        r2g = per_cruise.get((ko, feature_set, learner), np.nan)
         r2t = per_cruise.get((ko, "temp", "spline"), np.nan)
         x0 = 1.015
         ax.plot([x0, x0 + 0.035], [0.62, 0.62], transform=ax.transAxes, color=GRANITE, lw=1.6, clip_on=False)
@@ -136,8 +149,8 @@ def main() -> None:
 
     OUT.mkdir(parents=True, exist_ok=True)
     for suffix in ("png", "pdf"):
-        fig.savefig(OUT / f"{args.out_name}.{suffix}", dpi=300)
-    print(f"Wrote {OUT / args.out_name}.png and .pdf ({len(line)} tiles on {args.cruise})")
+        fig.savefig(OUT / f"{out_name}.{suffix}", dpi=300)
+    print(f"Wrote {OUT / out_name}.png and .pdf ({len(line)} tiles on {args.cruise})")
 
 
 def panel_map(ax, rows: pd.DataFrame, line: pd.DataFrame) -> None:

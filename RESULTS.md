@@ -1026,3 +1026,47 @@ Reading (figures: FIGURES.md, cruise line and KO heatmap):
   - the siderophore receptor fiu
   - ndhF
 
+---
+
+## R17. All KOs: time & place, raw satellite and the best model, OSTIA embeddings (2026-11-07)
+
+As R16 (1,429 samples, 1,216 tiles, 13 cruises), adding three feature sets to
+`scripts/test_ko_temperature.py`:
+- **metadata:** time & place, as in R5.
+- **satellite:** 16 OLCI band means + tile SST mean. Each is rank-normalised on the
+  training cruises, because some FAIRe means are tens of s.d. out. Missing values
+  are set to the training median. For OSTIA-only tiles, SST is OSTIA at the tile
+  centre plus the applied offset, from `sst_l4_log.csv`.
+- **pca32_temp:** the best model so far (R12); the PCA is fitted on the training cruises.
+
+Files are in `data/results/ko_temperature_all_ostia_v2/`. Command:
+`python scripts/test_ko_temperature.py --kos all --learners ridge spline knn --feature-sets temp embedding metadata satellite pca32_temp --embeddings-dirs data/embeddings_sst_l4 data/faire/embeddings_sst_l4 --save-predictions --out-dir data/results/ko_temperature_all_ostia_v2`
+(about 6 minutes). Embedding and temperature results are identical to R16.
+
+Median pooled R2 over all 3,921 KOs:
+
+| Features | ridge | spline | kNN |
+|---|---:|---:|---:|
+| 32 PCs + temperature | **0.12** | - | 0.02 |
+| Embedding | 0.10 | - | 0.00 |
+| Raw satellite | 0.05 | 0.05 | -0.03 |
+| Temperature | -0.01 | 0.01 | -0.18 |
+| Time & place | -0.14 | -0.63 | -0.32 |
+
+Reading (heatmap with four predictors, FIGURES.md):
+- **Time & place does not transfer to a new cruise.** It is below 0.2 for every
+  KO in the heatmap.
+- **Raw satellite needs the spline.** It is nonlinear in SST; with ridge it scores
+  about 0 on the cyanobacterial KOs, with the spline 0.42-0.54.
+- **On the heterotroph KOs where Granite beats temperature, the raw satellite
+  values do almost as well as Granite.** Examples: pstB 0.43 vs 0.46, glsA 0.48 vs
+  0.46, citramalyl-CoA lyase 0.56 vs 0.44. So most of Granite's lead over
+  temperature on those KOs is information in the tile's mean colour and SST. The
+  embedding's own extra over the band means is small there.
+- **Where both are high (cyanobacteria), Granite (about 0.7) beats raw satellite
+  (about 0.5).**
+- **On P18, the best model adds most where temperature fails.** glsA rises from
+  -0.15 to 0.47; cpeS stays at 0.89 vs 0.92. For fiu, the best model is worse
+  than temperature alone (0.30 vs 0.52): it uses temperature linearly. A
+  spline-temperature + PCs model is the obvious next variant.
+

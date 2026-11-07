@@ -21,6 +21,15 @@ Feature sets (--feature-sets; any of):
                     (the ratio behind OC4ME; higher = less chlorophyll)
   embedding         Granite embedding of the sample's tile (512 numbers)
   embedding_temp    embedding + in-situ temperature
+  satellite         raw satellite: the 16 OLCI band means and the SST mean of the tile,
+                    each mapped to a normal distribution by rank on the training
+                    cruises (some FAIRe band means are tens of s.d. out: glint, ice),
+                    missing values set to the training median. For OSTIA-filled tiles
+                    without SLSTR the SST mean is the OSTIA value at the tile centre plus
+                    the applied offset (from <embeddings dir>/../sst_l4_log.csv).
+                    Does not restrict the samples.
+  pca32_temp        the best model so far (RESULTS.md R12): 32 principal components of
+                    the embedding, fitted on the training cruises, + in-situ temperature
 All inputs are standardised on the training cruises.
 
 Learners (--learners): ridge, spline (a cubic B-spline of each input, 8 knots,
@@ -58,7 +67,8 @@ import pandas as pd
 from sklearn.linear_model import RidgeCV
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import SplineTransformer, StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import QuantileTransformer, SplineTransformer, StandardScaler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -66,7 +76,8 @@ from biogoship import tiles  # noqa: E402
 from biogoship.tables import REPO_ROOT  # noqa: E402
 from screen_ko_predictability import ALPHAS, load_embeddings, metadata_features  # noqa: E402
 
-FEATURE_SETS = ("metadata", "metadata_temp", "temp", "colour", "temp_colour", "temp_chl", "embedding", "embedding_temp")
+FEATURE_SETS = ("metadata", "metadata_temp", "temp", "colour", "temp_colour", "temp_chl", "embedding", "embedding_temp",
+                "satellite", "pca32_temp")
 DEFAULT_SETS = ("metadata", "metadata_temp", "temp", "embedding", "embedding_temp")
 LEARNERS = ("ridge", "spline", "knn", "catboost")
 BAND_MEANS = [f"{band}_mean" for band in tiles.OLCI_BANDS]
@@ -94,6 +105,10 @@ def main() -> None:
         colour = raw.loc[unit["tile_path"], BAND_MEANS].to_numpy()
         chl = chlorophyll_index(colour)[:, None]
         X.update({"colour": colour, "temp_colour": np.hstack([temp, colour]), "temp_chl": np.hstack([temp, chl])})
+    if "satellite" in args.feature_sets:
+        X["satellite"] = satellite_features(args.embeddings_dirs, unit["tile_path"])
+    if "pca32_temp" in args.feature_sets:
+        X["pca32_temp"] = np.hstack([emb, temp])  # PCA of the first 512 columns is fitted per fold below
     cruises = unit["section"].astype(str).to_numpy()
     print(f"Samples with a KO profile, an in-situ temperature{', band means' if needs_colour else ''} and a "
           f"{args.position} tile with SST: {len(rows):,}; distinct tiles: {len(unit):,}; cruises: {len(set(cruises))}; "
@@ -108,8 +123,7 @@ def main() -> None:
             pred = np.full_like(y, np.nan)
             for cruise in np.unique(cruises):
                 test = cruises == cruise
-                scaler = StandardScaler().fit(X[name][~test])
-                train_x, test_x = scaler.transform(X[name][~test]), scaler.transform(X[name][test])
+                train_x, test_x = prepare(name, X[name][~test], X[name][test])
                 pred[test] = fit_predict(learner, train_x, y[~test], test_x, args.seed)
                 ss_res = ((y[test] - pred[test]) ** 2).sum(axis=0)
                 ss_tot = ((y[test] - y[~test].mean(axis=0)) ** 2).sum(axis=0)
@@ -150,6 +164,44 @@ def main() -> None:
         print("\nPooled R2 per KO:")
         print(kos.set_index("ko")[["group", "name"]].join(pooled.round(2)).to_string())
     print(f"\nWrote {args.out_dir / 'ko_temperature.csv'}")
+
+
+def prepare(name: str, train: np.ndarray, test: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Scale on the training cruises; per feature set: rank-normal for the raw satellite
+    values, PCA (32) of the embedding for the best model."""
+    if name == "satellite":
+        median = np.nanmedian(train, axis=0)
+        train, test = np.where(np.isnan(train), median, train), np.where(np.isnan(test), median, test)
+        q = QuantileTransformer(n_quantiles=min(1000, len(train)), output_distribution="normal", random_state=0).fit(train)
+        train, test = q.transform(train), q.transform(test)
+    elif name == "pca32_temp":
+        scaler = StandardScaler().fit(train[:, :-1])
+        pca = PCA(n_components=32, random_state=0).fit(scaler.transform(train[:, :-1]))
+        train = np.hstack([pca.transform(scaler.transform(train[:, :-1])), train[:, -1:]])
+        test = np.hstack([pca.transform(scaler.transform(test[:, :-1])), test[:, -1:]])
+    scaler = StandardScaler().fit(train)
+    return scaler.transform(train), scaler.transform(test)
+
+
+def satellite_features(folders: list[Path], tile_paths: pd.Series) -> np.ndarray:
+    """16 OLCI band means + SST mean (Granite-normalised) per tile; NaN where missing."""
+    frames = []
+    for folder in folders:
+        raw = pd.read_csv(folder / "tile_raw_features.csv").set_index("tile_path")
+        log_path = folder.parent / "sst_l4_log.csv"
+        if log_path.exists():  # SST of OSTIA-only tiles: centre value + offset, as written into the tile
+            log = pd.read_csv(log_path)
+            log = log[log["sst_source"] == "none"]
+            filled = ((log["l4_centre_k"] + log["sst_offset_k"].fillna(0)) - tiles.SST_MEAN_K) / tiles.SST_STD_K
+            filled.index = log["tile_path"].str.replace("/tiles/", "/tiles_sst_l4/", n=1, regex=False)
+            raw["SST_mean"] = raw["SST_mean"].fillna(filled.reindex(raw.index))
+        frames.append(raw)
+    raw = pd.concat(frames)
+    raw = raw[~raw.index.duplicated()]
+    out = raw.reindex(tile_paths)[[*BAND_MEANS, "SST_mean"]]
+    print(f"Raw satellite values: {int(out.notna().all(axis=1).sum()):,} of {len(out):,} tiles complete; "
+          f"SST mean missing {int(out['SST_mean'].isna().sum()):,}, band means missing {int(out[BAND_MEANS].isna().any(axis=1).sum()):,}")
+    return out.to_numpy(dtype=float)
 
 
 def load_raw_features(folders: list[Path]) -> pd.DataFrame:

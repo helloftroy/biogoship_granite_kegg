@@ -22,6 +22,8 @@ matplotlib).
 | Embedding vs in-situ temperature, all KOs | `figures/make_temperature_gap.py` | `figures/output/temperature_gap.png`, `.pdf` | RESULTS.md R6 |
 | Three KOs along a cruise line (P18) | `figures/make_cruise_line.py` | `figures/output/cruise_line.png`, `.pdf` | RESULTS.md R16 |
 | KO heatmap: Granite vs temperature by function | `figures/make_ko_heatmap.py` | `figures/output/ko_heatmap.png`, `.pdf` | RESULTS.md R16 |
+| Cruise line: temperature vs best model (P18) | `figures/make_cruise_line.py --compare best` | `figures/output/cruise_line_best.png`, `.pdf` | RESULTS.md R17 |
+| KO heatmap: four predictors | `figures/make_ko_heatmap.py --columns inputs` | `figures/output/ko_heatmap_inputs.png`, `.pdf` | RESULTS.md R17 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
@@ -152,7 +154,7 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
     gyre maximum near 25 S, which temperature misses.
   - fiu (siderophore receptor): temperature 0.52, Granite 0.32.
   Lines are broken where samples are more than 8 degrees of latitude apart.
-- **Inputs:** `data/results/ko_temperature_all_ostia/` (RESULTS.md R16; needs `--save-predictions`).
+- **Inputs:** `data/results/ko_temperature_all_ostia_v2/` (RESULTS.md R16, R17; needs `--save-predictions`).
 - **Regenerate:** `python figures/make_cruise_line.py` (`--cruise`, `--kos` for others).
 
 ## KO heatmap: Granite vs temperature by function
@@ -172,4 +174,29 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   https://rest.kegg.jp/get/br:ko00001/json) and the example pipeline output's
   `level_2_phylum_division_ko_counts.tsv` (not in git).
 - **Regenerate:** `python figures/make_ko_heatmap.py --taxa <A392013_008_meta>/level_2_phylum_division_ko_counts.tsv`
+
+## Cruise line: temperature vs best model (P18)
+
+![Cruise line, best model](figures/output/cruise_line_best.png)
+
+- **Shows:** as the cruise line above, but the blue line is the best model so far
+  (ridge on 32 PCs of the embedding + in-situ temperature, PCA fitted on the
+  training cruises). It shows what Granite adds on top of temperature. P18 R2,
+  best model vs temperature alone:
+  - cpeS: 0.89 vs 0.92.
+  - glsA: 0.47 vs -0.15.
+  - fiu: 0.30 vs 0.52. The best model takes temperature as a straight line, so it
+    misses fiu's curved response, which the temperature spline catches.
+- **Regenerate:** `python figures/make_cruise_line.py --compare best`
+
+## KO heatmap: four predictors
+
+![KO heatmap, four predictors](figures/output/ko_heatmap_inputs.png)
+
+- **Shows:** the same rows as the KO heatmap. Columns are pooled R2 from the Granite
+  embedding (ridge), in-situ temperature (spline), time & place (latitude, sin/cos
+  longitude, sin/cos day of year; ridge) and the raw satellite values (16 OLCI band
+  means + SST mean of the tile, rank-normalised; spline). The colour scale runs from
+  white to dark blue; values at or below 0 are white.
+- **Regenerate:** `python figures/make_ko_heatmap.py --columns inputs --taxa <...>/level_2_phylum_division_ko_counts.tsv`
 

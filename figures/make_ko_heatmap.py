@@ -44,7 +44,7 @@ import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 
 ROOT = Path(__file__).resolve().parents[1]
-RESULTS = ROOT / "data" / "results" / "ko_temperature_all_ostia"
+RESULTS = ROOT / "data" / "results" / "ko_temperature_all_ostia_v2"
 OUT = ROOT / "figures" / "output"
 
 INK, MUTED, RULE, SURFACE = "#0b0b0b", "#52514e", "#d6d5d0", "#ffffff"
@@ -52,6 +52,12 @@ GRANITE, TEMP = "#2a78d6", "#c0457e"
 N_GRANITE, N_SAME, N_TEMP = 28, 14, 12
 R2_CMAP = LinearSegmentedColormap.from_list("r2", ["#f6f5f2", "#bdbab2", "#6d6a63", "#232220"])
 DIFF_CMAP = LinearSegmentedColormap.from_list("diff", [TEMP, "#f6f5f2", GRANITE])
+BLUE_CMAP = LinearSegmentedColormap.from_list("blue", ["#ffffff", "#9cc3ee", "#2a78d6", "#0c2f5c"])
+# --columns inputs: four predictors side by side (feature set, learner, header); the learner is
+# temperature and raw satellite get a smooth curve per input (spline), as their responses bend;
+# time & place ridge (best median over all KOs; its spline overfits).
+INPUTS = [("embedding", "ridge", "Granite\nembedding"), ("temp", "spline", "In-situ\ntemperature"),
+          ("metadata", "ridge", "Time &\nplace"), ("satellite", "spline", "Raw\nsatellite")]  # fmt: skip
 
 # KEGG level-B categories -> display group, in priority order for KOs listed under several.
 GROUPS = [
@@ -89,6 +95,9 @@ SHORT = {  # shorter descriptions for row labels
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--taxa", type=Path, help="level_2_phylum_division_ko_counts.tsv of the example pipeline output")
+    parser.add_argument("--columns", choices=["difference", "inputs"], default="difference",
+                        help="difference: Granite, temperature, their difference (ko_heatmap); inputs: Granite, temperature, "
+                             "time & place, raw satellite, white to dark blue (ko_heatmap_inputs)")  # fmt: skip
     args = parser.parse_args()
     plt.rcParams.update({
         "font.family": ["Arial", "DejaVu Sans"], "font.size": 7, "pdf.fonttype": 42, "svg.fonttype": "none",
@@ -98,6 +107,9 @@ def main() -> None:
     ko = categories()
     taxa = phylum_share(args.taxa) if args.taxa else pd.DataFrame(columns=["phylum", "share"])
     ko = ko.join(taxa)
+    scores = pd.read_csv(RESULTS / "ko_temperature.csv")
+    for feature_set, learner, _ in INPUTS:
+        ko[f"r2_{feature_set}"] = scores[(scores["feature_set"] == feature_set) & (scores["learner"] == learner)].set_index("ko")["r2_pooled"]
     ko.round(4).to_csv(RESULTS / "ko_categories.csv")
     blocks = [
         ("Granite clearly better", ko[ko["category"] == "granite"].nlargest(N_GRANITE, "granite"), "granite"),
@@ -117,12 +129,19 @@ def main() -> None:
     # Layout in inches: x positions of the columns, y = one unit per row.
     W = 7.5
     X_GROUP, X_BRACKET, X_LABEL = 0.10, 1.30, 3.92  # group text (left-aligned), bracket, row labels (right-aligned)
-    X_CELLS, CELL = [3.98, 4.50, 5.17], 0.50  # Granite, temperature, difference
-    X_TAXON = 5.75
+    if args.columns == "difference":
+        X_CELLS, CELL = [3.98, 4.50, 5.17], 0.50  # Granite, temperature, difference
+        columns = [("granite", R2_CMAP, "{:.2f}"), ("temp", R2_CMAP, "{:.2f}"), ("diff", DIFF_CMAP, "{:+.2f}")]
+        headers = ["Granite\nembedding", "In-situ\ntemperature", "Difference\n(G − T)"]
+    else:
+        X_CELLS, CELL = [3.98, 4.50, 5.02, 5.54], 0.50
+        columns = [(f"r2_{f}", BLUE_CMAP, "{:.2f}") for f, _, _ in INPUTS]
+        headers = [h for _, _, h in INPUTS]
+    X_TAXON = X_CELLS[-1] + CELL + 0.08
     n_rows = sum(len(b) for _, _, b in rows)
     gap = 2.4
     total = n_rows + gap * len(rows)
-    row_h, head, foot = 0.155, 0.55, 1.05
+    row_h, head, foot = 0.155, 0.55, 1.3
     fig_h = total * row_h + head + foot
     fig = plt.figure(figsize=(W, fig_h))
     ax = fig.add_axes([0, foot / fig_h, 1, (total * row_h) / fig_h])
@@ -135,7 +154,7 @@ def main() -> None:
     for label, key, block in rows:
         y += gap
         ax.text(X_GROUP, y - 0.6, label, ha="left", va="bottom", fontsize=8.5, fontweight="bold", color=INK)
-        ax.text(X_CELLS[2] + CELL, y - 0.6, f"{len(block)} shown of {int(counts.get(key, 0)):,} KOs", ha="right",
+        ax.text(X_CELLS[-1] + CELL, y - 0.6, f"{len(block)} shown of {int(counts.get(key, 0)):,} KOs", ha="right",
                 va="bottom", fontsize=6.5, color=MUTED)  # fmt: skip
         ax.plot([X_GROUP, W - 0.1], [y - 0.1, y - 0.1], color=RULE, lw=0.5)
         for group, members in block.groupby("group", observed=True, sort=False):
@@ -144,10 +163,9 @@ def main() -> None:
             text = textwrap.fill(str(group), 16) if len(members) > 1 else str(group)
             ax.text(X_GROUP, (g0 + g1) / 2, text, ha="left", va="center", fontsize=6.5, color=MUTED, linespacing=1.1)
             for _, row in members.iterrows():
-                for x, value, cmap, norm, fmt in [(X_CELLS[0], row["granite"], R2_CMAP, r2_norm, "{:.2f}"),
-                                                  (X_CELLS[1], row["temp"], R2_CMAP, r2_norm, "{:.2f}"),
-                                                  (X_CELLS[2], row["diff"], DIFF_CMAP, diff_norm, "{:+.2f}")]:  # fmt: skip
-                    colour = cmap(norm(value))
+                for x, (column, cmap, fmt) in zip(X_CELLS, columns):
+                    value = row[column]
+                    colour = cmap((diff_norm if column == "diff" else r2_norm)(value))
                     ax.add_patch(plt.Rectangle((x + 0.015, y + 0.07), CELL - 0.03, 0.86, color=colour, lw=0))
                     dark = (0.299 * colour[0] + 0.587 * colour[1] + 0.114 * colour[2]) < 0.55
                     ax.text(x + CELL / 2, y + 0.5, fmt.format(value), ha="center", va="center", fontsize=6.3,
@@ -159,37 +177,44 @@ def main() -> None:
                             fontsize=6.3, color=MUTED)  # fmt: skip
                 y += 1
 
-    for x, text in [(X_CELLS[0], "Granite\nembedding"), (X_CELLS[1], "In-situ\ntemperature"), (X_CELLS[2], "Difference\n(G − T)")]:
-        ax.text(x + CELL / 2, 0.3, text, ha="center", va="bottom", fontsize=7, color=INK)
-    ax.text(X_CELLS[0] + CELL, -1.7, "Pooled R², cruise held out", ha="center", va="bottom", fontsize=6.5, color=MUTED)
+    for x, text in zip(X_CELLS, headers):
+        ax.text(x + CELL / 2, 0.3, text, ha="center", va="bottom", fontsize=6.8, color=INK)
+    ax.text(X_CELLS[0] + CELL if args.columns == "difference" else X_CELLS[0] + 2 * CELL, -1.7, "Pooled R², cruise held out", ha="center", va="bottom", fontsize=6.5, color=MUTED)
     ax.text(X_TAXON, 0.3, "Main carrier, share of genes\n(one example metagenome)", ha="left", va="bottom", fontsize=7, color=INK)
 
-    key_y, key_h = 0.62 / fig_h, 0.09 / fig_h
-    kax = fig.add_axes([X_CELLS[0] / W, key_y, 0.85 / W, key_h])
-    kax.imshow(np.linspace(0, 0.8, 200)[None, :], aspect="auto", cmap=R2_CMAP, norm=r2_norm, extent=[0, 0.8, 0, 1])
-    kax.set_xticks([0, 0.4, 0.8])
-    kax.set_xticklabels(["≤0", "0.4", "0.8"])
-    kax.set_xlabel("R²", fontsize=6.5, color=MUTED, labelpad=1)
-    dax = fig.add_axes([(X_CELLS[2] - 0.05) / W, key_y, (CELL + 0.4) / W, key_h])
-    dax.imshow(np.linspace(-0.4, 0.4, 200)[None, :], aspect="auto", cmap=DIFF_CMAP, norm=diff_norm, extent=[-0.4, 0.4, 0, 1])
-    dax.set_xticks([-0.4, 0, 0.4])
-    dax.set_xticklabels(["T", "0", "Granite"])
-    dax.set_xlabel("ΔR², better:", fontsize=6.5, color=MUTED, labelpad=1)
-    for a in (kax, dax):
+    key_y, key_h = 0.88 / fig_h, 0.09 / fig_h
+    key_axes = [fig.add_axes([X_CELLS[0] / W, key_y, 0.85 / W, key_h])]
+    key_axes[0].imshow(np.linspace(0, 0.8, 200)[None, :], aspect="auto", norm=r2_norm, extent=[0, 0.8, 0, 1],
+                       cmap=R2_CMAP if args.columns == "difference" else BLUE_CMAP)  # fmt: skip
+    key_axes[0].set_xticks([0, 0.4, 0.8])
+    key_axes[0].set_xticklabels(["≤0", "0.4", "0.8"])
+    key_axes[0].set_xlabel("R²", fontsize=6.5, color=MUTED, labelpad=1)
+    if args.columns == "difference":
+        dax = fig.add_axes([(X_CELLS[2] - 0.05) / W, key_y, (CELL + 0.4) / W, key_h])
+        dax.imshow(np.linspace(-0.4, 0.4, 200)[None, :], aspect="auto", cmap=DIFF_CMAP, norm=diff_norm, extent=[-0.4, 0.4, 0, 1])
+        dax.set_xticks([-0.4, 0, 0.4])
+        dax.set_xticklabels(["T", "0", "Granite"])
+        dax.set_xlabel("ΔR², better:", fontsize=6.5, color=MUTED, labelpad=1)
+        key_axes.append(dax)
+    for a in key_axes:
         a.set_yticks([])
         a.tick_params(length=2, labelsize=6.3, colors=MUTED)
         for spine in a.spines.values():
             spine.set_visible(False)
 
+    compared = ("the embedding alone (ridge) with temperature alone (spline)." if args.columns == "difference" else
+                "the embedding alone (ridge), temperature alone (spline), time & place\n(latitude, longitude, day of year; ridge) "
+                "and the raw satellite values (16 OLCI band means + SST mean of the tile, rank-normalised; spline).")  # fmt: skip
     fig.text(X_GROUP / W, 0.10 / fig_h,
-             "Best model so far: ridge regression on 32 principal components of the OSTIA-filled Granite embedding + in-situ temperature\n"
-             "(median pooled R² 0.34 on the 20-KO benchmark, cruise held out; RESULTS.md R12). The heatmap compares the embedding\n"
-             "alone (ridge) with temperature alone (spline).",
-             ha="left", va="bottom", fontsize=6.3, color=MUTED)  # fmt: skip
+             "Best model so far: ridge regression on 32 principal components of the OSTIA-filled Granite embedding + in-situ "
+             "temperature\n(median pooled R² 0.34 on the 20-KO benchmark and 0.12 over all 3,921 KOs, cruise held out; "
+             "RESULTS.md R12, R17).\nThe heatmap compares " + compared,
+             ha="left", va="bottom", fontsize=6.3, color=MUTED, linespacing=1.25)  # fmt: skip
+    name = "ko_heatmap" if args.columns == "difference" else "ko_heatmap_inputs"
     OUT.mkdir(parents=True, exist_ok=True)
     for suffix in ("png", "pdf"):
-        fig.savefig(OUT / f"ko_heatmap.{suffix}", dpi=300)
-    print(f"Wrote {OUT / 'ko_heatmap.png'} and .pdf; categories: " + ", ".join(f"{k} {v:,}" for k, v in counts.items()))
+        fig.savefig(OUT / f"{name}.{suffix}", dpi=300)
+    print(f"Wrote {OUT / name}.png and .pdf; categories: " + ", ".join(f"{k} {v:,}" for k, v in counts.items()))
 
 
 def categories() -> pd.DataFrame:
@@ -238,7 +263,7 @@ def label(ko: str, names: pd.Series, brite: pd.DataFrame) -> tuple[str, str]:
 def phylum_share(path: Path) -> pd.DataFrame:
     t = pd.read_csv(path, sep="\t")
     t["ko"] = t["ko"].str.replace("ko:", "", regex=False)
-    t["phylum"] = t["taxon"].str.split(";").str[-1].replace({"Cyanobacteriota": "Cyanobacteria", "Eukaryota": "Eukaryota (unassigned)"})
+    t["phylum"] = t["taxon"].str.split(";").str[-1].replace({"Cyanobacteriota": "Cyanobacteria", "dsDNA viruses, no RNA stage": "dsDNA viruses"})
     t.loc[t["taxon"].str.startswith("Eukaryota"), "phylum"] = "Eukaryotes"
     g = t.groupby(["ko", "phylum"])["count"].sum()
     share = (g / g.groupby(level=0).sum()).rename("share").reset_index().sort_values("share").groupby("ko").tail(1)

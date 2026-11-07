@@ -19,6 +19,9 @@ Results that will change, and why:
   without loss and is proposed as the new standard. R1-R3, R5-R10 are on the
   pre-OSTIA embeddings.
 - **Ocean-model fields** (GLORYS12, PISCES; `cluster/model_fields.sbatch`): pending.
+- **External test sets** (R13-R15): manifests built, tiles and embeddings pending
+  (`cluster/external_tiles.sbatch`, `cluster/external_embed.sbatch`). JGI targets are
+  ready; Tara Pacific and EMO BON need KO annotation with our pipeline.
 - **CatBoost on a KO shortlist**: R3 uses ridge and nearest-neighbour models only.
 - **Model choice** (R8): reductions, other learners and metadata tested on 20 KOs
   with the current embeddings; to be rerun on the SST variants.
@@ -35,7 +38,7 @@ Results that will change, and why:
 | E-faire-1103 | Granite embeddings, FAIRe cruises (`data/faire/embeddings/`) | 2026-11-03 | 5,553 tiles (2,811 fixed, 2,742 advected) |
 | RAW-1103 | Raw band summaries, original cruises (`data/embeddings/tile_raw_features.csv`) | 2026-11-03 | mean and s.d. of the 17 tile channels (16 OLCI bands + SST) over clear pixels; 3,503 tiles |
 | E-orig-1020 | Earlier embeddings, before SST fill (backup in scratchpad only) | 2026-10-20 | 3,503 tiles; 861 without SST |
-| KO-1104 | KO counts `ko_counts_cov50_all.tsv` (repo root, not in git) | received 2026-11-04 | 3,081 libraries x 18,835 KOs, coverage-weighted counts |
+| KO-1104 | KO counts `ko_counts_cov50_all.tsv` (repo root, not in git) | received 2026-11-04 | 3,081 libraries x 18,835 KOs; gene counts per KO, a gene with n KOs counting 1/n (not read-weighted; see R15) |
 | PF-1104 | Pfam counts `pfam_counts_cov50_all.tsv` (repo root, not in git) | received 2026-11-04 | 3,084 libraries x 13,161 families (not yet analysed) |
 | E-orig-l4-1106 | Original cruises re-embedded, SST gaps from OSTIA (`data/embeddings_sst_l4/`) | 2026-11-06 | 3,503 tiles; 556 OSTIA-only tiles; log `data/sst_l4_log.csv` |
 | E-faire-l4-1106 | FAIRe cruises re-embedded, SST gaps from OSTIA (`data/faire/embeddings_sst_l4/`) | 2026-11-06 | 5,553 tiles; 1,552 OSTIA-only tiles; log `data/faire/sst_l4_log.csv` |
@@ -914,3 +917,57 @@ The cluster-02 bucket (mgf-data-products-2) refused connections on 2026-11-06.
 - Sampling metadata are in the observatory crates (`logsheets/raw/water_sampling.csv`:
   collection_date, depth, size_frac, ENA accession; `water_observatory.csv`:
   position; `water_measured.csv`: in-situ variables).
+
+---
+
+## R15. External test sets: manifests, JGI targets, what the KO pipeline is (2026-11-07)
+
+**Manifests** (`scripts/build_external_manifests.py`; `data/external/<set>/manifests/`,
+`samples.csv` lists every candidate with the reason it was dropped):
+
+| Set | Samples | Sites | Groups (section) | Dates | Time |
+|---|---:|---:|---|---|---|
+| JGI Flinkstrom 2024 | 109 | 57 | 6 studies; 83 samples Monterey Bay (one position), 11 Marineland FL, 7 S Atlantic, 4 North Sea, 3 Arctic, 1 other | 2016-04-26 to 2020-02-06 | date only |
+| Tara Pacific O-SRF + I-SRF | 111 | 108 | 30 (open ocean I00 = 36; islands I03-I32) | 2016-07-12 to 2018-08-31 | UTC minute |
+| EMO BON water with metaGOflow results | 307 | 86 | 15 observatories | 2021-06-18 to 2022-10-27 | date only |
+
+- JGI: Ecosystem Type Marine, Habitat seawater/marine, depth <= 20 m, on or after
+  2016-04-25. The filtered h5ad has 109 (the unfiltered one had 116).
+- EMO BON: both size fractions (0.2-3 um 146, 3-200 um 154, unknown 7) and both
+  replicates; they share a site per sampling. Depth 0-2 m except 8 at 18.7 m.
+- Date-only times are set to local solar noon (12:00 - lon/15 h UTC).
+- Tiles: fixed position only (no back-tracking), OSTIA-filled (R12 standard).
+  `fill_sst_l4.py --split-gap-days 5` makes one OSTIA subset per run of tiles,
+  so the Tara open-ocean group does not need a Pacific-wide 2-year download.
+
+**JGI targets** (`scripts/build_external_targets.py`; `data/external/jgi_flinkstrom/targets/`):
+- Shared KO set: our 3,921 target KOs, 3,705 in the JGI table, 2,832 present in
+  >= 90% of the 109 JGI samples. Both datasets are CLR'd over those 2,832 (ours by
+  re-centring the existing CLR, which is identical). Marker normalisation is not
+  applied: it cancels in CLR.
+- Mean CLR per KO, JGI vs Bio-GO-SHIP: r = 0.82; median difference +0.01;
+  123 KOs differ by more than 2 (about 7-fold). Within-dataset spread is the same
+  (median SD 0.49 vs 0.50).
+- All 10 single-copy markers are in the shared set; JGI is 0.1-0.5 lower in CLR.
+- 15 of the 20 screen KOs are in the shared set. Missing: K00436 (in 16% of JGI
+  samples), K16924 (10%), K17710 (59%), K01530 (69%), K02999 (71%). K02999 and
+  K17710 are eukaryotic, so the JGI samples hold fewer eukaryotes.
+
+**What the KO pipeline is** (example output `A392013_008_meta`, "coverage0",
+received 2026-11-07; the code is not available yet):
+- Per taxonomic level (domain to species), tables of `taxon, ko|og|pfam, length, count`.
+  The IDs are eggNOG-mapper style (`ko:K08332`, COG/KOG and eggNOG v5 OGs, Pfam names).
+- Counts are gene counts: a gene with n KOs adds 1/n to each. Lengths are summed
+  amino acids (median about 200 per gene).
+- The taxonomy looks like PR2/MarFERReT for eukaryotes and NCBI/GTDB-like names
+  for prokaryotes.
+- Against our cov50 row for the same library: every cov50 KO is in coverage0, and
+  log counts correlate r = 0.93. cov50 keeps 52% of all counts and 39-57% of the
+  marker KOs.
+- The kept share falls with gene length: 0.68 for KOs whose genes average under
+  140 aa, 0.13 for those over 565 aa. This fits a >= 50% alignment-coverage
+  filter, but it is not certain.
+- To reprocess Tara Pacific and EMO BON the same way: assemble, predict genes,
+  eggNOG-mapper, count genes per KO with the 1/n split, and apply the cov50 rule
+  once it is known.
+

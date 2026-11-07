@@ -2,7 +2,8 @@
 """Per-sample KO (or Pfam) profiles as prediction targets: surface metagenomes, CLR.
 
 Input: the gene-family count tables (rows = sequencing libraries, columns =
-"count.ko.Kxxxxx" or "count.<pfam>"; coverage-weighted, so not whole numbers) and
+"count.ko.Kxxxxx" or "count.<pfam>"; gene counts, a gene with n annotations adding 1/n
+to each, so not whole numbers) and
 the FAIRe workbook, whose experimentRunMetadata sheet links library names, run
 accessions and file names to FAIRe samples.
 

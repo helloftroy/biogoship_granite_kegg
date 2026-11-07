@@ -15,6 +15,8 @@ strongly along the line.
 
 --compare best draws the best model so far (32 PCs of the embedding + temperature,
 ridge) instead of the embedding alone: what Granite adds on top of temperature.
+--compare perko draws the model chosen per KO by scripts/tune_figure_kos.py (nested:
+chosen without the held-out cruise; data/results/figure_ko_models/) and names it per panel.
 
 Input:   data/results/ko_temperature_all_ostia_v2/ (scripts/test_ko_temperature.py --kos all
          --learners ridge spline --feature-sets temp embedding --embeddings-dirs
@@ -47,7 +49,21 @@ RESULTS = ROOT / "data" / "results" / "ko_temperature_all_ostia_v2"
 MODELS = {  # --compare: the model drawn in blue against temperature alone
     "granite": ("embedding", "ridge", "Granite embedding"),
     "best": ("pca32_temp", "ridge", "Best model: 32 Granite PCs + temperature"),
+    "perko": ("best per KO", "", "Best model per gene (with Granite or raw satellite)"),
 }
+MODEL_NAMES = {  # readable names of the models in scripts/tune_figure_kos.py
+    "emb": "Granite embedding",
+    "emb grp": "Granite embedding",
+    "temp~": "temperature",
+    "sat~": "raw satellite",
+    "sst~": "satellite SST",
+    "bands~": "satellite band means",
+    "temp~ + sat~": "temperature + raw satellite",
+    "avg(emb, temp~)": "average of Granite and temperature",
+    "avg(emb, temp~ + sat~)": "average of Granite and temperature + raw satellite",
+    "avg(pca32 + temp~, sat~)": "average of Granite PCs + temperature and raw satellite",
+}
+PERKO = ROOT / "data" / "results" / "figure_ko_models"
 OUT = ROOT / "figures" / "output"
 LAND = Path.home() / ".local/share/cartopy/shapefiles/natural_earth/physical/ne_110m_land.shp"
 
@@ -78,12 +94,26 @@ def main() -> None:
 
     rows = pd.read_csv(RESULTS / "prediction_rows.csv")
     feature_set, learner, model_label = MODELS[args.compare]
-    out_name = args.out_name or ("cruise_line" if args.compare == "granite" else "cruise_line_best")
-    granite = np.load(RESULTS / f"predictions_{feature_set}_{learner}.npz", allow_pickle=True)
+    out_name = args.out_name or {"granite": "cruise_line", "best": "cruise_line_best", "perko": "cruise_line_perko"}[args.compare]
     temp = np.load(RESULTS / "predictions_temp_spline.npz", allow_pickle=True)
-    kos = list(granite["ko"])
     per_cruise = pd.read_csv(RESULTS / "ko_temperature_per_cruise.csv")
-    per_cruise = per_cruise[per_cruise["held_out"] == args.cruise].set_index(["ko", "feature_set", "learner"])["r2"]
+    per_cruise = per_cruise[per_cruise["held_out"] == args.cruise].set_index(["ko", "feature_set", "learner"])["r2"].to_dict()
+    chosen = {}
+    if args.compare == "perko":  # same tiles in the same order as RESULTS; KOs are a subset
+        tuned = np.load(PERKO / "predictions.npz", allow_pickle=True)
+        assert (tuned["tile_path"] == rows["tile_path"].to_numpy().astype(str)).all()
+        m = list(tuned["models"]).index(feature_set)
+        cols = [list(tuned["ko"]).index(ko) for ko in temp["ko"] if ko in set(tuned["ko"])]
+        granite = {"ko": tuned["ko"][cols], "observed": tuned["observed"][:, cols], "predicted": tuned["predicted"][m][:, cols]}
+        r2 = pd.read_csv(PERKO / "model_r2_cruise.csv")
+        r2 = r2[r2["held_out"] == args.cruise]
+        for (ko, model), value in r2.set_index(["ko", "model"])["r2"].items():
+            per_cruise[(ko, model, "")] = value
+        picks = pd.read_csv(PERKO / "best_per_ko.csv")
+        chosen = picks[picks["held_out"] == args.cruise].set_index("ko")["model"].to_dict()
+    else:
+        granite = np.load(RESULTS / f"predictions_{feature_set}_{learner}.npz", allow_pickle=True)
+    kos = list(granite["ko"])
     names = pd.read_csv(ROOT / "data/reference/kegg_ko_list.tsv", sep="\t", header=None, names=["ko", "name"]).set_index("ko")["name"]
 
     on = (rows["section"] == args.cruise).to_numpy()
@@ -114,10 +144,13 @@ def main() -> None:
         observed = granite["observed"][line["i"], j]
         ax.scatter(lat, observed, s=9, color=INK, zorder=4, linewidths=0, label="Observed")
         ax.plot(lat_line, broken(granite["predicted"][line["i"], j]), color=GRANITE, lw=1.6, marker="o", ms=2.2, zorder=3, label=model_label)
-        ax.plot(lat_line, broken(temp["predicted"][line["i"], j]), color=TEMP, lw=1.6, ls=(0, (4, 2)), marker="o", ms=2.2, zorder=2, label="In-situ temperature")
+        ax.plot(lat_line, broken(temp["predicted"][line["i"], list(temp["ko"]).index(ko)]), color=TEMP, lw=1.6, ls=(0, (4, 2)), marker="o", ms=2.2, zorder=2, label="In-situ temperature")
         gene, what, who = LABELS.get(ko, (names.get(ko, ko).split(";")[0], names.get(ko, "").split(";")[-1].strip(), ""))
         ax.text(0.01, 0.97, rf"$\bf{{{gene}}}$   {ko} · {what}" + (f" ({who})" if who else ""),
                 transform=ax.transAxes, ha="left", va="top", fontsize=7.5, color=INK)  # fmt: skip
+        if ko in chosen:
+            ax.text(0.01, 0.84, f"blue: {readable(chosen[ko])}", transform=ax.transAxes,
+                    ha="left", va="top", fontsize=6.8, color=MUTED)  # fmt: skip
         r2g = per_cruise.get((ko, feature_set, learner), np.nan)
         r2t = per_cruise.get((ko, "temp", "spline"), np.nan)
         x0 = 1.015
@@ -192,6 +225,23 @@ def land_rings() -> list[np.ndarray]:
         points = np.frombuffer(rec[44 + 4 * n_parts:44 + 4 * n_parts + 16 * n_points], dtype="<f8").reshape(-1, 2)
         rings += [points[a:b] for a, b in zip(parts[:-1], parts[1:])]
     return rings
+
+
+def readable(model: str) -> str:
+    """Plain name of a model in scripts/tune_figure_kos.py, e.g. 'pca16 + temp~' -> '16 Granite PCs + temperature (curve)'."""
+    if model in MODEL_NAMES:
+        return MODEL_NAMES[model]
+    parts = []
+    for p in model.replace(" grp", "").split(" + "):
+        if p.startswith("~pca"):
+            parts.append(f"{p[4:]} Granite PCs (curves)")
+        elif p.startswith("pca"):
+            parts.append(f"{p[3:]} Granite PCs")
+        elif p == "emb":
+            parts.append("Granite embedding")
+        else:
+            parts.append({"temp~": "temperature (curve)", "temp": "temperature (linear)", "sat~": "raw satellite"}.get(p, p))
+    return " + ".join(parts)
 
 
 def tag(ax, letter: str, x: float = -0.13) -> None:

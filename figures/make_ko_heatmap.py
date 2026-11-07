@@ -53,6 +53,14 @@ N_GRANITE, N_SAME, N_TEMP = 28, 14, 12
 R2_CMAP = LinearSegmentedColormap.from_list("r2", ["#f6f5f2", "#bdbab2", "#6d6a63", "#232220"])
 DIFF_CMAP = LinearSegmentedColormap.from_list("diff", [TEMP, "#f6f5f2", GRANITE])
 BLUE_CMAP = LinearSegmentedColormap.from_list("blue", ["#ffffff", "#9cc3ee", "#2a78d6", "#0c2f5c"])
+# For the four-input heatmap (--cmap): a single blue hue makes 0.4 and 0.8 hard to tell apart, so the default
+# runs through several hues while still getting darker (pale yellow, green, teal, blue, navy); "turbo" is the
+# smooth rainbow (matplotlib's turbo), for comparison.
+INPUT_CMAPS = {
+    "multihue": LinearSegmentedColormap.from_list("multihue", ["#ffffe5", "#d9f0a3", "#78c679", "#1d91c0", "#253494", "#081d58"]),
+    "turbo": plt.get_cmap("turbo"),
+    "blue": BLUE_CMAP,
+}
 # --columns inputs: four predictors side by side (feature set, learner, header); the learner is
 # temperature and raw satellite get a smooth curve per input (spline), as their responses bend;
 # time & place ridge (best median over all KOs; its spline overfits).
@@ -97,7 +105,9 @@ def main() -> None:
     parser.add_argument("--taxa", type=Path, help="level_2_phylum_division_ko_counts.tsv of the example pipeline output")
     parser.add_argument("--columns", choices=["difference", "inputs"], default="difference",
                         help="difference: Granite, temperature, their difference (ko_heatmap); inputs: Granite, temperature, "
-                             "time & place, raw satellite, white to dark blue (ko_heatmap_inputs)")  # fmt: skip
+                             "time & place, raw satellite (ko_heatmap_inputs)")  # fmt: skip
+    parser.add_argument("--cmap", choices=list(INPUT_CMAPS), default="multihue",
+                        help="Colour scale of the inputs heatmap (0 to 1); not multihue adds the name to the file name.")
     args = parser.parse_args()
     plt.rcParams.update({
         "font.family": ["Arial", "DejaVu Sans"], "font.size": 7, "pdf.fonttype": 42, "svg.fonttype": "none",
@@ -135,7 +145,7 @@ def main() -> None:
         headers = ["Granite\nembedding", "In-situ\ntemperature", "Difference\n(G − T)"]
     else:
         X_CELLS, CELL = [3.98, 4.50, 5.02, 5.54], 0.50
-        columns = [(f"r2_{f}", BLUE_CMAP, "{:.2f}") for f, _, _ in INPUTS]
+        columns = [(f"r2_{f}", INPUT_CMAPS[args.cmap], "{:.2f}") for f, _, _ in INPUTS]
         headers = [h for _, _, h in INPUTS]
     X_TAXON = X_CELLS[-1] + CELL + 0.08
     n_rows = sum(len(b) for _, _, b in rows)
@@ -149,7 +159,8 @@ def main() -> None:
     ax.set_ylim(total, 0)
     ax.axis("off")
 
-    r2_norm, diff_norm = Normalize(0, 0.8), Normalize(-0.4, 0.4)
+    r2_max = 0.8 if args.columns == "difference" else 1.0
+    r2_norm, diff_norm = Normalize(0, r2_max), Normalize(-0.4, 0.4)
     y = 0.0
     for label, key, block in rows:
         y += gap
@@ -184,10 +195,11 @@ def main() -> None:
 
     key_y, key_h = 0.88 / fig_h, 0.09 / fig_h
     key_axes = [fig.add_axes([X_CELLS[0] / W, key_y, 0.85 / W, key_h])]
-    key_axes[0].imshow(np.linspace(0, 0.8, 200)[None, :], aspect="auto", norm=r2_norm, extent=[0, 0.8, 0, 1],
-                       cmap=R2_CMAP if args.columns == "difference" else BLUE_CMAP)  # fmt: skip
-    key_axes[0].set_xticks([0, 0.4, 0.8])
-    key_axes[0].set_xticklabels(["≤0", "0.4", "0.8"])
+    key_axes[0].imshow(np.linspace(0, r2_max, 200)[None, :], aspect="auto", norm=r2_norm, extent=[0, r2_max, 0, 1],
+                       cmap=R2_CMAP if args.columns == "difference" else INPUT_CMAPS[args.cmap])  # fmt: skip
+    ticks = [0, 0.4, 0.8] if r2_max == 0.8 else [0, 0.5, 1.0]
+    key_axes[0].set_xticks(ticks)
+    key_axes[0].set_xticklabels(["≤0", *[f"{t:g}" for t in ticks[1:]]])
     key_axes[0].set_xlabel("R²", fontsize=6.5, color=MUTED, labelpad=1)
     if args.columns == "difference":
         dax = fig.add_axes([(X_CELLS[2] - 0.05) / W, key_y, (CELL + 0.4) / W, key_h])
@@ -211,6 +223,8 @@ def main() -> None:
              "RESULTS.md R12, R17).\nThe heatmap compares " + compared,
              ha="left", va="bottom", fontsize=6.3, color=MUTED, linespacing=1.25)  # fmt: skip
     name = "ko_heatmap" if args.columns == "difference" else "ko_heatmap_inputs"
+    if args.columns == "inputs" and args.cmap != "multihue":
+        name += f"_{args.cmap}"
     OUT.mkdir(parents=True, exist_ok=True)
     for suffix in ("png", "pdf"):
         fig.savefig(OUT / f"{name}.{suffix}", dpi=300)

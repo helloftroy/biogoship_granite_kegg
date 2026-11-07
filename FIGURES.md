@@ -23,7 +23,8 @@ matplotlib).
 | Three KOs along a cruise line (P18) | `figures/make_cruise_line.py` | `figures/output/cruise_line.png`, `.pdf` | RESULTS.md R16 |
 | KO heatmap: Granite vs temperature by function | `figures/make_ko_heatmap.py` | `figures/output/ko_heatmap.png`, `.pdf` | RESULTS.md R16 |
 | Cruise line: temperature vs best model (P18) | `figures/make_cruise_line.py --compare best` | `figures/output/cruise_line_best.png`, `.pdf` | RESULTS.md R17 |
-| KO heatmap: four predictors | `figures/make_ko_heatmap.py --columns inputs` | `figures/output/ko_heatmap_inputs.png`, `.pdf` | RESULTS.md R17 |
+| KO heatmap: four predictors | `figures/make_ko_heatmap.py --columns inputs` | `figures/output/ko_heatmap_inputs.png`, `.pdf` (`--cmap turbo`: `ko_heatmap_inputs_turbo`) | RESULTS.md R17 |
+| Cruise line: temperature vs best model per gene (P18) | `figures/make_cruise_line.py --compare perko` | `figures/output/cruise_line_perko.png`, `.pdf` | RESULTS.md R18 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
@@ -196,7 +197,17 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
 - **Shows:** the same rows as the KO heatmap. Columns are pooled R2 from the Granite
   embedding (ridge), in-situ temperature (spline), time & place (latitude, sin/cos
   longitude, sin/cos day of year; ridge) and the raw satellite values (16 OLCI band
-  means + SST mean of the tile, rank-normalised; spline). The colour scale runs from
-  white to dark blue; values at or below 0 are white.
+  means + SST mean of the tile, rank-normalised; spline). The colour scale runs 0 to 1
+  through several hues (pale yellow, green, blue, navy), because a single blue made
+  0.4 and 0.8 hard to tell apart; `--cmap turbo` gives a rainbow version and `--cmap
+  blue` the first one. Values at or below 0 take the lowest colour.
 - **Regenerate:** `python figures/make_ko_heatmap.py --columns inputs --taxa <...>/level_2_phylum_division_ko_counts.tsv`
 
+
+## Cruise line: temperature vs best model per gene (P18)
+
+- **Shows:** as the cruise line, but the blue line is the model chosen for each gene by
+  `scripts/tune_figure_kos.py` (RESULTS.md R18), named under each gene. The choice is
+  nested: made from the other 12 cruises only, so P18 does not pick its own model.
+- **Regenerate:** `python scripts/tune_figure_kos.py` (about 15 minutes), then
+  `python figures/make_cruise_line.py --compare perko`

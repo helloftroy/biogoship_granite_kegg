@@ -1070,3 +1070,55 @@ Reading (heatmap with four predictors, FIGURES.md):
   than temperature alone (0.30 vs 0.52): it uses temperature linearly. A
   spline-temperature + PCs model is the obvious next variant.
 
+
+## R18. Model development on the figure KOs (2026-11-07)
+
+Question: can a better model than R17's (Granite ridge; 32 PCs + linear temperature)
+be found for the 54 heatmap KOs (28 Granite-better, 14 both-high, 12 temperature-better;
+the three cruise-line genes are among them)? Same samples and cruise-held-out CV as R17.
+Script `scripts/tune_figure_kos.py`; files `data/results/figure_ko_models/`. Models
+(ridge throughout; "~" = cubic spline, 8 knots; "grp" = penalty chosen by leave-one-cruise-out
+inside the training cruises instead of leave-one-sample-out; avg = mean of two predictions)
+are listed in the script. "Best per KO" picks a model per KO and held-out cruise by
+cruise-held-out CV on the other 12 cruises (nested).
+
+Median pooled R2 (selected rows; "within" = median R2 within a held-out cruise):
+
+| Model | All 54 | Granite-better | Both high | Temp-better | Within |
+|---|---:|---:|---:|---:|---:|
+| avg(32 PCs + temp~, sat~) | **0.47** | 0.41 | 0.65 | **0.48** | 0.42 |
+| avg(emb, temp~ + sat~) | 0.45 | 0.42 | 0.70 | 0.44 | 0.42 |
+| emb, grp penalty | 0.45 | 0.42 | 0.70 | 0.39 | **0.44** |
+| best per KO (nested) | 0.44 | 0.39 | 0.71 | 0.47 | 0.43 |
+| 32 PCs + temp~ | 0.44 | 0.39 | 0.71 | 0.46 | 0.41 |
+| emb (R17 Granite) | 0.43 | 0.42 | 0.68 | 0.33 | 0.43 |
+| 32 PCs + temp (R17 best) | 0.43 | 0.40 | 0.69 | 0.39 | 0.44 |
+| 16 PCs + temp~ | 0.42 | 0.37 | 0.70 | 0.46 | 0.41 |
+| sat~ (bands + SST) | 0.41 | 0.35 | 0.46 | 0.42 | 0.34 |
+| sst~ (SST mean only) | 0.34 | 0.23 | 0.55 | 0.44 | 0.34 |
+| temp~ | 0.26 | 0.16 | 0.69 | 0.45 | 0.33 |
+| bands~ (16 band means only) | 0.24 | 0.31 | -0.15 | 0.02 | 0.24 |
+| ~8 PCs + temp~ (a curve per PC) | 0.38 | 0.31 | 0.66 | 0.40 | 0.34 |
+
+Reading:
+- **Why raw satellite now looks strong (R7/R10 had it near or far below 0):** R17's
+  "raw satellite" includes the tile SST mean, filled by OSTIA, and is rank-normalised,
+  which removes the extreme FAIRe band means that broke linear models in R7/R10. Split
+  up: on the Granite-better KOs the bands alone give 0.31 and SST alone 0.23, together
+  0.35, against Granite 0.42. On the cyanobacterial KOs the bands alone fail (-0.15)
+  and SST carries it (0.55). So the colour bands do carry part of Granite's lead on
+  the heterotroph KOs, and Granite still adds about 0.07 over them (median).
+- **A curved temperature term fixes the temperature-better KOs.** 32 PCs + temp~
+  raises them from 0.39 to 0.46 (temperature alone 0.45), without losing elsewhere.
+- **Choosing the penalty across cruises helps the embedding** (0.43 to 0.45, mostly on
+  the temperature-better KOs, 0.33 to 0.39) and gives the best within-cruise score.
+- **Averaging Granite with the raw satellite model** gives the best pooled median
+  (0.47), mainly by reaching temperature-level scores on the temperature-better KOs.
+- **Per-KO choice does not beat one good model** (0.44 nested). With 13 cruises the
+  choice is noisy; a single model (32 PCs + temp~, or the average) is preferable.
+- Curves on the PCs, fewer PCs (8) and 64 PCs do not help.
+- P18 (cruise line, nested per-KO choice vs temperature): cpeS 0.92 vs 0.92, glsA 0.47
+  vs -0.15, fiu 0.43 vs 0.52. 32 PCs + temp~ on P18: 0.91, 0.48, 0.44 (pooled over all
+  cruises fiu is 0.51 vs temperature 0.51).
+- Next: check the two leading models (32 PCs + temp~; the average with raw satellite)
+  on all 3,921 KOs, and the grp penalty on them.

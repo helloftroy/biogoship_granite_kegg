@@ -145,7 +145,7 @@ def main() -> None:
     print(f"\nWrote {args.out_dir}")
 
 
-def load(args: argparse.Namespace, kos: list[str]):
+def load(args: argparse.Namespace, kos: list[str], return_rows: bool = False):
     """The R17 samples: tiles merged by content, targets averaged over merged samples."""
     targets = pd.read_csv(args.targets, index_col="sample_key", usecols=["sample_key", *kos])[kos]
     ns = argparse.Namespace(embeddings_dirs=args.embeddings_dirs, position="fixed", best_tile="prefer-sst")
@@ -158,7 +158,8 @@ def load(args: argparse.Namespace, kos: list[str]):
     unit = rows.drop_duplicates("tile_key").set_index("tile_key").loc[Y.index]
     emb = X_embed[unit["embedding_row"].to_numpy()]
     sat = satellite_features(args.embeddings_dirs, unit["tile_path"])
-    return emb, temp, sat, Y.to_numpy(), unit["section"].astype(str).to_numpy(), unit
+    out = (emb, temp, sat, Y.to_numpy(), unit["section"].astype(str).to_numpy(), unit)
+    return (*out, rows) if return_rows else out
 
 
 def build(blocks: list[str], train: np.ndarray, test: np.ndarray, emb, temp, sat, cache: dict):

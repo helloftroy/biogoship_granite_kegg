@@ -1145,3 +1145,44 @@ Exploratory scripts (scratchpad, not in git); to be redone with PISCES phosphate
 - Phosphate does not help cpeS or NOP2 (temperature already explains them).
 - **Next:** PISCES phosphate (cluster/model_fields.sbatch) as the input that exists
   everywhere, two-stage as above; check it reproduces the in-situ result.
+
+## R20. Phosphate-first Granite models, and does cruise overlap help? (2026-11-09)
+
+**Phosphate models** (`scripts/phosphate_models.py`, files `data/results/phosphate_models/`):
+the 54 figure KOs on the 452 tiles with in-situ phosphate (12 cruises), cruise held out.
+Pooled R2:
+
+| KO | emb | 32 PCs + temp~ | P~ then 32 PCs | T~P~ then 32 PCs |
+|---|---:|---:|---:|---:|
+| pstC | 0.24 | 0.24 | **0.71** | 0.65 |
+| pstB | 0.31 | 0.38 | 0.66 | **0.67** |
+| pstS | 0.36 | 0.36 | 0.70 | **0.75** |
+| pstA | 0.31 | 0.32 | 0.64 | **0.66** |
+| cpeS | 0.72 | **0.72** | 0.40 | 0.54 |
+| NOP2 | **0.47** | 0.46 | 0.13 | 0.46 |
+
+Phosphate first is best for pstC (P18: 0.89, against temperature 0.43); for the other
+pst genes temperature + phosphate first is as good or slightly better. For KOs not
+driven by phosphate, phosphate first hurts (median over the heatmap's "both high"
+KOs 0.37 against 0.73), so it is a per-KO choice. The cruise map (FIGURES.md) uses
+32 PCs + temp~ for cpeS and NOP2 and phosphate first for pstC.
+
+**Overlap between cruises** (`figures/make_skill_map.py`; per-tile table
+`data/results/ko_temperature_all_ostia_v2/sample_skill.csv`). Per-sample skill = 1 -
+mean over KOs of (error^2 / variance of the KO over all tiles), for the 920 KOs with
+pooled R2 >= 0.25 under pca32_temp ridge; its mean over tiles (0.37) is the mean pooled R2.
+
+- **Geographic overlap does not help.** Skill vs distance to the nearest sample of
+  another cruise: Spearman 0.02 (1,216 tiles); per cruise, the share of samples within
+  200 km of another cruise vs per-cruise median R2: 0.08 (13 cruises). I09N (2016) lies
+  87% within 200 km of I09N-2025 and is not better predicted than average.
+- **Similar conditions do.** Skill vs mean distance to the 5 nearest samples of other
+  cruises in (8 embedding PCs, temperature): Spearman -0.28; median skill 0.62 in the
+  most typical fifth, 0.38 in the most unusual. With temperature alone: -0.34.
+- So what matters is whether the training cruises contain similar water, not the same
+  place (as R19's warm, phosphate-replete equatorial Pacific).
+- Per-sample skill and per-cruise R2 rank cruises differently: per-cruise R2 is
+  relative to the variation within that cruise, skill to the variation over all
+  cruises. HLY2202 (Arctic): per-cruise R2 0.64, median skill -0.06 (its large offset
+  from the other cruises is partly but not fully predicted); P02-2022 (30 N, little
+  variation along it): per-cruise R2 -0.11, skill 0.73.

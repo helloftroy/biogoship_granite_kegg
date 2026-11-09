@@ -24,6 +24,7 @@ matplotlib).
 | KO heatmap: Granite vs temperature by function | `figures/make_ko_heatmap.py` | `figures/output/ko_heatmap.png`, `.pdf` | RESULTS.md R16 |
 | Cruise line: temperature vs best model (P18) | `figures/make_cruise_line.py --compare best` | `figures/output/cruise_line_best.png`, `.pdf` | RESULTS.md R17 |
 | KO heatmap: four predictors | `figures/make_ko_heatmap.py --columns inputs` | `figures/output/ko_heatmap_inputs.png`, `.pdf` (`--cmap turbo`: `ko_heatmap_inputs_turbo`) | RESULTS.md R17 |
+| Cruise map: three KOs as coloured tracks (P18) | `figures/make_cruise_map.py` | `figures/output/cruise_map.png`, `.pdf` | RESULTS.md R18 |
 | Cruise line: temperature vs best model per gene (P18) | `figures/make_cruise_line.py --compare perko` | `figures/output/cruise_line_perko.png`, `.pdf` | RESULTS.md R18 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
@@ -211,3 +212,14 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   nested: made from the other 12 cruises only, so P18 does not pick its own model.
 - **Regenerate:** `python scripts/tune_figure_kos.py` (about 15 minutes), then
   `python figures/make_cruise_line.py --compare perko`
+
+## Cruise map: three KOs as coloured tracks (P18)
+
+- **Shows:** one map per KO (cpeS, pstC, NOP2: P18 R2 above 0.5 for the Granite model,
+  three different groups of organisms). Each map has three copies of the cruise track
+  side by side (really they overlap): observed CLR, the Granite model's held-out
+  prediction (32 PCs + temperature spline, ridge; R18) and temperature alone (spline).
+  One colour scale per KO (viridis, 2nd-98th percentile of the observed values). Track
+  segments join samples less than 8 degrees of latitude apart; isolated samples are dots.
+  R2 on P18 under each map.
+- **Regenerate:** `python figures/make_cruise_map.py` (needs `scripts/tune_figure_kos.py` output)

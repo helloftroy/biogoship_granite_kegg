@@ -2,7 +2,7 @@
 #SBATCH --job-name=bgs_model_fields
 #SBATCH --partition=service
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
@@ -36,6 +36,6 @@ mkdir -p "${COPERNICUSMARINE_CREDENTIALS_DIRECTORY}"
 
 echo "Job started: $(date)"
 python scripts/extract_model_fields.py --list-datasets
-python scripts/extract_model_fields.py --allow-forecast --workers "${WORKERS:-8}"
+python scripts/extract_model_fields.py --allow-forecast --workers "${WORKERS:-4}"
 echo "Job finished: $(date)"
 echo "Bring back: data/model_fields/sample_model_fields.csv, sample_model_fields_long.csv, provenance.json"

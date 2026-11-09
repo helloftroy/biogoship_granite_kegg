@@ -160,12 +160,18 @@ def open_dataset(dataset_id: str, variables: list[str], samples: pd.DataFrame, a
     import copernicusmarine
 
     depth_max = float(np.nanmax(samples["depth_m"])) if samples["depth_m"].notna().any() else 1.0
-    return copernicusmarine.open_dataset(
+    kwargs = dict(
         dataset_id=dataset_id,  # no variable filter: a dataset may lack some listed variables (fe in bgc_my)
         minimum_depth=0.0, maximum_depth=max(depth_max, 1.0) * 1.5 + 10.0,
         start_datetime=(samples["sample_time"].min() - pd.Timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S"),
         end_datetime=(samples["sample_time"].max() + pd.Timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S"),
     )  # fmt: skip
+    # Map-shaped chunks (one day each): reading one model day then fetches only that day. The default for a
+    # ten-year request can be the time-series layout, where every chunk spans many days (OOM on the cluster).
+    try:
+        return copernicusmarine.open_dataset(service="arco-geo-series", **kwargs)
+    except TypeError:  # toolbox without the service argument
+        return copernicusmarine.open_dataset(**kwargs)
 
 
 def dataset_info(ds, product: str, dataset_id: str, variables: list[str]) -> dict:
@@ -179,7 +185,7 @@ def dataset_info(ds, product: str, dataset_id: str, variables: list[str]) -> dic
 
 
 def extract(ds, variables: list[str], samples: pd.DataFrame, skip: dict, partial: Path, meta: dict,
-            window: int = 4, workers: int = 8) -> int:
+            window: int = 4, workers: int = 4) -> int:
     """Values of ds[variables] (same depth axis) at each sample's day, nearest depth level and position
     (see module docstring). Appends one model day at a time to `partial`; returns the rows written."""
     lat = ds["latitude"].values.astype(float)
@@ -215,7 +221,8 @@ def extract(ds, variables: list[str], samples: pd.DataFrame, skip: dict, partial
             sel["depth"] = levels
         for attempt in range(1, 6):
             try:
-                return ti, members, rows, cols, levels, ds[variables].isel(sel).load()
+                # synchronous: no dask thread pool inside each of our threads (memory)
+                return ti, members, rows, cols, levels, ds[variables].isel(sel).load(scheduler="synchronous")
             except Exception as exc:  # network hiccups; the 5th failure stops the run (resumable)
                 if attempt == 5:
                     raise
@@ -365,7 +372,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--products", nargs="+", choices=list(PRODUCTS), default=list(PRODUCTS))
     parser.add_argument("--allow-forecast", action="store_true",
                         help="Use the analysis/forecast datasets for dates the reanalyses do not cover (recorded per value).")
-    parser.add_argument("--workers", type=int, default=8, help="Model days fetched at once (default 8).")
+    parser.add_argument("--workers", type=int, default=4, help="Model days fetched at once (default 4).")
     parser.add_argument("--window", type=int, default=4, help="Cells searched in each direction for a valid cell (default 4).")
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "model_fields")
     parser.add_argument("--list-datasets", action="store_true")

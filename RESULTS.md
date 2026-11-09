@@ -1122,3 +1122,26 @@ Reading:
   cruises fiu is 0.51 vs temperature 0.51).
 - Next: check the two leading models (32 PCs + temp~; the average with raw satellite)
   on all 3,921 KOs, and the grp penalty on them.
+
+## R19. Why the Granite model misses the pst dip on P18: phosphate (2026-11-09) - exploratory
+
+The pst genes (high-affinity phosphate uptake: pstS, pstC, pstA, pstB) drop on P18 from
+the equator to about 18 S, and the Granite model (32 PCs + temp~, R18) does not follow.
+Exploratory scripts (scratchpad, not in git); to be redone with PISCES phosphate.
+
+- **That stretch is warm and phosphate-replete:** in-situ phosphate 0.5-0.9 umol/kg at
+  22-25 C (eastern equatorial Pacific upwelling). In every other cruise, water above
+  20 C has phosphate of at most 0.43 (median 0.00-0.13). So no training cruise
+  has warm, phosphate-replete water, and neither temperature nor the embedding has
+  learned what it looks like.
+- pstC vs log10 phosphate: r = -0.78 over the 451 tiles with phosphate (-0.72 in water
+  above 20 C); vs temperature r = 0.58.
+- Cruise-held-out ridge on the 451 tiles with phosphate (12 cruises), pstC pooled / P18:
+  temperature 0.09 / 0.44; phosphate (spline) 0.68 / 0.88; temp + phosphate 0.64 / 0.80;
+  32 PCs + temp 0.24 / 0.43; 32 PCs + temp + phosphate in one ridge 0.46 / 0.51 (the PCs
+  swamp it); **temp + phosphate first, then 32 PCs on the residual (cruise-held-out
+  penalty) 0.65 / 0.80**. pstB, pstS, pstA alike. With phosphate the equatorial dip
+  is predicted (somewhat too deep: -0.5 to 0.2 against observed 0.3 to 1.0).
+- Phosphate does not help cpeS or NOP2 (temperature already explains them).
+- **Next:** PISCES phosphate (cluster/model_fields.sbatch) as the input that exists
+  everywhere, two-stage as above; check it reproduces the in-situ result.

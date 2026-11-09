@@ -38,6 +38,11 @@ Outputs (data/model_fields/):
   provenance.json                toolbox version, datasets opened with their time
                                  range and attributes, settings, extraction time
 
+Resumable: values are appended to data/model_fields/partial/<dataset_id>.csv one model
+day at a time, and a re-run skips the (sample, variable) pairs already there; the final
+tables are written from the partial files. All variables of a dataset that share a
+depth axis are read in one request per model day.
+
 Needs a Copernicus Marine login (COPERNICUSMARINE_SERVICE_USERNAME / _PASSWORD, as for
 the currents and OSTIA jobs) and internet: run cluster/model_fields.sbatch.
 
@@ -112,21 +117,31 @@ def main() -> None:
             info = dataset_info(ds, product, dataset_id, present)
             opened.append(info)
             print(f"{product:7s} {dataset_id}: {info['time_start']} to {info['time_end']}, {', '.join(present)}", flush=True)
-            for var in present:
-                todo = samples[~samples["sample_id"].isin(done.get(var, set()))]
+            partial = args.out_dir / "partial" / f"{dataset_id}.csv"
+            previous = pd.read_csv(partial, low_memory=False, on_bad_lines="skip") if partial.exists() else pd.DataFrame()
+            for has_depth in (True, False):  # 3-D and 2-D variables: one request per model day each
+                group = [v for v in present if ("depth" in ds[v].dims) == has_depth]
+                if not group:
+                    continue
+                skip = {v: done.get(v, set()) | (set(previous.loc[previous["variable"] == v, "sample_id"])
+                                                  if not previous.empty else set()) for v in group}  # fmt: skip
+                todo = samples[~samples["sample_id"].apply(lambda sid: all(sid in skip[v] for v in group))]
                 if todo.empty:
                     continue
                 started = clock.time()
-                rows = extract(ds, var, todo, window=args.window)
-                rows = rows.assign(product=product, variable=var, dataset_id=dataset_id, forecast=int(is_forecast),
-                                   unit=ds[var].attrs.get("units", ""))  # fmt: skip
-                found = rows[rows["method"] != "outside_time_range"]
-                long_rows.append(found)
-                done.setdefault(var, set()).update(found["sample_id"])
-                n_val = int(found["value"].notna().sum())
-                print(f"        {var:7s} {len(found):5,} samples in range, {n_val:5,} with a value ({clock.time() - started:5.0f} s)",
-                      flush=True)  # fmt: skip
+                meta = {"product": product, "dataset_id": dataset_id, "forecast": int(is_forecast),
+                        "units": {v: ds[v].attrs.get("units", "") for v in group}}  # fmt: skip
+                n = extract(ds, group, todo, skip, partial, meta, window=args.window)
+                print(f"        {', '.join(group)}: {n:,} new values written ({clock.time() - started:5.0f} s)", flush=True)
             ds.close()
+            if partial.exists():
+                rows = pd.read_csv(partial, low_memory=False, on_bad_lines="skip", parse_dates=["model_time"])
+                rows = rows[~rows.apply(lambda r: r["sample_id"] in done.get(r["variable"], set()), axis=1)]
+                long_rows.append(rows)
+                for var, part in rows.groupby("variable"):
+                    done.setdefault(var, set()).update(part["sample_id"])
+                    print(f"        {var:7s} {len(part):5,} samples from this dataset, "
+                          f"{int(part['value'].notna().sum()):5,} with a value", flush=True)  # fmt: skip
     long = pd.concat(long_rows, ignore_index=True) if long_rows else pd.DataFrame()
     write_outputs(samples, long, opened, args)
 
@@ -162,30 +177,30 @@ def dataset_info(ds, product: str, dataset_id: str, variables: list[str]) -> dic
             "units": {v: ds[v].attrs.get("units", "") for v in variables}}  # fmt: skip
 
 
-def extract(ds, var: str, samples: pd.DataFrame, window: int = 4) -> pd.DataFrame:
-    """Value of ds[var] at each sample's day, nearest depth level and position (see module docstring)."""
-    da = ds[var]
+def extract(ds, variables: list[str], samples: pd.DataFrame, skip: dict, partial: Path, meta: dict,
+            window: int = 4) -> int:
+    """Values of ds[variables] (same depth axis) at each sample's day, nearest depth level and position
+    (see module docstring). Appends one model day at a time to `partial`; returns the rows written."""
     lat = ds["latitude"].values.astype(float)
     lon = ds["longitude"].values.astype(float)
     times = pd.to_datetime(ds["time"].values)
     offset = times[0] - times[0].floor("D")  # daily means labelled at 00:00 or 12:00
     target = samples["sample_time"].dt.floor("D") + offset
     t_index = pd.Index(times).get_indexer(target)  # exact day only; -1 when outside the range
-    has_depth = "depth" in da.dims
+    has_depth = "depth" in ds[variables[0]].dims
     depths = ds["depth"].values.astype(float) if has_depth else None
 
-    out = samples[["sample_id"]].copy().reset_index(drop=True)
-    for col, default in (("value", np.nan), ("model_time", pd.NaT), ("model_depth_m", np.nan), ("method", "outside_time_range"),
-                         ("distance_km", np.nan), ("model_lat", np.nan), ("model_lon", np.nan), ("depth_assumed", 0)):  # fmt: skip
-        out[col] = default
+    sample_ids = samples["sample_id"].to_numpy()
     s_lat, s_lon = samples["sample_lat"].to_numpy(float), samples["sample_lon"].to_numpy(float)
     s_depth = samples["depth_m"].to_numpy(float)
+    assumed = np.isnan(s_depth)
     if has_depth:
-        assumed = np.isnan(s_depth)
         d_index = np.where(assumed, 0, np.abs(depths[None, :] - np.nan_to_num(s_depth)[:, None]).argmin(axis=1))
-        out["depth_assumed"] = assumed.astype(int)
     lat_ascending = lat[0] < lat[-1]
-    for ti in np.unique(t_index[t_index >= 0]):
+    partial.parent.mkdir(parents=True, exist_ok=True)
+    days = np.unique(t_index[t_index >= 0])
+    written = 0
+    for k, ti in enumerate(days, start=1):
         members = np.flatnonzero(t_index == ti)
         # one box of cells around all of this day's samples
         lat_i = nearest_index(lat, s_lat[members])
@@ -193,22 +208,33 @@ def extract(ds, var: str, samples: pd.DataFrame, window: int = 4) -> pd.DataFram
         rows = np.arange(max(lat_i.min() - window - 1, 0), min(lat_i.max() + window + 2, len(lat)))
         cols = lon_box(lon_i, window, len(lon))
         sel = {"time": int(ti), "latitude": rows, "longitude": cols}
+        levels = np.unique(d_index[members]) if has_depth else np.array([0])
         if has_depth:
-            levels = np.unique(d_index[members])
             sel["depth"] = levels
-        block = np.asarray(da.isel(sel).values, dtype=float)  # (depth?, lat, lon)
-        if not has_depth:
-            block = block[None]
-            levels = np.array([0])
-        for m in members:
-            level = int(np.searchsorted(levels, d_index[m])) if has_depth else 0
-            field = block[level]
-            result = point_value(field, lat[rows], lon[cols], s_lat[m], s_lon[m], window, lat_ascending)
-            out.loc[m, ["value", "method", "distance_km", "model_lat", "model_lon"]] = result
-            out.loc[m, "model_time"] = times[ti]
-            if has_depth:
-                out.loc[m, "model_depth_m"] = depths[d_index[m]]
-    return out
+        block = ds[variables].isel(sel).load()  # one request for all variables of this day
+        out = []
+        for var in variables:
+            values = np.asarray(block[var].values, dtype=float)  # (depth?, lat, lon)
+            if not has_depth:
+                values = values[None]
+            for m in members:
+                if sample_ids[m] in skip[var]:
+                    continue
+                level = int(np.searchsorted(levels, d_index[m])) if has_depth else 0
+                value, method, dist, m_lat, m_lon = point_value(values[level], lat[rows], lon[cols], s_lat[m], s_lon[m],
+                                                                window, lat_ascending)  # fmt: skip
+                out.append({"sample_id": sample_ids[m], "value": value, "model_time": times[ti],
+                            "model_depth_m": depths[d_index[m]] if has_depth else np.nan, "method": method,
+                            "distance_km": dist, "model_lat": m_lat, "model_lon": m_lon,
+                            "depth_assumed": int(assumed[m]) if has_depth else 0, "product": meta["product"],
+                            "variable": var, "dataset_id": meta["dataset_id"], "forecast": meta["forecast"],
+                            "unit": meta["units"][var]})  # fmt: skip
+        if out:
+            pd.DataFrame(out).to_csv(partial, mode="a", header=not partial.exists(), index=False)
+            written += len(out)
+        if k % 100 == 0 or k == len(days):
+            print(f"          day {k:,}/{len(days):,}", flush=True)
+    return written
 
 
 def nearest_index(grid: np.ndarray, values: np.ndarray, periodic: bool = False) -> np.ndarray:

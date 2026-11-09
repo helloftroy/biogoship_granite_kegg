@@ -13,6 +13,8 @@
 # Reanalysis first, then its interim continuation; the analysis/forecast system
 # only for dates neither reaches (recorded per value in *_dataset columns).
 # Bring back: data/model_fields/ (3 files).
+# Resumable: values are saved per model day in data/model_fields/partial/; after a
+# time-limit stop, re-submit the same command and it continues where it stopped.
 #
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
 #   sbatch --account=191001-364393 cluster/model_fields.sbatch

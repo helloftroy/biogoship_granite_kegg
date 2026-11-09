@@ -58,6 +58,7 @@ import argparse
 import json
 import sys
 import time as clock
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -131,7 +132,7 @@ def main() -> None:
                 started = clock.time()
                 meta = {"product": product, "dataset_id": dataset_id, "forecast": int(is_forecast),
                         "units": {v: ds[v].attrs.get("units", "") for v in group}}  # fmt: skip
-                n = extract(ds, group, todo, skip, partial, meta, window=args.window)
+                n = extract(ds, group, todo, skip, partial, meta, window=args.window, workers=args.workers)
                 print(f"        {', '.join(group)}: {n:,} new values written ({clock.time() - started:5.0f} s)", flush=True)
             ds.close()
             if partial.exists():
@@ -160,7 +161,7 @@ def open_dataset(dataset_id: str, variables: list[str], samples: pd.DataFrame, a
 
     depth_max = float(np.nanmax(samples["depth_m"])) if samples["depth_m"].notna().any() else 1.0
     return copernicusmarine.open_dataset(
-        dataset_id=dataset_id, variables=variables,
+        dataset_id=dataset_id,  # no variable filter: a dataset may lack some listed variables (fe in bgc_my)
         minimum_depth=0.0, maximum_depth=max(depth_max, 1.0) * 1.5 + 10.0,
         start_datetime=(samples["sample_time"].min() - pd.Timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S"),
         end_datetime=(samples["sample_time"].max() + pd.Timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%S"),
@@ -178,7 +179,7 @@ def dataset_info(ds, product: str, dataset_id: str, variables: list[str]) -> dic
 
 
 def extract(ds, variables: list[str], samples: pd.DataFrame, skip: dict, partial: Path, meta: dict,
-            window: int = 4) -> int:
+            window: int = 4, workers: int = 8) -> int:
     """Values of ds[variables] (same depth axis) at each sample's day, nearest depth level and position
     (see module docstring). Appends one model day at a time to `partial`; returns the rows written."""
     lat = ds["latitude"].values.astype(float)
@@ -200,9 +201,10 @@ def extract(ds, variables: list[str], samples: pd.DataFrame, skip: dict, partial
     partial.parent.mkdir(parents=True, exist_ok=True)
     days = np.unique(t_index[t_index >= 0])
     written = 0
-    for k, ti in enumerate(days, start=1):
+
+    def fetch(ti):
+        """One box of cells around all of this day's samples, all variables in one request (retried)."""
         members = np.flatnonzero(t_index == ti)
-        # one box of cells around all of this day's samples
         lat_i = nearest_index(lat, s_lat[members])
         lon_i = nearest_index(lon, s_lon[members], periodic=True)
         rows = np.arange(max(lat_i.min() - window - 1, 0), min(lat_i.max() + window + 2, len(lat)))
@@ -211,29 +213,40 @@ def extract(ds, variables: list[str], samples: pd.DataFrame, skip: dict, partial
         levels = np.unique(d_index[members]) if has_depth else np.array([0])
         if has_depth:
             sel["depth"] = levels
-        block = ds[variables].isel(sel).load()  # one request for all variables of this day
-        out = []
-        for var in variables:
-            values = np.asarray(block[var].values, dtype=float)  # (depth?, lat, lon)
-            if not has_depth:
-                values = values[None]
-            for m in members:
-                if sample_ids[m] in skip[var]:
-                    continue
-                level = int(np.searchsorted(levels, d_index[m])) if has_depth else 0
-                value, method, dist, m_lat, m_lon = point_value(values[level], lat[rows], lon[cols], s_lat[m], s_lon[m],
-                                                                window, lat_ascending)  # fmt: skip
-                out.append({"sample_id": sample_ids[m], "value": value, "model_time": times[ti],
-                            "model_depth_m": depths[d_index[m]] if has_depth else np.nan, "method": method,
-                            "distance_km": dist, "model_lat": m_lat, "model_lon": m_lon,
-                            "depth_assumed": int(assumed[m]) if has_depth else 0, "product": meta["product"],
-                            "variable": var, "dataset_id": meta["dataset_id"], "forecast": meta["forecast"],
-                            "unit": meta["units"][var]})  # fmt: skip
-        if out:
-            pd.DataFrame(out).to_csv(partial, mode="a", header=not partial.exists(), index=False)
-            written += len(out)
-        if k % 100 == 0 or k == len(days):
-            print(f"          day {k:,}/{len(days):,}", flush=True)
+        for attempt in range(1, 6):
+            try:
+                return ti, members, rows, cols, levels, ds[variables].isel(sel).load()
+            except Exception as exc:  # network hiccups; the 5th failure stops the run (resumable)
+                if attempt == 5:
+                    raise
+                print(f"          day {times[ti]:%Y-%m-%d}: attempt {attempt} failed ({str(exc)[:100]}); retrying", flush=True)
+                clock.sleep(20 * attempt)
+
+    # Requests are latency-bound, so several days are fetched at once; results are written in order.
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for k, (ti, members, rows, cols, levels, block) in enumerate(pool.map(fetch, days), start=1):
+            out = []
+            for var in variables:
+                values = np.asarray(block[var].values, dtype=float)  # (depth?, lat, lon)
+                if not has_depth:
+                    values = values[None]
+                for m in members:
+                    if sample_ids[m] in skip[var]:
+                        continue
+                    level = int(np.searchsorted(levels, d_index[m])) if has_depth else 0
+                    value, method, dist, m_lat, m_lon = point_value(values[level], lat[rows], lon[cols], s_lat[m], s_lon[m],
+                                                                    window, lat_ascending)  # fmt: skip
+                    out.append({"sample_id": sample_ids[m], "value": value, "model_time": times[ti],
+                                "model_depth_m": depths[d_index[m]] if has_depth else np.nan, "method": method,
+                                "distance_km": dist, "model_lat": m_lat, "model_lon": m_lon,
+                                "depth_assumed": int(assumed[m]) if has_depth else 0, "product": meta["product"],
+                                "variable": var, "dataset_id": meta["dataset_id"], "forecast": meta["forecast"],
+                                "unit": meta["units"][var]})  # fmt: skip
+            if out:
+                pd.DataFrame(out).to_csv(partial, mode="a", header=not partial.exists(), index=False)
+                written += len(out)
+            if k % 100 == 0 or k == len(days):
+                print(f"          day {k:,}/{len(days):,}", flush=True)
     return written
 
 
@@ -352,6 +365,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--products", nargs="+", choices=list(PRODUCTS), default=list(PRODUCTS))
     parser.add_argument("--allow-forecast", action="store_true",
                         help="Use the analysis/forecast datasets for dates the reanalyses do not cover (recorded per value).")
+    parser.add_argument("--workers", type=int, default=8, help="Model days fetched at once (default 8).")
     parser.add_argument("--window", type=int, default=4, help="Cells searched in each direction for a valid cell (default 4).")
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "model_fields")
     parser.add_argument("--list-datasets", action="store_true")

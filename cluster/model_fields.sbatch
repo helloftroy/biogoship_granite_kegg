@@ -36,6 +36,6 @@ mkdir -p "${COPERNICUSMARINE_CREDENTIALS_DIRECTORY}"
 
 echo "Job started: $(date)"
 python scripts/extract_model_fields.py --list-datasets
-python scripts/extract_model_fields.py --allow-forecast
+python scripts/extract_model_fields.py --allow-forecast --workers "${WORKERS:-8}"
 echo "Job finished: $(date)"
 echo "Bring back: data/model_fields/sample_model_fields.csv, sample_model_fields_long.csv, provenance.json"

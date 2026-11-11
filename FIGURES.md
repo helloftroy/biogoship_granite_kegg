@@ -166,17 +166,20 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
 
 - **Shows:** pooled R2 (13 cruises, each held out) from the Granite embedding (ridge)
   and from in-situ temperature (spline), and their difference, for three blocks of KOs.
-  - Granite clearly better: the 28 best of 360 (difference >= 0.15, ahead in >= 10 cruises).
+  - Granite clearly better: the 28 best of 87 (Granite R2 > 0.3, difference >= 0.15, ahead in >= 10 cruises).
   - Both high, about equal: the 14 best of 37 (both >= 0.6, |difference| < 0.05).
-  - Temperature clearly better: the 12 best of 280 (difference <= -0.1, behind in >= 9 cruises).
+  - Temperature clearly better: the 12 best of 26 (temperature R2 > 0.3, difference <= -0.1, behind in >= 9 cruises).
+  The R2 > 0.3 floor (2026-11-11) leaves out KOs neither input predicts; without it the
+  blocks held 360 and 280 KOs, and most of the 280 had temperature R2 near 0.
   Rows are grouped by KEGG BRITE level B (merged; a few KOs placed by hand).
   The right column gives the phylum that carries most of the KO's genes in one
   example metagenome (A392013_008).
   The footnote names the best model so far (R12).
 - **Inputs:** as above, plus `data/reference/kegg_brite_ko00001.csv` (from
   https://rest.kegg.jp/get/br:ko00001/json) and the example pipeline output's
-  `level_2_phylum_division_ko_counts.tsv` (not in git).
-- **Regenerate:** `python figures/make_ko_heatmap.py --taxa <A392013_008_meta>/level_2_phylum_division_ko_counts.tsv`
+  `level_2_phylum_division_ko_counts.tsv`, kept as
+  `data/reference/example_A392013_008/level_2_phylum_division_ko_counts.tsv.gz` (not in git).
+- **Regenerate:** `python figures/make_ko_heatmap.py`
 
 ## Cruise line: temperature vs best model (P18)
 
@@ -203,7 +206,7 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   through several hues (pale yellow, green, blue, navy), because a single blue made
   0.4 and 0.8 hard to tell apart; `--cmap turbo` gives a rainbow version and `--cmap
   blue` the first one. Values at or below 0 take the lowest colour.
-- **Regenerate:** `python figures/make_ko_heatmap.py --columns inputs --taxa <...>/level_2_phylum_division_ko_counts.tsv`
+- **Regenerate:** `python figures/make_ko_heatmap.py --columns inputs`
 
 
 ## Cruise line: temperature vs best model per gene (P18)

@@ -998,7 +998,9 @@ Per-KO embedding R2, old vs new: r = 0.95.
 
 The heatmap's stricter categories are in `ko_categories.csv`. They are: Granite
 better by >= 0.15 in >= 10 cruises (360 KOs); both >= 0.6 and within 0.05 (37);
-temperature better by >= 0.1 in >= 9 cruises (280).
+temperature better by >= 0.1 in >= 9 cruises (280). Since 2026-11-11 the Granite and temperature
+categories also need the better input above R2 0.3: 87 and 26 KOs. Most of the 280
+were KOs that neither input predicts (temperature R2 median 0.02).
 
 Reading (figures: FIGURES.md, cruise line and KO heatmap):
 - **The OSTIA fill helps the embedding across all KOs.** 157 more KOs reach
@@ -1186,3 +1188,41 @@ pooled R2 >= 0.25 under pca32_temp ridge; its mean over tiles (0.37) is the mean
   cruises. HLY2202 (Arctic): per-cruise R2 0.64, median skill -0.06 (its large offset
   from the other cruises is partly but not fully predicted); P02-2022 (30 N, little
   variation along it): per-cruise R2 -0.11, skill 0.73.
+
+## R21. Which KOs Granite or temperature predicts better: by carrier; taxonomy tables (2026-11-11) - exploratory
+
+**Carriers.** Taken over the 664 KOs that one of the two inputs predicts with R2 >= 0.3
+(Granite embedding ridge vs temperature spline, R16 OSTIA): Granite better by >= 0.1
+in 210, temperature in 32, the rest within 0.1. Shares of each KO's genes per order
+come from one example metagenome (A392013_008, `level_4_order_ko_counts`):
+
+| Order | Mean share in Granite-better KOs | in temperature-better KOs | r with (Granite - temperature) |
+|---|---:|---:|---:|
+| SAR11 / Pelagibacterales | 0.24 | 0.02 | +0.58 |
+| Pseudomonadales | 0.08 | 0.06 | +0.23 |
+| Rhodobacterales | 0.10 | 0.07 | +0.18 |
+| Flavobacteriales | 0.05 | 0.02 | +0.18 |
+| Mamiellophyceae | 0.05 | 0.20 | -0.29 |
+| Synechococcus / Prochlorococcus | 0.04 | 0.10 | -0.24 |
+| Prymnesiophyceae | 0.04 | 0.06 | -0.22 |
+
+- Granite is ahead on KOs carried by heterotrophic bacteria, above all SAR11;
+  temperature on phytoplankton KOs (cyanobacteria and eukaryotic picophytoplankton),
+  viral KOs (TOP2, RRM2, POLD1) and the aerobic anoxygenic phototroph reaction centre.
+- By pathway, Granite leads on amino-acid synthesis and tRNA charging
+  (aminoacyl-tRNA biosynthesis 12 of 12 KOs); photosynthesis, oxidative
+  phosphorylation and eukaryotic cell machinery are even or lean to temperature.
+- KOs spread across many taxa favour Granite (median difference 0.10 when the main
+  phylum holds < 71% of genes, 0.01 above).
+- Phosphate first (R20) helps only pstS, pstA, pstB, pstC (+0.27 to +0.47).
+- Caveat: the shares come from one sample.
+
+**Taxonomy tables.** `scripts/collect_taxa_tables.py` collects the pipeline's
+`level_<n>_<rank>_abundance.tsv` (read counts per taxon, GTDB-Tk for MAGs, EUKulele
+otherwise; counts summed over the two methods) into `data/targets/taxa/`
+(`taxa_long.csv.gz`, `<rank>_counts.tsv`, `libraries.csv`). `build_ko_targets.py`
+then makes CLR targets (`taxa_<rank>_clr.csv`, taxa in >= 90% of samples).
+First download: 150 libraries -> 137 surface samples on 7 cruises (AE1319 8,
+AMT28 37, C13.5/A13.5 7, HLY2202 41, I07N 17, I09N 6, P18 21); 81 phyla, 163 classes,
+254 orders, 285 families, 329 genera kept. Unclassified reads: median 19% (7-78%).
+That is about a tenth of the KO samples, so a taxonomy model waits for the rest.

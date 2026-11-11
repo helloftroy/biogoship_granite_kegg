@@ -11,22 +11,27 @@ of the KO's genes in one example metagenome (A392013_008, "coverage0" output of
 the KO pipeline), with its share.
 
 Blocks:
-  Granite clearly better   difference >= 0.15 and Granite ahead in >= 10 of 13
-                           held-out cruises; the N_GRANITE with highest Granite R2
+  Granite clearly better   Granite R2 > 0.3, difference >= 0.15 and Granite ahead in
+                           >= 10 of 13 held-out cruises; the N_GRANITE with highest Granite R2
   Both high, about equal   both R2 >= 0.6 and |difference| < 0.05; top N_SAME
-  Temperature clearly better  difference <= -0.1 and temperature ahead in >= 9 of
-                           13 cruises; the N_TEMP with highest temperature R2
+  Temperature clearly better  temperature R2 > 0.3, difference <= -0.1 and temperature
+                           ahead in >= 9 of 13 cruises; the N_TEMP with highest temperature R2
+A KO whose better input reaches only R2 <= MIN_R2 = 0.3 is in no block, whatever the
+difference. Without that floor the blocks held 360 (Granite) and 280 (temperature) KOs;
+273 and 254 of them fall below it (most of the temperature ones near 0).
 
 Inputs:  data/results/ko_temperature_all_ostia/ (scripts/test_ko_temperature.py --kos all
          --learners ridge spline --feature-sets temp embedding --embeddings-dirs
          data/embeddings_sst_l4 data/faire/embeddings_sst_l4 --save-predictions),
          data/reference/kegg_brite_ko00001.csv, data/reference/kegg_ko_list.tsv,
          --taxa: the example pipeline output's level_2_phylum_division_ko_counts.tsv
+         (default: the copy kept in data/reference/example_A392013_008/)
 Outputs: figures/output/ko_heatmap.png and .pdf; data/results/ko_temperature_all_ostia/
          ko_heatmap_rows.csv (the rows shown) and ko_categories.csv (every KO)
 
 Usage:
-    python figures/make_ko_heatmap.py --taxa <unzipped A392013_008_meta>/level_2_phylum_division_ko_counts.tsv
+    python figures/make_ko_heatmap.py
+    python figures/make_ko_heatmap.py --columns inputs
 """
 
 from __future__ import annotations
@@ -50,6 +55,7 @@ OUT = ROOT / "figures" / "output"
 INK, MUTED, RULE, SURFACE = "#0b0b0b", "#52514e", "#d6d5d0", "#ffffff"
 GRANITE, TEMP = "#2a78d6", "#c0457e"
 N_GRANITE, N_SAME, N_TEMP = 28, 14, 12
+MIN_R2 = 0.3  # the better input must exceed this for the 'clearly better' blocks
 R2_CMAP = LinearSegmentedColormap.from_list("r2", ["#f6f5f2", "#bdbab2", "#6d6a63", "#232220"])
 DIFF_CMAP = LinearSegmentedColormap.from_list("diff", [TEMP, "#f6f5f2", GRANITE])
 BLUE_CMAP = LinearSegmentedColormap.from_list("blue", ["#ffffff", "#9cc3ee", "#2a78d6", "#0c2f5c"])
@@ -102,7 +108,8 @@ SHORT = {  # shorter descriptions for row labels
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--taxa", type=Path, help="level_2_phylum_division_ko_counts.tsv of the example pipeline output")
+    parser.add_argument("--taxa", type=Path, default=ROOT / "data" / "reference" / "example_A392013_008" / "level_2_phylum_division_ko_counts.tsv.gz",
+                        help="level_2_phylum_division_ko_counts.tsv of the example pipeline output")  # fmt: skip
     parser.add_argument("--columns", choices=["difference", "inputs"], default="difference",
                         help="difference: Granite, temperature, their difference (ko_heatmap); inputs: Granite, temperature, "
                              "time & place, raw satellite (ko_heatmap_inputs)")  # fmt: skip
@@ -115,17 +122,17 @@ def main() -> None:
     })  # fmt: skip
 
     ko = categories()
-    taxa = phylum_share(args.taxa) if args.taxa else pd.DataFrame(columns=["phylum", "share"])
+    taxa = phylum_share(args.taxa) if args.taxa and args.taxa.exists() else pd.DataFrame(columns=["phylum", "share"])
     ko = ko.join(taxa)
     scores = pd.read_csv(RESULTS / "ko_temperature.csv")
     for feature_set, learner, _ in INPUTS:
         ko[f"r2_{feature_set}"] = scores[(scores["feature_set"] == feature_set) & (scores["learner"] == learner)].set_index("ko")["r2_pooled"]
     ko.round(4).to_csv(RESULTS / "ko_categories.csv")
     blocks = [
-        ("Granite clearly better", ko[ko["category"] == "granite"].nlargest(N_GRANITE, "granite"), "granite"),
+        (f"Granite clearly better (R² > {MIN_R2:g})", ko[ko["category"] == "granite"].nlargest(N_GRANITE, "granite"), "granite"),
         ("Both high, about equal", ko[ko["category"] == "same"].assign(m=lambda d: d[["granite", "temp"]].mean(axis=1))
          .nlargest(N_SAME, "m"), "same"),
-        ("Temperature clearly better", ko[ko["category"] == "temp"].nlargest(N_TEMP, "temp"), "temp"),
+        (f"Temperature clearly better (R² > {MIN_R2:g})", ko[ko["category"] == "temp"].nlargest(N_TEMP, "temp"), "temp"),
     ]  # fmt: skip
     counts = ko["category"].value_counts()
 
@@ -243,9 +250,9 @@ def categories() -> pd.DataFrame:
     out["diff"] = out["granite"] - out["temp"]
     n = per_cruise["held_out"].nunique()
     out["category"] = np.select(
-        [(out["diff"] >= 0.15) & (out["cruises_granite_ahead"] >= 10),
+        [(out["granite"] > MIN_R2) & (out["diff"] >= 0.15) & (out["cruises_granite_ahead"] >= 10),
          (out["granite"] >= 0.6) & (out["temp"] >= 0.6) & (out["diff"].abs() < 0.05),
-         (out["diff"] <= -0.1) & (out["cruises_granite_ahead"] <= n - 9)],
+         (out["temp"] > MIN_R2) & (out["diff"] <= -0.1) & (out["cruises_granite_ahead"] <= n - 9)],
         ["granite", "same", "temp"], "")  # fmt: skip
 
     names = pd.read_csv(ROOT / "data/reference/kegg_ko_list.tsv", sep="\t", header=None, names=["ko", "name"]).set_index("ko")["name"]

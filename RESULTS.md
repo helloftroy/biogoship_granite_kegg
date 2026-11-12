@@ -1307,3 +1307,45 @@ Targets in `data/targets/taxa/unclassified_targets.csv`; models as R22, results 
   temperature. Once the unclassified share is regressed out, Granite leads clearly
   (0.36 vs 0.17); the Bacteria CLR, Granite 0.35 vs 0.05. The Granite-better KOs still
   track the adjusted ratio (median r +0.64; temperature-better -0.37).
+
+## R24. Ocean-model fields instead of in-situ measurements (2026-11-12)
+
+GLORYS12 and PISCES (Copernicus Marine reanalysis; forecast runs from 2021-11 for
+fe and the carbonate variables) at each sample, from `cluster/model_fields.sbatch`
+(`data/model_fields/`, not in git): 2,014 samples, every reanalysis variable present,
+median 7-8 km to the cells used. Script: `scripts/model_field_tests.py`
+(results in `data/results/model_fields/`).
+
+**Model vs in-situ at the samples** (r on log10 for nutrients and chlorophyll):
+
+| Variable | n | Cruises | r | Median r within a cruise | Median in situ | Median model |
+|---|---:|---:|---:|---:|---:|---:|
+| Temperature (GLORYS) | 1,827 | 14 | 0.93 | 0.98 | 25.85 | 25.76 |
+| Salinity (GLORYS) | 1,734 | 14 | 0.96 | 0.92 | 35.33 | 35.35 |
+| Phosphate (PISCES) | 728 | 13 | 0.70 | 0.56 | 0.120 | 0.015 |
+| Nitrate (PISCES) | 429 | 6 | 0.68 | 0.33 | 0.020 | 0.010 |
+| Chlorophyll (PISCES) | 178 | 1 | 0.57 | | 0.036 | 0.091 |
+
+PISCES surface phosphate is far lower than measured in oligotrophic water (median
+0.015 vs 0.12 umol/kg), but it ranks the samples reasonably.
+
+**Figure KOs, one cruise held out (median pooled R2, all 1,216 tiles):**
+
+| Block | 32 PCs + in-situ T | 32 PCs + GLORYS T | PISCES P first, then 32 PCs |
+|---|---:|---:|---:|
+| Granite clearly better | 0.39 | 0.40 | 0.26 |
+| Both high | 0.71 | 0.69 | 0.43 |
+| Temperature clearly better | 0.46 | 0.45 | 0.15 |
+
+- **GLORYS temperature can replace in-situ temperature** with no loss.
+- **PISCES phosphate first fixes most of the pst problem, on all tiles:** pstC
+  0.32 -> 0.59, pstB 0.41 -> 0.61, pstS 0.41 -> 0.64, pstA 0.38 -> 0.59. On P18,
+  pstC goes from 0.55 to 0.85. On the 452 tiles with in-situ phosphate, PISCES gives
+  0.49-0.60 against 0.64-0.71 with measured phosphate (baseline 0.24-0.38): about
+  two thirds of the gain.
+- As with measured phosphate (R20), phosphate first hurts the other KOs. Use it for
+  the pst genes only.
+- pstC still fails on I07N (-2.1) and I09N 2025 (-2.5) with PISCES. Both are Indian
+  Ocean cruises with little pstC variation of their own.
+
+Both inputs exist everywhere, so the pst genes can now be mapped globally.

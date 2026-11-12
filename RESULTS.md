@@ -1232,3 +1232,39 @@ library in `data/targets/taxa/ko_by_taxon/` (gzipped; OG, Pfam and other levels 
 1,431 libraries so far. They are coverage_50: summed over taxa they reproduce
 `ko_counts_cov50_all.tsv` exactly (6 libraries checked). Coverage per library is in
 `data/targets/taxa/libraries.csv`.
+
+## R22. Taxonomy as targets: Granite vs temperature per taxon (2026-11-11)
+
+Same setup as R17 (OSTIA-filled embeddings, one of 13 cruises held out, pooled R2;
+embedding ridge, temperature spline, pca32_temp ridge), with the coverage_50 taxon
+read-count CLRs of R21 as targets (taxa in >= 90% of samples). 1,432 samples,
+1,219 tiles. Command per rank:
+`python scripts/test_ko_temperature.py --kos all --targets data/targets/taxa/taxa_<rank>_clr.csv --learners ridge spline --feature-sets temp embedding pca32_temp --embeddings-dirs data/embeddings_sst_l4 data/faire/embeddings_sst_l4 --save-predictions --out-dir data/results/taxa_temperature/<rank>`
+
+Median pooled R2 over taxa:
+
+| Rank | Taxa | Temperature | Granite | PCs + temperature |
+|---|---:|---:|---:|---:|
+| Phylum | 75 | 0.12 | 0.09 | 0.14 |
+| Class | 161 | 0.05 | 0.05 | 0.07 |
+| Order | 253 | 0.05 | 0.06 | 0.09 |
+| Family | 315 | 0.12 | 0.10 | 0.13 |
+| Genus | 429 | 0.27 | 0.28 | 0.29 |
+
+Domain (CLR over Archaea, Bacteria, Eukaryota, Viruses): Bacteria 0.35 Granite vs
+0.05 temperature; Archaea 0.18 vs -0.05; Eukaryota 0.48 vs 0.55; Viruses neither.
+
+- **R21's guess (Granite = heterotrophs, temperature = phytoplankton) does not hold
+  for taxon abundances.** Most taxa are ties. SAR11 genera split both ways
+  (Pelagibacter 0.21 vs 0.12, MED727 0.71 vs 0.68, TMED170 0.48 vs 0.54).
+  Synechococcus and Prochlorococcus are ties or slightly Granite (Prochlorococcus_A
+  0.77 vs 0.69). Granite's clearest wins are eukaryotic phytoplankton: Pelagophyceae
+  (class 0.36 vs 0.03; Pelagomonas 0.48 vs 0.18) and Mamiellophyceae (0.43 vs 0.14).
+  Temperature's are few and small (Nitrosopumilus 0.34 vs 0.17, some SAR86 and SAR11
+  sub-clades).
+- **What the Granite-better KOs follow is the bacterial share of the community.**
+  Across samples, the KO CLR correlates with log(Bacteria / Eukaryota) at median
+  r = +0.73 for Granite-better KOs and -0.62 for temperature-better KOs (+0.55 for
+  "both high", +0.19 for all KOs). The bacterial share is something Granite predicts
+  (0.35) and temperature does not (0.05). So the KO split is mostly bacteria vs
+  eukaryotes, not heterotrophs vs phototrophs.

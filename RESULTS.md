@@ -1226,3 +1226,7 @@ First download: 150 libraries -> 137 surface samples on 7 cruises (AE1319 8,
 AMT28 37, C13.5/A13.5 7, HLY2202 41, I07N 17, I09N 6, P18 21); 81 phyla, 163 classes,
 254 orders, 285 families, 329 genera kept. Unclassified reads: median 19% (7-78%).
 That is about a tenth of the KO samples, so a taxonomy model waits for the rest.
+KO-by-taxon tables (`level_2` phylum and `level_4` order `ko_counts`) are stashed per
+library in `data/targets/taxa/ko_by_taxon/` (gzipped; OG, Pfam and other levels dropped):
+612 libraries in the first batch (606 of them in the cov50 KO table), none overlapping
+the 149 with abundance tables. Coverage is in `data/targets/taxa/libraries.csv`.

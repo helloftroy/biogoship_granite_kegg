@@ -1329,6 +1329,29 @@ median 7-8 km to the cells used. Script: `scripts/model_field_tests.py`
 PISCES surface phosphate is far lower than measured in oligotrophic water (median
 0.015 vs 0.12 umol/kg), but it ranks the samples reasonably.
 
+How far off the model values are, at the same samples (quartiles 25 / 50 / 75%;
+"model lower" = share of samples where the model value is below the measurement;
+ratio = median of model / measured per sample):
+
+| Variable | n | Measured q25 / median / q75 | Model q25 / median / q75 | Model lower | Median ratio | Median difference |
+|---|---:|---|---|---:|---:|---:|
+| Temperature (°C) | 1,827 | 20.64 / 25.85 / 28.99 | 21.06 / 25.76 / 28.97 | 58% | 1.00 | -0.07 °C |
+| Salinity | 1,734 | 34.34 / 35.33 / 36.05 | 34.34 / 35.35 / 36.09 | 48% | 1.00 | +0.008 |
+| Phosphate (umol/kg) | 728 | 0.040 / 0.120 / 0.171 | 0.001 / 0.015 / 0.229 | 67% | **0.13** (about 8x too low) | -0.033 |
+| Nitrate + nitrite (umol/L) | 429 | 0.000 / 0.020 / 0.113 | 0.002 / 0.010 / 2.671 | 40% | 0.83 | +0.001 |
+| Chlorophyll | 178 (1 cruise) | 0.035 / 0.036 / 0.041 | 0.081 / 0.091 / 0.139 | 0% | **2.47** (too high) | +0.052 |
+
+- GLORYS physics is essentially unbiased (temperature within 0.1 °C, salinity within 0.01).
+- PISCES phosphate is too low at the surface in two thirds of samples, about 8 times at
+  the median. It is too low where phosphate is scarce and too high in the upper quartile.
+- PISCES nitrate is about right at the median but far too high in the upper quartile
+  (2.7 vs 0.11 umol/L): PISCES puts nitrate at the surface where little was measured.
+- PISCES chlorophyll is 2.5 times the measured value on the one cruise with in-situ
+  chlorophyll (FAIRe; the units of that column are not verified).
+- Correlations (log10 for nutrients and chlorophyll): temperature 0.93 (0.98 within a
+  cruise), salinity 0.96 (0.92), phosphate 0.70 (0.56), nitrate 0.68 (0.33),
+  chlorophyll 0.57.
+
 **Figure KOs, one cruise held out (median pooled R2, all 1,216 tiles):**
 
 | Block | 32 PCs + in-situ T | 32 PCs + GLORYS T | PISCES P first, then 32 PCs |
@@ -1376,6 +1399,32 @@ on (fewer cruises, so noisier). Results in `data/results/model_fields/first_r2.c
   four temperature-block KOs (TOP2, dgkA, NOP2, RRM2: +0.05 to +0.09).
 - Mixed layer, current speed, sea level, silicate and oxygen help no gene reliably.
 
+Per variable, median change in pooled R2 over the 54 figure KOs, and the KOs that gain
+at least 0.05 (V first / V added):
+
+| Variable | Tiles | First: median | First: KOs >= +0.05 | Added: median | Added: KOs >= +0.05 | Genes that gain (added unless noted) |
+|---|---:|---:|---:|---:|---:|---|
+| Salinity | 1,216 | -0.16 | 0 | 0.00 | 3 | pstB +0.12, pstC +0.11, pstS +0.06 |
+| Mixed layer depth | 1,216 | -0.03 | 0 | -0.01 | 0 | - |
+| Sea level | 1,216 | -0.23 | 0 | -0.04 | 3 | LACC1 +0.11, pntA +0.07, argG +0.06 |
+| Current speed | 1,216 | -0.01 | 0 | 0.00 | 0 | - |
+| GLORYS temperature | 1,216 | -0.03 | 4 | 0.00 | 0 | first: TOP2 +0.09, dgkA +0.07, NOP2 +0.06, RRM2 +0.05 |
+| **Phosphate** | 1,216 | -0.19 | 4 | -0.03 | 4 | **pstC +0.30, pstS +0.26, pstA +0.24, pstB +0.22** (first: +0.20 to +0.29) |
+| Nitrate | 1,216 | -0.13 | 4 | 0.00 | 4 | pstC +0.16, pstB +0.11, pstA +0.10, pstS +0.09 |
+| Silicate | 1,216 | -0.11 | 0 | -0.01 | 1 | lysA +0.07 |
+| Oxygen | 1,216 | -0.04 | 4 | -0.02 | 0 | first: E4.1.3.25 +0.07, dgkA +0.07, NOP2 +0.06, TOP2 +0.06 |
+| Chlorophyll | 1,216 | -0.14 | 0 | 0.00 | 6 | pstA +0.08, LACC1 +0.08, pstC +0.07, udg +0.07, pstB +0.06, pstS +0.06 |
+| Primary production | 1,216 | -0.10 | 0 | -0.01 | 2 | pstC +0.05, pstS +0.05 |
+| Iron | 637 | -0.17 | 2 | -0.02 | 3 | E4.1.3.25 +0.17 (first +0.17), glsA +0.05 (first +0.16), ndhF +0.06 |
+| Phytoplankton carbon | 637 | -0.12 | 1 | 0.00 | 5 | pstC +0.14, pstB +0.10, purK +0.08, lysA +0.08, pstS +0.06 |
+| pH | 637 | -0.28 | 1 | -0.06 | 1 | NOP2 +0.10 |
+| DIC | 637 | -0.81 | 0 | -0.14 | 5 | NOP2 +0.15, tldD +0.11, ndhF +0.07, glsA +0.06, dhaA +0.06 |
+| Alkalinity | 637 | -0.32 | 3 | -0.02 | 8 | dhaA +0.17, pheA2 +0.15, glsA +0.13, tldD +0.09, E4.1.3.25 +0.08, udg +0.06, E3.1.2.28 +0.06, mntB +0.05 |
+| pCO2 | 637 | -0.25 | 1 | -0.04 | 2 | NOP2 +0.09, E4.1.3.25 +0.07 |
+
+The 637-tile rows (forecast runs, from 2021-11) have lower baselines and fewer cruises;
+their gains are tentative. Outside the pst genes, no variable gives a consistent gain.
+
 **Decision (2026-11-12):** R25 is a side note for the paper (one or two sentences, no
 figure). These variables are not used in later models. The phosphate-first model for
 the pst genes (R24) remains the only use of model fields, for global maps, with its
@@ -1411,3 +1460,47 @@ cannot be tested this way. Results in `data/results/insitu/summary.csv`.
   ties on temperature. Yet Granite predicts many KOs that these variables do not
   (R25). It sees biology more than water properties. PISCES phosphate helps the pst
   genes (R24) through its ranking, which the spline uses, not through its values.
+
+**Conclusions from R24-R26 (for the manuscript, and for a physics-aware satellite model):**
+1. GLORYS physics matches the ship measurements closely (temperature r 0.93, within
+   0.1 °C; salinity r 0.96, within 0.01). PISCES biogeochemistry does not: surface
+   phosphate is about 8 times too low at the median and only loosely right within a
+   cruise (r 0.56). Nitrate is far too high where measured nitrate is low (upper
+   quartile 2.7 vs 0.11 umol/L; within-cruise r 0.33). Chlorophyll is about 2.5 times too
+   high on the one cruise that measured it.
+2. Adding these fields to the Granite model helps almost nothing (R25). The one
+   exception is phosphate for the four pst genes (+0.2 to +0.3 R2). It works through
+   ranking (a spline), and recovers about two thirds of what measured phosphate gives
+   (R20, R24).
+3. Granite does not reproduce the water properties: salinity 0.23, phosphate -0.24,
+   nitrate 0.01. It nearly matches GLORYS only on temperature (0.92 vs 0.94), which the
+   OSTIA-filled tiles contain. Yet Granite predicts many KOs that the water properties
+   do not.
+4. So Granite's skill on the KOs does not come from standing in for temperature,
+   salinity or nutrients. It comes from something the ocean models do not carry,
+   consistent with R22-R23: community composition, above all the bacterial share.
+5. For a satellite model made "physics-aware" with ocean-model fields: on this evidence
+   the physical fields would add little for the biology targets here. The embedding
+   already holds temperature, and salinity adds nothing for the KOs. The biogeochemical
+   fields are too far from the measurements, except as a ranking for nutrient-specific
+   genes. Exception still to test: the history summaries below (R27), which a single
+   day's value cannot capture.
+
+## R27. Recent ocean history before sampling (pending: cluster job)
+
+Question: do summaries of the days *before* sampling help where the sampling-day model
+values did not (R25)? Per sample (`scripts/extract_history_fields.py`,
+`cluster/history_fields.sbatch`, output `data/model_fields/sample_history_fields.csv`):
+
+| Feature | Meaning | Source | Window | Area |
+|---|---|---|---|---|
+| mld_max30 | mixing: maximum mixed-layer depth | GLORYS12 mlotst | 30 days up to sampling | +-0.125 deg mean |
+| sst_change14 | cooling / upwelling: SST on the day minus the 14-day mean before | OSTIA L4 (reprocessed, then NRT) | 14 days | +-0.125 deg |
+| wind_max14, wind_mean14 | storms: peak and mean wind speed | L4 hourly winds (multi-year, then NRT) | 14 days | +-0.125 deg |
+| ssh_gradient | fronts: mean sea-level gradient magnitude (m per 100 km) | GLORYS12 zos | sampling day | +-0.25 deg |
+| eke30 | eddies: mean 0.5 (u'^2 + v'^2) of geostrophic velocity anomalies | DUACS L4 altimetry | 30 days | +-0.25 deg |
+
+Tested with fake datasets (dataset fallback by date, date-line boxes, 0-360 grids,
+hourly winds; the sea-level gradient matches the analytic value). Test when back:
+`python scripts/model_field_first.py --history` (each feature first, and added to 32 PCs
++ temperature, figure KOs, one cruise held out; output `first_r2_history.csv`).

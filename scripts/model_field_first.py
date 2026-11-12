@@ -12,11 +12,17 @@ phytoplankton carbon) enter as log10(max(V, small floor)); the rest as they are.
 Variables only in the forecast runs (from 2021-11: fe, phyc, ph, dissic, talk, spco2) are
 tested on the tiles that have them, with their own baseline.
 
+With --history the variables are the recent-history summaries of
+data/model_fields/sample_history_fields.csv (scripts/extract_history_fields.py, R27):
+30-day maximum mixed layer, 14-day SST change, 14-day peak and mean wind, sea-level
+gradient, 30-day eddy kinetic energy.
+
 Outputs in data/results/model_fields/: first_r2.csv (KO x variable: baseline, V first,
-V added; pooled R2, and the tiles used).
+V added; pooled R2, and the tiles used); first_r2_history.csv with --history.
 
 Usage:
     python scripts/model_field_first.py
+    python scripts/model_field_first.py --history
 """
 
 from __future__ import annotations
@@ -47,6 +53,12 @@ VARIABLES = {
     "iron": ("pisces_fe", 1e-5), "phytoplankton carbon": ("pisces_phyc", 0.001), "pH": ("pisces_ph", None),
     "DIC": ("pisces_dissic", None), "alkalinity": ("pisces_talk", None), "pCO2": ("pisces_spco2", None),
 }  # fmt: skip
+HISTORY_FIELDS = REPO_ROOT / "data" / "model_fields" / "sample_history_fields.csv"
+HISTORY = {
+    "mixed layer, 30-day max": ("mld_max30", 1.0), "SST change, 14 days": ("sst_change14", None),
+    "wind, 14-day peak": ("wind_max14", 0.1), "wind, 14-day mean": ("wind_mean14", 0.1),
+    "sea-level gradient": ("ssh_gradient", 1e-4), "eddy kinetic energy, 30 days": ("eke30", 1e-5),
+}  # fmt: skip
 
 
 def main() -> None:
@@ -56,15 +68,19 @@ def main() -> None:
     parser.add_argument("--embeddings-dirs", type=Path, nargs="+",
                         default=[REPO_ROOT / "data" / "embeddings_sst_l4", REPO_ROOT / "data" / "faire" / "embeddings_sst_l4"])
     parser.add_argument("--out-dir", type=Path, default=RESULTS / "model_fields")
+    parser.add_argument("--history", action="store_true", help="Test the recent-history summaries (R27) instead.")
     args = parser.parse_args()
 
-    fields = pd.read_csv(FIELDS).set_index("sample_id")
-    fields["speed"] = np.hypot(fields["glorys_uo"], fields["glorys_vo"])
+    if args.history:
+        fields, variables, out_name = pd.read_csv(HISTORY_FIELDS).set_index("sample_id"), HISTORY, "first_r2_history.csv"
+    else:
+        fields, variables, out_name = pd.read_csv(FIELDS).set_index("sample_id"), VARIABLES, "first_r2.csv"
+        fields["speed"] = np.hypot(fields["glorys_uo"], fields["glorys_vo"])
     kos = pd.read_csv(args.kos)["ko"].tolist()
     emb, temp, _, y, cruises, unit, rows_all = load(args, kos, return_rows=True)
 
     baselines, out = {}, []
-    for name, (col, floor) in VARIABLES.items():
+    for name, (col, floor) in variables.items():
         v = rows_all["sample_id"].map(fields[col]).groupby(rows_all["tile_key"]).mean().reindex(unit.index).to_numpy()
         if floor is not None:
             v = np.log10(np.clip(v, floor, None))
@@ -83,7 +99,7 @@ def main() -> None:
               f"{(added - base >= 0.05).sum()} KOs >= +0.05", flush=True)
     table = pd.concat(out)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    table.round(4).to_csv(args.out_dir / "first_r2.csv", index=False)
+    table.round(4).to_csv(args.out_dir / out_name, index=False)
 
     info = pd.read_csv(args.kos).set_index("ko")
     table = table.join(info[["gene", "block"]], on="ko")

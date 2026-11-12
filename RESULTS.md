@@ -1483,10 +1483,10 @@ cannot be tested this way. Results in `data/results/insitu/summary.csv`.
    the physical fields would add little for the biology targets here. The embedding
    already holds temperature, and salinity adds nothing for the KOs. The biogeochemical
    fields are too far from the measurements, except as a ranking for nutrient-specific
-   genes. The recent-history summaries (mixing, SST change, wind, fronts, eddies; R27)
-   add nothing either, although Granite does not carry them. So "physics-aware" inputs
-   from ocean models or reanalyses are not, on this evidence, a useful addition for
-   predicting these gene profiles from satellite data.
+   genes. **Revised by R28 (all 3,921 KOs, not only the well-predicted figure KOs):**
+   the nutrient fields add real, biologically coherent skill to nutrient-acquisition
+   genes (the Pho regulon with phosphate; urea uptake and urease with nitrate). Physical
+   fields and recent history help smaller, less consistent sets of genes. See R28.
 
 ## R27. Recent ocean history before sampling (2026-11-12)
 
@@ -1538,6 +1538,107 @@ out, best learner; `data/results/model_fields/history_predictability/`):
 - **This is not because Granite already holds the information.** Granite predicts none
   of these features well (R2 -0.22 to 0.18). They are new information, and they still
   do not explain the KOs.
-- **Closes the ocean-model line (R24-R27).** Neither the sampling-day values nor the
-  recent physical history add to Granite + temperature for these KOs. The one
-  exception remains phosphate for the pst genes.
+- **For the 54 figure KOs (R24-R27):** neither the sampling-day values nor the recent
+  physical history add to Granite + temperature; the one exception is phosphate for the
+  pst genes. **But the figure KOs were chosen for being well predicted** (the top of each
+  heatmap block), which tilts the test against new inputs. On all KOs the answer
+  changes: see R28.
+
+## R28. Added variables on all KOs, not just the well-predicted figure KOs (2026-11-12)
+
+Why: the 54 figure KOs are the top of each heatmap block (the 28 highest Granite R2
+among "Granite clearly better", the 14 highest among "both high" (both >= 0.6), the 12
+highest temperature R2 among "temperature clearly better"). They are well predicted by
+construction, so R25/R27 were tilted against new inputs.
+
+Test (`scripts/added_fields_all_kos.py`; `data/results/model_fields/added_all_kos.csv`,
+`added_all_kos_summary.csv`, `added_useful_kos.csv`): every variable of R25 and R27 added as
+a spline to 32 Granite PCs + temperature spline (one ridge, penalty by GCV per KO), all
+3,921 KOs, one cruise held out, pooled R2. Controls for chance: three draws of random
+noise and PISCES phosphate shuffled across tiles, on all 1,216 tiles and on the 637
+forecast-period tiles (where iron, phytoplankton carbon, pH, DIC, alkalinity and pCO2
+exist). Criteria per KO: gain >= 0.05; the same and improved in >= 75% of held-out
+cruises; gain >= 0.05 **and** R2 >= 0.3 after ("now useful").
+
+| Added variable | Tiles | KOs gain >= 0.05 | ... and in >= 75% of cruises | Now useful (gain >= 0.05, R2 >= 0.3) | Median gain, all KOs |
+|---|---:|---:|---:|---:|---:|
+| Salinity | 1,216 | 285 | 58 | 43 | -0.026 |
+| Mixed layer (day) | 1,216 | 306 | 115 | 15 | -0.006 |
+| Sea level | 1,216 | 450 | 45 | 39 | -0.029 |
+| Current speed | 1,216 | 11 | 1 | 0 | -0.005 |
+| GLORYS temperature | 1,216 | 35 | 16 | 1 | -0.002 |
+| Phosphate | 1,216 | 343 | 101 | 70 | -0.028 |
+| Nitrate | 1,216 | 401 | 105 | 67 | -0.010 |
+| Silicate | 1,216 | 214 | 53 | 24 | -0.020 |
+| Oxygen | 1,216 | 166 | 36 | 28 | -0.018 |
+| Chlorophyll | 1,216 | 453 | 87 | 52 | -0.001 |
+| Primary production | 1,216 | 199 | 14 | 10 | -0.017 |
+| Mixed layer, 30-day max | 1,216 | 424 | 164 | 20 | -0.019 |
+| SST change, 14 days | 1,216 | 20 | 7 | 0 | -0.005 |
+| Wind, 14-day peak | 1,216 | 257 | 87 | 22 | -0.003 |
+| Wind, 14-day mean | 1,216 | 103 | 49 | 4 | -0.009 |
+| Sea-level gradient | 1,216 | 23 | 15 | 2 | -0.002 |
+| Eddy kinetic energy, 30 days | 1,216 | 22 | 5 | 0 | -0.006 |
+| **Control: noise (3 draws)** | 1,216 | 14-15 | 2-8 | **0** | -0.002 to 0.000 |
+| **Control: shuffled phosphate** | 1,216 | 17 | 7 | **0** | -0.004 |
+| Iron | 637 | 431 | 137 | 46 | -0.052 |
+| Phytoplankton carbon | 637 | 600 | 233 | 29 | -0.006 |
+| pH | 637 | 446 | 111 | 32 | -0.043 |
+| DIC | 637 | 491 | 114 | 61 | -0.103 |
+| Alkalinity | 637 | 709 | 197 | 121 | -0.050 |
+| pCO2 | 637 | 411 | 69 | 24 | -0.049 |
+| **Control: noise (3 draws)** | 637 | 211-259 | 48-60 | **0-3** | 0.000 to -0.002 |
+| **Control: shuffled phosphate** | 637 | 210 | 40 | **1** | -0.002 |
+
+Gains >= 0.05 by baseline R2 stratum (all tiles; KOs per stratum: below 0 1,058; 0-0.1
+873; 0.1-0.3 1,404; >= 0.3 586): most gains are in KOs the baseline predicts poorly
+(e.g. sea level 260 / 91 / 87 / 12; chlorophyll 178 / 118 / 133 / 24; phosphate
+166 / 77 / 61 / 39; noise 12-15 / 2-3 / 0-1 / 0).
+
+- **The figure-KO test was tilted.** On all KOs, every variable except current speed,
+  GLORYS temperature, SST change, sea-level gradient and EKE helps far more KOs than
+  chance (now useful: 15-70 per variable on all tiles vs 0 for the controls; 24-121
+  on the 637 tiles vs 0-3).
+- **Overall:** 414 distinct KOs (11% of 3,921) become useful with at least one
+  variable (711 KO-variable pairs). 198 of them also improve in >= 75% of cruises (267
+  pairs). They are mostly moderately predicted KOs (baseline median 0.29, IQR
+  0.25-0.38). Cyanobacterial KOs are over-represented (62 of 145, 43%, vs 9-10% for
+  Pseudomonadota and eukaryote KOs).
+- **Median gain over all KOs is negative for every variable** (-0.001 to -0.10). Adding
+  a variable to every KO hurts more than it helps; it is a per-gene choice.
+- **Nutrients help nutrient-acquisition genes, coherently.**
+  - Phosphate: phoU +0.38 (0.15 -> 0.52), phoR +0.30 (0.03 -> 0.33), pstC +0.30,
+    pstS +0.26, pstA +0.24, adeR +0.31; phosphonate transport phnE +0.25 (with
+    alkalinity).
+  - Nitrate: urea uptake urtA +0.30 (0.26 -> 0.56), urtB +0.27, urtC +0.25, urtD
+    +0.24 (phosphate); urease ureF +0.34, ureD +0.30, ureE +0.25, ureB +0.25.
+    Cyanobacterial psaK +0.18, pcyA +0.13, menC +0.18.
+  - The KO sets helped by phosphate and by nitrate overlap strongly (Jaccard 0.65); the
+    PISCES nutrients co-vary, so this is "nutrient regime" more than one element. All
+    other pairs overlap by 0.13 or less.
+  - These gains come despite PISCES's biases (R24): phosphate about 8 times too low,
+    nitrate far too high where little was measured. The spline uses the ranking.
+- **Salinity helps phosphorus genes:** phnC +0.18, phnE +0.14, ppx-gppA +0.13, pstB
+  +0.12, pstC +0.11 (each better in 9-11 of 13 cruises), and tartrate dehydrogenase
+  ttuC +0.19. Plausibly salinity marks the saltier, phosphorus-poor North Atlantic.
+- **Physical fields and recent history help small, mixed sets** (now useful: sea level
+  39, 30-day max mixed layer 20, 14-day peak wind 22, mixed layer 15; median gain
+  +0.06 to +0.09). Examples: 30-day max mixed layer for ynjD +0.18, mnhD +0.18, cpeD
+  +0.16, phnE +0.15; sea level for aglG +0.41, tfdA +0.33. The sea-level hits are
+  consistent in only 6 of 39; mixed layer 10 of 20; peak wind 16 of 22.
+- **Carbonate system and iron (637 tiles, from 2021-11 only):** many hits (alkalinity
+  121, DIC 61, iron 46), well above that subset's controls (0-3). Some top hits look
+  like regional proxies rather than mechanism (DIC: tfdA +0.50, cycB +0.44). Tentative
+  until more post-2021 cruises exist.
+
+**What this changes for a physics-aware satellite model (supersedes the last point of
+the R24-R26 conclusions):**
+1. Nutrient fields (phosphate, nitrate), even biased, add real skill for
+   nutrient-acquisition genes (Pho regulon, urea uptake and urease) and for some
+   cyanobacterial genes, beyond Granite + temperature.
+2. Physical fields and recent history (mixed layer, wind, sea level, salinity) help
+   smaller, less consistent sets of genes. Salinity's clearest gains are again
+   phosphorus genes.
+3. Adding any field to all genes lowers the median R2. The value is in per-function
+   use, so a physics-aware model would need to learn which functions use which
+   field.

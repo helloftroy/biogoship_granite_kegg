@@ -172,13 +172,14 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   The R2 > 0.3 floor (2026-11-11) leaves out KOs neither input predicts; without it the
   blocks held 360 and 280 KOs, and most of the 280 had temperature R2 near 0.
   Rows are grouped by KEGG BRITE level B (merged; a few KOs placed by hand).
-  The right column gives the phylum that carries most of the KO's genes in one
-  example metagenome (A392013_008).
+  The right column gives the pooled R2 of the best model so far, 32 Granite PCs + a
+  temperature spline (ridge; the R28 baseline). Until 2026-11-12 it gave the main
+  carrier phylum in one example metagenome; that was dropped as misleading after R22
+  (the KO split follows the bacterial share of the community, not one carrier).
   The footnote names the best model so far (R12).
 - **Inputs:** as above, plus `data/reference/kegg_brite_ko00001.csv` (from
-  https://rest.kegg.jp/get/br:ko00001/json) and the example pipeline output's
-  `level_2_phylum_division_ko_counts.tsv`, kept as
-  `data/reference/example_A392013_008/level_2_phylum_division_ko_counts.tsv.gz` (not in git).
+  https://rest.kegg.jp/get/br:ko00001/json) and `data/results/model_fields/added_all_kos.csv`
+  (`scripts/added_fields_all_kos.py`, R28).
 - **Regenerate:** `python figures/make_ko_heatmap.py`
 
 ## Cruise line: temperature vs best model (P18)
@@ -206,6 +207,16 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   through several hues (pale yellow, green, blue, navy), because a single blue made
   0.4 and 0.8 hard to tell apart; `--cmap turbo` gives a rainbow version and `--cmap
   blue` the first one. Values at or below 0 take the lowest colour.
+- **Fourth block (2026-11-12), "Improved by adding an ocean-model field":** KOs where
+  adding one GLORYS / PISCES field or recent-history summary to 32 PCs + temperature
+  gains >= 0.05 R2, reaches R2 > 0.3, and is better in >= 10 of 13 held-out cruises (R28):
+  the 16 largest gains of 93 such KOs, leaving out KOs already shown. Rows are grouped by
+  the field. In this block the second column is 32 PCs + temperature + that field (not
+  temperature), and the right column gives baseline -> with the field (gain). The 16 are
+  8 phosphate (phoU +0.38, adeR +0.31, urtD, ureA, ureC, phoB, E3.1.3.70, vicR), 7 nitrate
+  (ureF +0.34, ureD, urtA, urtB, urtC, ureB, gpgS) and 1 salinity (ttuC +0.19). Random
+  inputs pass the same filter for 0 KOs. Rows: `data/results/ko_temperature_all_ostia_v2/ko_heatmap_field_rows.csv`
+  (kept apart from `ko_heatmap_rows.csv`, which other scripts use as the figure KOs).
 - **Regenerate:** `python figures/make_ko_heatmap.py --columns inputs`
 
 

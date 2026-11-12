@@ -55,6 +55,17 @@ OUT = ROOT / "figures" / "output"
 INK, MUTED, RULE, SURFACE = "#0b0b0b", "#52514e", "#d6d5d0", "#ffffff"
 GRANITE, TEMP = "#2a78d6", "#c0457e"
 N_GRANITE, N_SAME, N_TEMP = 28, 14, 12
+N_FIELD = 16
+ADDED = ROOT / "data" / "results" / "model_fields" / "added_all_kos.csv"  # scripts/added_fields_all_kos.py (R28)
+FIELD_NAMES = {
+    "phosphate": "+ phosphate (PISCES)", "nitrate": "+ nitrate (PISCES)", "salinity": "+ salinity (GLORYS)",
+    "mixed layer, 30-day max": "+ mixed layer, 30-day max", "mixed layer": "+ mixed layer (GLORYS)",
+    "chlorophyll": "+ chlorophyll (PISCES)", "oxygen": "+ oxygen (PISCES)", "silicate": "+ silicate (PISCES)",
+    "sea level": "+ sea level (GLORYS)", "wind, 14-day peak": "+ wind, 14-day peak", "wind, 14-day mean": "+ wind, 14-day mean",
+    "primary production": "+ primary production", "GLORYS temperature": "+ GLORYS temperature",
+    "SST change, 14 days": "+ SST change, 14 days", "sea-level gradient": "+ sea-level gradient",
+    "eddy kinetic energy, 30 days": "+ eddy kinetic energy", "current speed": "+ current speed",
+}  # fmt: skip
 MIN_R2 = 0.3  # the better input must exceed this for the 'clearly better' blocks
 R2_CMAP = LinearSegmentedColormap.from_list("r2", ["#f6f5f2", "#bdbab2", "#6d6a63", "#232220"])
 DIFF_CMAP = LinearSegmentedColormap.from_list("diff", [TEMP, "#f6f5f2", GRANITE])
@@ -123,11 +134,14 @@ def main() -> None:
 
     ko = categories()
     taxa = phylum_share(args.taxa) if args.taxa and args.taxa.exists() else pd.DataFrame(columns=["phylum", "share"])
-    ko = ko.join(taxa)
+    ko = ko.join(taxa)  # kept in ko_categories.csv; no longer drawn (one example metagenome, misleading after R22)
     scores = pd.read_csv(RESULTS / "ko_temperature.csv")
     for feature_set, learner, _ in INPUTS:
         ko[f"r2_{feature_set}"] = scores[(scores["feature_set"] == feature_set) & (scores["learner"] == learner)].set_index("ko")["r2_pooled"]
     ko.round(4).to_csv(RESULTS / "ko_categories.csv")
+    added = pd.read_csv(ADDED)
+    added = added[(added["tiles"] == added["tiles"].max()) & ~added["variable"].str.startswith("CONTROL")]
+    ko["best"] = added.drop_duplicates("ko").set_index("ko")["baseline"]  # 32 PCs + temperature spline (R28 baseline)
     blocks = [
         (f"Granite clearly better (R² > {MIN_R2:g})", ko[ko["category"] == "granite"].nlargest(N_GRANITE, "granite"), "granite"),
         ("Both high, about equal", ko[ko["category"] == "same"].assign(m=lambda d: d[["granite", "temp"]].mean(axis=1))
@@ -142,6 +156,19 @@ def main() -> None:
         block = block.sort_values(["group", "granite" if key != "temp" else "temp"], ascending=[True, False])
         rows.append((label, key, block))
     pd.concat([b.assign(block=k) for _, k, b in rows]).round(4).to_csv(RESULTS / "ko_heatmap_rows.csv")
+    if args.columns == "inputs":  # fourth block: KOs that an ocean-model field improves (R28)
+        shown = set(pd.concat([b for _, _, b in rows]).index)
+        hit = added[(added["gain"] >= 0.05) & (added["added"] >= MIN_R2) & (added["cruises_improved"] >= 10) & ~added["ko"].isin(shown)]
+        hit = hit.sort_values("gain", ascending=False).drop_duplicates("ko")
+        n_hits = len(hit)
+        hit = hit.head(N_FIELD).set_index("ko")
+        block = ko.loc[hit.index].assign(field_r2=hit["added"], field=hit["variable"], gain=hit["gain"], base=hit["baseline"])
+        order = list(dict.fromkeys(block.sort_values("gain", ascending=False)["field"]))
+        block["group"] = pd.Categorical(block["field"].map(FIELD_NAMES), [FIELD_NAMES[f] for f in order], ordered=True)
+        block = block.sort_values(["group", "gain"], ascending=[True, False])
+        block.round(4).to_csv(RESULTS / "ko_heatmap_field_rows.csv")
+        rows.append((f"Improved by adding an ocean-model field (R² > {MIN_R2:g})", "field", block))
+        counts["field"] = n_hits
 
     # Layout in inches: x positions of the columns, y = one unit per row.
     W = 7.5
@@ -156,9 +183,10 @@ def main() -> None:
         headers = [h for _, _, h in INPUTS]
     X_TAXON = X_CELLS[-1] + CELL + 0.08
     n_rows = sum(len(b) for _, _, b in rows)
-    gap = 2.4
-    total = n_rows + gap * len(rows)
-    row_h, head, foot = 0.155, 0.55, 1.3
+    gap, sub = 2.4, 2.2  # gap before a block; extra rows for the field block's own column headers
+    total = n_rows + gap * len(rows) + sub * any(k == "field" for _, k, _ in rows)
+    row_h, head = 0.155, 0.55
+    foot = 1.6 if args.columns == "inputs" else 1.3
     fig_h = total * row_h + head + foot
     fig = plt.figure(figsize=(W, fig_h))
     ax = fig.add_axes([0, foot / fig_h, 1, (total * row_h) / fig_h])
@@ -175,6 +203,11 @@ def main() -> None:
         ax.text(X_CELLS[-1] + CELL, y - 0.6, f"{len(block)} shown of {int(counts.get(key, 0)):,} KOs", ha="right",
                 va="bottom", fontsize=6.5, color=MUTED)  # fmt: skip
         ax.plot([X_GROUP, W - 0.1], [y - 0.1, y - 0.1], color=RULE, lw=0.5)
+        if key == "field":
+            for x, text in zip(X_CELLS, ["Granite\nembedding", "32 PCs + T\n+ the field", "Time &\nplace", "Raw\nsatellite"]):
+                ax.text(x + CELL / 2, y + sub - 0.25, text, ha="center", va="bottom", fontsize=6.5, color=INK, linespacing=1.1)
+            ax.text(X_TAXON, y + sub - 0.25, "32 PCs + T → + the field", ha="left", va="bottom", fontsize=6.5, color=INK)
+            y += sub
         for group, members in block.groupby("group", observed=True, sort=False):
             g0, g1 = y, y + len(members)
             ax.plot([X_BRACKET, X_BRACKET], [g0 + 0.18, g1 - 0.18], color=RULE, lw=1.2)
@@ -182,7 +215,7 @@ def main() -> None:
             ax.text(X_GROUP, (g0 + g1) / 2, text, ha="left", va="center", fontsize=6.5, color=MUTED, linespacing=1.1)
             for _, row in members.iterrows():
                 for x, (column, cmap, fmt) in zip(X_CELLS, columns):
-                    value = row[column]
+                    value = row["field_r2"] if key == "field" and column == "r2_temp" else row[column]
                     colour = cmap((diff_norm if column == "diff" else r2_norm)(value))
                     ax.add_patch(plt.Rectangle((x + 0.015, y + 0.07), CELL - 0.03, 0.86, color=colour, lw=0))
                     dark = (0.299 * colour[0] + 0.587 * colour[1] + 0.114 * colour[2]) < 0.55
@@ -190,17 +223,17 @@ def main() -> None:
                             color=SURFACE if dark else INK)  # fmt: skip
                 ax.text(X_LABEL, y + 0.5, rf"$\bf{{{row['gene']}}}$  {row['what']}", ha="right", va="center",
                         fontsize=6.5, color=INK)  # fmt: skip
-                if isinstance(row.get("phylum"), str):
-                    ax.text(X_TAXON, y + 0.5, f"{row['phylum']} {row['share']:.0%}", ha="left", va="center",
-                            fontsize=6.3, color=MUTED)  # fmt: skip
+                best = (f"{row['base']:.2f} → {row['field_r2']:.2f}  (+{row['gain']:.2f})" if key == "field"
+                        else f"{row['best']:.2f}" if pd.notna(row.get("best")) else "")  # fmt: skip
+                ax.text(X_TAXON, y + 0.5, best, ha="left", va="center", fontsize=6.3, color=MUTED)
                 y += 1
 
     for x, text in zip(X_CELLS, headers):
         ax.text(x + CELL / 2, 0.3, text, ha="center", va="bottom", fontsize=6.8, color=INK)
     ax.text(X_CELLS[0] + CELL if args.columns == "difference" else X_CELLS[0] + 2 * CELL, -1.7, "Pooled R², cruise held out", ha="center", va="bottom", fontsize=6.5, color=MUTED)
-    ax.text(X_TAXON, 0.3, "Main carrier, share of genes\n(one example metagenome)", ha="left", va="bottom", fontsize=7, color=INK)
+    ax.text(X_TAXON, 0.3, "Best model so far:\n32 PCs + temperature", ha="left", va="bottom", fontsize=6.8, color=INK)
 
-    key_y, key_h = 0.88 / fig_h, 0.09 / fig_h
+    key_y, key_h = (foot - 0.42) / fig_h, 0.09 / fig_h
     key_axes = [fig.add_axes([X_CELLS[0] / W, key_y, 0.85 / W, key_h])]
     key_axes[0].imshow(np.linspace(0, r2_max, 200)[None, :], aspect="auto", norm=r2_norm, extent=[0, r2_max, 0, 1],
                        cmap=R2_CMAP if args.columns == "difference" else INPUT_CMAPS[args.cmap])  # fmt: skip
@@ -227,7 +260,10 @@ def main() -> None:
     fig.text(X_GROUP / W, 0.10 / fig_h,
              "Best model so far: ridge regression on 32 principal components of the OSTIA-filled Granite embedding + in-situ "
              "temperature\n(median pooled R² 0.34 on the 20-KO benchmark and 0.12 over all 3,921 KOs, cruise held out; "
-             "RESULTS.md R12, R17).\nThe heatmap compares " + compared,
+             "RESULTS.md R12, R17, R28).\nThe heatmap compares " + compared
+             + ("\nLast block: KOs where adding one GLORYS / PISCES field (or a recent-history summary) to 32 PCs + temperature gains "
+                "≥ 0.05 R², reaches R² > 0.3\nand is better in ≥ 10 of 13 held-out cruises (R28); the second column is then "
+                "32 PCs + temperature + that field. Chance (random input): 0 KOs." if args.columns == "inputs" else ""),
              ha="left", va="bottom", fontsize=6.3, color=MUTED, linespacing=1.25)  # fmt: skip
     name = "ko_heatmap" if args.columns == "difference" else "ko_heatmap_inputs"
     if args.columns == "inputs" and args.cmap != "multihue":

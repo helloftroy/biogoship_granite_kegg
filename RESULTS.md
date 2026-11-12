@@ -1483,24 +1483,61 @@ cannot be tested this way. Results in `data/results/insitu/summary.csv`.
    the physical fields would add little for the biology targets here. The embedding
    already holds temperature, and salinity adds nothing for the KOs. The biogeochemical
    fields are too far from the measurements, except as a ranking for nutrient-specific
-   genes. Exception still to test: the history summaries below (R27), which a single
-   day's value cannot capture.
+   genes. The recent-history summaries (mixing, SST change, wind, fronts, eddies; R27)
+   add nothing either, although Granite does not carry them. So "physics-aware" inputs
+   from ocean models or reanalyses are not, on this evidence, a useful addition for
+   predicting these gene profiles from satellite data.
 
-## R27. Recent ocean history before sampling (pending: cluster job)
+## R27. Recent ocean history before sampling (2026-11-12)
 
 Question: do summaries of the days *before* sampling help where the sampling-day model
 values did not (R25)? Per sample (`scripts/extract_history_fields.py`,
-`cluster/history_fields.sbatch`, output `data/model_fields/sample_history_fields.csv`):
+`cluster/history_fields.sbatch`; output `data/model_fields/sample_history_fields.csv`,
+`provenance_history.json`):
 
-| Feature | Meaning | Source | Window | Area |
+| Feature | Meaning | Source (dataset used) | Window | Area |
 |---|---|---|---|---|
-| mld_max30 | mixing: maximum mixed-layer depth | GLORYS12 mlotst | 30 days up to sampling | +-0.125 deg mean |
-| sst_change14 | cooling / upwelling: SST on the day minus the 14-day mean before | OSTIA L4 (reprocessed, then NRT) | 14 days | +-0.125 deg |
-| wind_max14, wind_mean14 | storms: peak and mean wind speed | L4 hourly winds (multi-year, then NRT) | 14 days | +-0.125 deg |
-| ssh_gradient | fronts: mean sea-level gradient magnitude (m per 100 km) | GLORYS12 zos | sampling day | +-0.25 deg |
-| eke30 | eddies: mean 0.5 (u'^2 + v'^2) of geostrophic velocity anomalies | DUACS L4 altimetry | 30 days | +-0.25 deg |
+| mld_max30 | mixing: maximum mixed-layer depth | GLORYS12 mlotst (my, all 2,014) | 30 days up to sampling | +-0.125 deg mean |
+| sst_change14 | cooling / upwelling: SST on the day minus the 14-day mean before | OSTIA L4 reprocessed (all 2,014) | 14 days | +-0.125 deg |
+| wind_max14, wind_mean14 | storms: peak and mean wind speed | L4 hourly winds, multi-year (all 2,014) | 14 days | +-0.125 deg |
+| ssh_gradient | fronts: mean sea-level gradient magnitude (m per 100 km) | GLORYS12 zos (my, all 2,014) | sampling day | +-0.25 deg |
+| eke30 | eddies: mean 0.5 (u'^2 + v'^2) of geostrophic velocity anomalies (m2/s2) | DUACS L4: multi-year 1,851, NRT 163 (myint id does not exist) | 30 days | +-0.25 deg |
 
-Tested with fake datasets (dataset fallback by date, date-line boxes, 0-360 grids,
-hourly winds; the sea-level gradient matches the analytic value). Test when back:
-`python scripts/model_field_first.py --history` (each feature first, and added to 32 PCs
-+ temperature, figure KOs, one cruise held out; output `first_r2_history.csv`).
+Every sample has every feature. Values (median, IQR from the table): 30-day max mixed
+layer 37 m (now: 20 m; max 493 m); SST change +0.03 K (SD 0.47, max 2.7); 14-day peak
+wind 10.9 m/s (mean 6.4); sea-level gradient 0.063 m per 100 km (max 1.17); EKE 0.009
+m2/s2 (max 0.70).
+
+**With the current best model (figure KOs, 1,216 tiles, one cruise held out;
+`python scripts/model_field_first.py --history`, `data/results/model_fields/first_r2_history.csv`):**
+
+| Feature | First: median change | First: best KO | Added: median change | Added: best KO | KOs gaining >= 0.05 |
+|---|---:|---:|---:|---:|---:|
+| Mixed layer, 30-day max | -0.134 | +0.027 | -0.019 | +0.047 (thiY) | 0 |
+| SST change, 14 days | -0.012 | +0.030 | -0.002 | +0.015 (ispH) | 0 |
+| Wind, 14-day peak | -0.078 | -0.007 | -0.007 | +0.039 (lysA) | 0 |
+| Wind, 14-day mean | -0.085 | +0.010 | -0.015 | +0.007 | 0 |
+| Sea-level gradient | -0.028 | +0.032 | 0.000 | +0.030 (proA) | 0 |
+| Eddy kinetic energy, 30 days | -0.052 | +0.038 | -0.003 | +0.012 (enolase) | 0 |
+
+**Are they already in Granite?** No. Pooled R2 predicting each feature (one cruise held
+out, best learner; `data/results/model_fields/history_predictability/`):
+
+| Feature | Granite | 32 PCs + temperature | Raw satellite | Temperature | Time & place |
+|---|---:|---:|---:|---:|---:|
+| log mixed layer, 30-day max | 0.10 | 0.05 | 0.10 | 0.20 | 0.01 |
+| SST change, 14 days | -0.22 | -0.23 | -0.16 | -0.05 | -0.20 |
+| Wind, 14-day peak | 0.10 | 0.11 | 0.19 | 0.23 | -0.23 |
+| Wind, 14-day mean | 0.09 | 0.05 | 0.22 | 0.23 | -0.38 |
+| log sea-level gradient | 0.18 | 0.20 | 0.16 | 0.19 | 0.24 |
+| log EKE, 30 days | -0.07 | 0.03 | -0.01 | 0.03 | -0.03 |
+
+- **No history feature helps any figure KO.** No gain reaches +0.05, first or added.
+  The largest is +0.047 (30-day max mixed layer added, thiY). Putting one first costs
+  0.01 to 0.13 at the median.
+- **This is not because Granite already holds the information.** Granite predicts none
+  of these features well (R2 -0.22 to 0.18). They are new information, and they still
+  do not explain the KOs.
+- **Closes the ocean-model line (R24-R27).** Neither the sampling-day values nor the
+  recent physical history add to Granite + temperature for these KOs. The one
+  exception remains phosphate for the pst genes.

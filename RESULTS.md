@@ -1222,11 +1222,13 @@ come from one example metagenome (A392013_008, `level_4_order_ko_counts`):
 otherwise; counts summed over the two methods) into `data/targets/taxa/`
 (`taxa_long.csv.gz`, `<rank>_counts.tsv`, `libraries.csv`). `build_ko_targets.py`
 then makes CLR targets (`taxa_<rank>_clr.csv`, taxa in >= 90% of samples).
-First download: 150 libraries -> 137 surface samples on 7 cruises (AE1319 8,
-AMT28 37, C13.5/A13.5 7, HLY2202 41, I07N 17, I09N 6, P18 21); 81 phyla, 163 classes,
-254 orders, 285 families, 329 genera kept. Unclassified reads: median 19% (7-78%).
-That is about a tenth of the KO samples, so a taxonomy model waits for the rest.
+Full set (coverage_50 folder, 2026-11-11): abundance tables for 3,094 libraries ->
+2,011 surface samples on 16 cruises, covering all 2,007 KO samples. Taxa in >= 90% of
+samples: 75 phyla, 161 classes, 253 orders, 315 families, 429 genera. Unclassified
+reads: median 17% (IQR 12-23%). The earlier abundance tables were identical to the
+coverage_50 ones.
 KO-by-taxon tables (`level_2` phylum and `level_4` order `ko_counts`) are stashed per
 library in `data/targets/taxa/ko_by_taxon/` (gzipped; OG, Pfam and other levels dropped):
-612 libraries in the first batch (606 of them in the cov50 KO table), none overlapping
-the 149 with abundance tables. Coverage is in `data/targets/taxa/libraries.csv`.
+1,431 libraries so far. They are coverage_50: summed over taxa they reproduce
+`ko_counts_cov50_all.tsv` exactly (6 libraries checked). Coverage per library is in
+`data/targets/taxa/libraries.csv`.

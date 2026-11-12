@@ -1375,3 +1375,39 @@ on (fewer cruises, so noisier). Results in `data/results/model_fields/first_r2.c
   alkalinity for several Granite-block KOs (637 tiles). GLORYS temperature first helps
   four temperature-block KOs (TOP2, dgkA, NOP2, RRM2: +0.05 to +0.09).
 - Mixed layer, current speed, sea level, silicate and oxygen help no gene reliably.
+
+**Decision (2026-11-12):** R25 is a side note for the paper (one or two sentences, no
+figure). These variables are not used in later models. The phosphate-first model for
+the pst genes (R24) remains the only use of model fields, for global maps, with its
+caveat. A caution belongs with the anecdote: the model fields are themselves off from
+the measurements (PISCES phosphate about 8 times too low at the surface; within-cruise
+r 0.56 for phosphate, 0.33 for nitrate; chlorophyll r 0.57 on the one cruise with
+data). Part of why they add so little may be model error, not a lack of signal.
+
+## R26. Can Granite predict the in-situ measurements? Against GLORYS / PISCES (2026-11-12)
+
+`scripts/predict_insitu.py`: each in-situ variable as the target of
+`test_ko_temperature.py` (one cruise held out, pooled R2, best of ridge / spline / knn
+per input), and the GLORYS / PISCES value on the same tiles: as is, after a straight-line
+calibration fitted on the training cruises (one cruise held out), and r2 (the ceiling of
+any line). Nutrients on log10. In-situ chlorophyll comes from one cruise only, so it
+cannot be tested this way. Results in `data/results/insitu/summary.csv`.
+
+| Variable | Tiles | Cruises | Model as is | Model calibrated | Model r2 | Granite | 32 PCs + temperature | Raw satellite | Temperature | Time & place |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Temperature | 1,424 | 14 | 0.94 | 0.94 | 0.94 | 0.92 | - | 0.89 | - | 0.67 |
+| Salinity | 1,397 | 14 | 0.94 | 0.93 | 0.94 | 0.23 | 0.10 | 0.09 | 0.21 | 0.21 |
+| Phosphate | 492 | 13 | -0.47 | -0.04 | 0.40 | -0.24 | -0.09 | -0.03 | 0.03 | 0.28 |
+| Nitrate | 244 | 6 | 0.30 | 0.12 | 0.51 | 0.01 | 0.02 | -0.04 | 0.09 | 0.01 |
+
+- **Temperature:** Granite nearly matches GLORYS (0.92 vs 0.94). The OSTIA-filled tiles
+  carry SST.
+- **Salinity:** GLORYS by far (0.94 vs Granite 0.23).
+- **Phosphate:** nothing predicts it across cruises. PISCES ranks samples (r2 0.40) but
+  its offset differs between cruises, so even a calibrated line fails (-0.04). Position
+  and season do best (0.28). Granite fails (-0.24).
+- **Nitrate:** PISCES as is 0.30; Granite about 0 (6 cruises only).
+- So Granite does not beat the ocean models on what they model, except that it nearly
+  ties on temperature. Yet Granite predicts many KOs that these variables do not
+  (R25). It sees biology more than water properties. PISCES phosphate helps the pst
+  genes (R24) through its ranking, which the spline uses, not through its values.

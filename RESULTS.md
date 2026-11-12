@@ -1348,4 +1348,30 @@ PISCES surface phosphate is far lower than measured in oligotrophic water (media
 - pstC still fails on I07N (-2.1) and I09N 2025 (-2.5) with PISCES. Both are Indian
   Ocean cruises with little pstC variation of their own.
 
-Both inputs exist everywhere, so the pst genes can now be mapped globally.
+Both inputs exist everywhere, so the pst genes can now be mapped globally, with a
+caveat to state with any such map: **PISCES surface phosphate is too low** (median
+0.015 vs 0.12 umol/kg measured; r 0.70, 0.56 within a cruise), and with it the model
+recovers only about two thirds of the gain that measured phosphate gives.
+
+## R25. Each GLORYS / PISCES variable with the current best Granite model (2026-11-12)
+
+`scripts/model_field_first.py`: for each variable V, (a) V's spline first, then 32 PCs
++ temperature spline on the residuals, and (b) V's spline added to 32 PCs +
+temperature spline in one ridge; against 32 PCs + temperature on the same tiles, figure
+KOs, one cruise held out. Reanalysis variables on all 1,216 tiles; forecast-only ones
+(iron, phytoplankton carbon, pH, DIC, alkalinity, pCO2) on the 637 tiles from 2021-11
+on (fewer cruises, so noisier). Results in `data/results/model_fields/first_r2.csv`.
+
+- **Putting a variable first hurts almost everything** (median change -0.01 to -0.81),
+  because the first stage takes signal that the Granite PCs predict better. Adding it
+  to the model costs little (median -0.04 to 0.00, DIC -0.14).
+- **Phosphate is the only clear win:** pstC, pstS, pstA, pstB +0.20 to +0.30, first or
+  added (added: pstC 0.32 -> 0.62). Nitrate does the same at half the size (+0.09 to
+  +0.20), as it tracks phosphate.
+- **Salinity matches the measurements best but adds almost nothing** (median 0.00
+  added; pstB and pstC +0.11 to +0.12). Granite and temperature already carry it.
+- Small, gene-specific gains (added, +0.05 to +0.17): chlorophyll for the pst genes
+  and LACC1/udg; iron for citramalyl-CoA lyase (E4.1.3.25, +0.17 on 637 tiles);
+  alkalinity for several Granite-block KOs (637 tiles). GLORYS temperature first helps
+  four temperature-block KOs (TOP2, dgkA, NOP2, RRM2: +0.05 to +0.09).
+- Mixed layer, current speed, sea level, silicate and oxygen help no gene reliably.

@@ -1268,3 +1268,42 @@ Domain (CLR over Archaea, Bacteria, Eukaryota, Viruses): Bacteria 0.35 Granite v
   "both high", +0.19 for all KOs). The bacterial share is something Granite predicts
   (0.35) and temperature does not (0.05). So the KO split is mostly bacteria vs
   eukaryotes, not heterotrophs vs phototrophs.
+
+## R23. Unclassified reads: what drives them, are they predictable, do they explain R22? (2026-11-11)
+
+Unclassified = domain-level reads in "Unclassified", "Unclassified Archaea" and
+"Unclassified Bacteria" (coverage_50 abundance tables), per sample (libraries averaged).
+Targets in `data/targets/taxa/unclassified_targets.csv`; models as R22, results in
+`data/results/taxa_temperature/unclassified/`.
+
+- **Share per sample:** median 0.19 (IQR 0.15-0.25, max 0.89). By cruise from 0.11
+  (AE1319) and 0.12 (I09N 2016) to 0.26 (A16N) and 0.31 (HLY2202, Arctic).
+- **Environment:** higher in cold, high-latitude and eukaryote-rich water (Spearman
+  with temperature -0.55, |latitude| +0.46, eukaryote CLR +0.60, log Bacteria/Eukaryota
+  -0.63). Not related to library size (+0.02). Eukaryote-rich samples probably have
+  more reads without a reference.
+- **Batch:** on I09N between 2°S and 20°N (same water, about 30 °C both times) the
+  share is 0.11 in 2016 (instrument OBI_2631) and 0.19 in 2025 (OBI_3310). Bacteria CLR
+  is 0.4 lower in 2025 there; eukaryote CLR is the same. Median by instrument:
+  OBI_2131 0.13, OBI_2631 0.17, OBI_3310 0.21. Year and instrument cannot be separated.
+- **Granite does not see the batch.** Predicting the instrument (OBI_3310 vs older)
+  with the cruise held out: pooled R2 -0.47 from the embedding, -0.37 from temperature
+  (`data/results/taxa_temperature/instrument/`); the mean prediction per held-out cruise
+  is 0.27-0.70 whatever the true instrument.
+- **Predictability (pooled R2, best learner):**
+
+| Target | Temperature | Time & place | Raw satellite | Granite | PCs + temperature |
+|---|---:|---:|---:|---:|---:|
+| log(unclassified / classified) | 0.26 | -0.28 | 0.20 | 0.19 | 0.22 |
+| log(Bacteria / Eukaryota) | 0.52 | -0.43 | 0.59 | 0.56 | 0.57 |
+| same, unclassified share regressed out | 0.17 | -0.05 | 0.30 | 0.36 | 0.28 |
+| Bacteria CLR (4 domains) | 0.05 | 0.04 | 0.34 | 0.35 | 0.36 |
+| Eukaryota CLR | 0.60 | -0.23 | 0.56 | 0.51 | 0.54 |
+
+  The unclassified share explains 43% of the variance of log(Bacteria/Eukaryota).
+  It is only weakly predictable, and mostly by temperature.
+- **R22 holds up.** The bacteria/eukaryote balance is predicted about equally by
+  temperature and Granite (0.52 vs 0.56), because its eukaryote side follows
+  temperature. Once the unclassified share is regressed out, Granite leads clearly
+  (0.36 vs 0.17); the Bacteria CLR, Granite 0.35 vs 0.05. The Granite-better KOs still
+  track the adjusted ratio (median r +0.64; temperature-better -0.37).

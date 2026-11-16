@@ -19,9 +19,9 @@ Results that will change, and why:
   without loss and is proposed as the new standard. R1-R3, R5-R10 are on the
   pre-OSTIA embeddings.
 - **Ocean-model fields** (GLORYS12, PISCES; `cluster/model_fields.sbatch`): pending.
-- **External test sets** (R13-R15): manifests built, tiles and embeddings pending
-  (`cluster/external_tiles.sbatch`, `cluster/external_embed.sbatch`). JGI targets are
-  ready; Tara Pacific and EMO BON need KO annotation with our pipeline.
+- **External test sets** (R13-R15, R29): tiles and embeddings done for all three sets.
+  JGI tested (R29): absolute levels do not transfer, weak skill with the offset
+  removed. Tara Pacific and EMO BON need KO annotation with our pipeline.
 - **CatBoost on a KO shortlist**: R3 uses ridge and nearest-neighbour models only.
 - **Model choice** (R8): reductions, other learners and metadata tested on 20 KOs
   with the current embeddings; to be rerun on the SST variants.
@@ -1642,3 +1642,173 @@ the R24-R26 conclusions):**
 3. Adding any field to all genes lowers the median R2. The value is in per-function
    use, so a physics-aware model would need to learn which functions use which
    field.
+
+---
+
+## R29. External test on the JGI marine metagenomes (Flinkstrom et al. 2024) (2026-11-16)
+
+**Inputs.** Training: all Bio-GO-SHIP R17 units with tile SST (1,205 tiles, 13 cruises;
+E-orig-l4 + E-faire-l4). Test: JGI tiles from `cluster/external_tiles.sbatch` +
+`cluster/external_embed.sbatch` (jobs finished 2026-11-14; `data/external/jgi_flinkstrom/embeddings_sst_l4/`).
+Same tile rule as training (fixed position, closest tile with SST, OSTIA-filled,
+identical tiles merged): **90 of the 109 JGI samples got a tile, on 31 distinct tiles.**
+Targets: the 2,832 shared KOs, CLR over that set in both datasets (R15).
+
+| JGI group | Tiles | Tile SST, deg C | Dates |
+|---|---:|---|---|
+| Monterey Bay (one position) | 21 | 13.6-17.8 | 2016-09-26 to 11-16 |
+| North Sea | 4 | 8.3-11.9 | 2016-04-26 to 05-17 |
+| South Atlantic | 4 | 7.6-12.5 | 2018-06-01 to 2019-03-13 |
+| Marineland FL | 1 | 27.4 | 2016-08-14 |
+| Other (seawater/sediment study) | 1 | 25.8 | 2018-04-05 |
+
+Tile SST range: Bio-GO-SHIP -1.7 to 32.9 (median 23.9), JGI 7.6 to 27.4 (median 15.3),
+so JGI is inside the training range. Tile counts of the other sets (no KO tables yet):
+Tara Pacific 85 samples with a tile (31 open ocean I00, the rest over 27 island groups),
+EMO BON 295 samples (15 observatories).
+
+**Settings.** No external set has in-situ temperature, so "temperature" is the tile's
+own SST (SLSTR, or OSTIA where missing; Granite-normalised). Models, ridge with
+per-KO GCV penalty, trained on all Bio-GO-SHIP tiles: Bio-GO-SHIP mean (no input);
+granite (512-d embedding); pca32; sst (spline); pca32 + sst (R18 best model with tile
+SST for in-situ temperature); raw satellite (16 OLCI band means + SST, rank-normalised,
+spline); time+place (lat, sin/cos lon, sin/cos day of year). Metrics per KO on the JGI
+tiles: pooled R2 against the JGI mean; **shift R2**, the R2 after removing the mean
+error (one constant per KO fitted on JGI, which forgives a dataset offset and is
+slightly optimistic); Pearson r. **Chance**: the expected number of KOs with shift
+R2 >= 0.3 when the same predictions are given to permuted tiles (200 draws).
+
+**Cruise-held-out reference on the shared KOs.** Re-centring the CLR over 2,832 KOs
+lowers the CV skill: pca32 + in-situ temperature has 230 KOs with R2 >= 0.3 (median
+0.043). The R28 baseline on the same 2,832 KOs (CLR over all 3,921) has 292 (median
+0.082); per-KO r between the two = 0.92. The re-centring shift per sample has SD 0.12
+(median KO SD 0.53).
+
+| Model (CV, 1,205 tiles) | Median R2 | KOs R2 >= 0.3 |
+|---|---:|---:|
+| mean | -0.048 | 0 |
+| granite | 0.029 | 201 |
+| pca32 | 0.051 | 208 |
+| sst | -0.009 | 128 |
+| pca32 + sst | 0.038 | 203 |
+| pca32 + in-situ temperature | 0.043 | 230 |
+| raw satellite | -0.011 | 126 |
+| time+place | -0.142 | 2 |
+
+Using tile SST instead of in-situ temperature costs 27 KOs (230 to 203).
+
+**Dataset offset.** JGI mean minus Bio-GO-SHIP mean per KO (CLR): median +0.008,
+median absolute difference 0.450, more than 1 in 590 of 2,832 KOs. Within-dataset SD
+per KO: JGI median 0.351, Bio-GO-SHIP 0.479. **The offset is larger than the spread
+within JGI**, so plain R2 is strongly negative for every model, including the mean
+(median -1.66).
+
+**All 31 JGI tiles.** n = KOs in the stratum; "CV R2 >= 0.3" = KOs the best model
+predicts well on Bio-GO-SHIP; "heatmap granite" = the strict Granite-better category
+(84 of the 87 are shared).
+
+| Model | KOs | n | CV median R2 | JGI median R2 | median shift R2 | median r | KOs shift R2 >= 0.3 | chance |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| mean | all | 2,832 | -0.048 | -1.664 | 0 | 0 | 0 | 0 |
+| granite | all | 2,832 | 0.029 | -1.466 | -0.228 | 0.011 | 70 | 2.3 |
+| granite | CV >= 0.3 | 230 | 0.370 | -1.922 | -0.243 | 0.125 | 10 | 0.3 |
+| granite | heatmap granite | 84 | 0.244 | -1.116 | -0.055 | 0.022 | 1 | 0.02 |
+| pca32 | all | 2,832 | 0.051 | -1.397 | -0.146 | 0.058 | 139 | 1.2 |
+| pca32 | CV >= 0.3 | 230 | 0.362 | -2.122 | -0.179 | 0.230 | 24 | 0.2 |
+| pca32 | heatmap granite | 84 | 0.238 | -0.977 | 0.068 | 0.283 | 5 | 0.01 |
+| sst | all | 2,832 | -0.009 | -1.210 | -0.018 | 0.113 | 88 | 1.6 |
+| sst | CV >= 0.3 | 230 | 0.298 | -2.210 | -0.143 | 0.186 | 12 | 0.5 |
+| sst | heatmap granite | 84 | 0.130 | -1.138 | 0.034 | 0.243 | 4 | 0.04 |
+| pca32 + sst | all | 2,832 | 0.038 | -1.442 | -0.186 | 0.044 | 123 | 1.5 |
+| pca32 + sst | CV >= 0.3 | 230 | 0.367 | -1.937 | -0.207 | 0.223 | 23 | 0.4 |
+| pca32 + sst | heatmap granite | 84 | 0.231 | -0.861 | 0.059 | 0.266 | 4 | 0.01 |
+| raw satellite | all | 2,832 | -0.011 | -1.784 | -0.510 | 0.053 | 36 | 1.2 |
+| raw satellite | CV >= 0.3 | 230 | 0.303 | -2.246 | -0.683 | 0.090 | 6 | 0.2 |
+| time+place | all | 2,832 | -0.142 | -1.521 | -0.182 | -0.099 | 88 | 0.9 |
+| time+place | CV >= 0.3 | 230 | -0.189 | -2.618 | -0.438 | -0.153 | 4 | 0.07 |
+
+**Monterey Bay alone (21 tiles, one position, 7 weeks: change over time).**
+
+| Model | KOs | median shift R2 | median r | KOs shift R2 >= 0.3 | chance |
+|---|---|---:|---:|---:|---:|
+| granite | all | -0.354 | 0.006 | 14 | 7.4 |
+| pca32 | all | -0.221 | 0.029 | 31 | 7.6 |
+| pca32 | CV >= 0.3 | -0.231 | 0.027 | 4 | 0.5 |
+| sst | all | -0.056 | -0.036 | 0 | 2.8 |
+| pca32 + sst | all | -0.282 | 0.018 | 33 | 6.7 |
+| pca32 + sst | CV >= 0.3 | -0.364 | 0.011 | 4 | 0.4 |
+| raw satellite | all | -1.365 | 0.032 | 38 | 3.0 |
+| time+place | all | -0.016 | -0.030 | 63 | 1.6 |
+
+**The other 10 JGI tiles (North Sea, South Atlantic, Florida, one other: a spatial contrast).**
+
+| Model | KOs | median shift R2 | median r | KOs shift R2 >= 0.3 | chance |
+|---|---|---:|---:|---:|---:|
+| granite | all | -0.171 | 0.047 | 214 | 75.1 |
+| granite | CV >= 0.3 | -0.129 | 0.252 | 29 | 7.3 |
+| pca32 | all | -0.050 | 0.124 | 296 | 77.5 |
+| pca32 | CV >= 0.3 | 0.041 | 0.387 | 60 | 8.7 |
+| pca32 | heatmap granite | 0.065 | 0.291 | 9 | 1.0 |
+| sst | all | -0.016 | 0.152 | 275 | 70.0 |
+| sst | CV >= 0.3 | -0.168 | 0.289 | 38 | 9.3 |
+| pca32 + sst | all | -0.083 | 0.106 | 331 | 80.2 |
+| pca32 + sst | CV >= 0.3 | -0.043 | 0.383 | 59 | 8.3 |
+| pca32 + sst | heatmap granite | 0.066 | 0.305 | 8 | 1.1 |
+| raw satellite | all | -0.266 | 0.094 | 184 | 80.0 |
+| time+place | all | -0.160 | -0.074 | 131 | 54.5 |
+
+**KOs that transfer best** (pca32 + sst, among the 230 with CV R2 >= 0.3, ranked by
+shift R2 on all 31 tiles):
+
+| KO | Gene | Function | CV R2 | Shift R2 (all) | r (all) | Shift R2 (other 10) | r (Monterey) |
+|---|---|---|---:|---:|---:|---:|---:|
+| K01595 | ppc | phosphoenolpyruvate carboxylase | 0.30 | 0.59 | 0.77 | 0.33 | 0.17 |
+| K03147 | thiC | phosphomethylpyrimidine synthase | 0.42 | 0.53 | 0.73 | 0.46 | 0.50 |
+| K00005 | gldA | glycerol dehydrogenase | 0.40 | 0.53 | 0.80 | 0.45 | 0.15 |
+| K03154 | thiS | sulfur carrier protein | 0.26 | 0.51 | 0.73 | 0.56 | 0.35 |
+| K09920 | - | uncharacterized protein | 0.42 | 0.49 | 0.71 | 0.56 | 0.39 |
+| K05577 | ndhF | NAD(P)H-quinone oxidoreductase subunit 5 | 0.49 | 0.48 | 0.78 | 0.34 | 0.12 |
+| K00847 | E2.7.1.4 | fructokinase | 0.34 | 0.45 | 0.69 | 0.33 | 0.29 |
+| K04518 | pheA2 | prephenate dehydratase | 0.39 | 0.44 | 0.71 | 0.30 | -0.06 |
+| K03149 | thiG | thiazole synthase | 0.33 | 0.43 | 0.67 | 0.42 | 0.58 |
+| K04097 | HPGDS | prostaglandin-H2 D-isomerase / GST | 0.40 | 0.41 | 0.73 | 0.55 | -0.12 |
+| K07729 | - | putative transcriptional regulator | 0.36 | 0.39 | 0.63 | 0.62 | 0.14 |
+| K02441 | glpG | rhomboid protease GlpG | 0.32 | 0.38 | 0.74 | 0.55 | 0.12 |
+
+(The CV R2 column is the pca32 + sst model; the stratum was chosen on pca32 + in-situ
+temperature.) Three thiamine-synthesis genes (thiC, thiS, thiG) transfer, and thiG
+and thiC also follow the Monterey Bay time series (r 0.58, 0.50).
+
+**Conclusions.**
+1. **Absolute KO levels do not transfer.** The per-KO offset between JGI and
+   Bio-GO-SHIP (median |difference| 0.45 CLR) exceeds the spread within JGI (SD 0.35),
+   so every model, the mean included, has strongly negative R2. The offset is a
+   pipeline difference as much as biology (JGI IMG annotation, older KEGG release,
+   different assembly and gene counting; R13, R15), so a new dataset needs our KO
+   pipeline, or at least a per-KO calibration.
+2. **With the offset forgiven, transfer is weak but above chance.** On all 31 tiles,
+   pca32 gives 139 KOs with shift R2 >= 0.3 against 1.2 by chance (pca32 + sst 123
+   vs 1.5). Of the 230 KOs the model predicts well on Bio-GO-SHIP, 23-24 (10%)
+   transfer this way; their median r is 0.22-0.23.
+3. **No skill over time at one coastal site.** Monterey Bay (21 tiles over 7 weeks)
+   is 68% of the test, and no model tracks its changes: median r 0.01-0.03,
+   counts near chance. Bio-GO-SHIP trains on spatial contrast between open-ocean
+   tiles; this is a different kind of variation (coastal, short time scale).
+4. **Some spatial transfer across the 10 other tiles.** For KOs the model predicts
+   well, median r 0.38-0.39 (pca32, pca32 + sst) and 59-60 KOs at shift R2 >= 0.3
+   against 8-9 by chance. With 10 tiles in 3 regions this is thin evidence.
+5. **Tile SST alone transfers about as well as Granite** on JGI (all tiles: sst 88
+   KOs, pca32 + sst 123). This test cannot show Granite's advantage over
+   temperature.
+6. **JGI is a weak test set.** It has 31 tiles, mostly one coastal site, and a
+   different annotation pipeline. Tara Pacific (85 samples with tiles, 31 open
+   ocean, 27 island groups, 2016-2018) is much closer to Bio-GO-SHIP and is the
+   better external test, but it needs our KO pipeline run on the raw reads (R14,
+   R15). EMO BON (295 samples, coastal Europe) would test coastal transfer.
+
+**Files.** `data/results/external_jgi/`: `external_kos.csv` (KO x model: CV R2,
+R2, shift R2, r and chance probability for all / Monterey Bay / other JGI; JGI-minus-
+Bio-GO-SHIP mean in `bias` on the mean rows; heatmap category), `summary.csv`,
+`units.csv` (the 31 JGI tiles with tile SST in deg C).
+
+**Command.** `python scripts/external_test_jgi.py` (about 2 minutes).

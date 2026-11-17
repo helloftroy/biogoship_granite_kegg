@@ -1812,3 +1812,37 @@ Bio-GO-SHIP mean in `bias` on the mean rows; heatmap category), `summary.csv`,
 `units.csv` (the 31 JGI tiles with tile SST in deg C).
 
 **Command.** `python scripts/external_test_jgi.py` (about 2 minutes).
+
+---
+
+## R30. The Bio-GO-SHIP KO pipeline (biogoship/biogoship-metagenomics) (2026-11-17)
+
+Source: github.com/biogoship/biogoship-metagenomics, commit 402e528 (cloned read-only
+to `../biogoship-metagenomics`; not modified). It is a **read-mapping** pipeline, not
+per-sample assembly. This corrects the guesses in R15.
+
+Steps (`mapping_pipeline/Snakefile`, Snakemake 7):
+1. Trimmomatic 0.39 PE: `ILLUMINACLIP:adapters.fa:2:30:7 LEADING:2 TRAILING:2 SLIDINGWINDOW:4:2 MINLEN:50`;
+   only the paired reads are mapped.
+2. minimap2 2.28 `-ax sr` against a non-redundant nucleotide reference
+   (`biogoship_2026_database_v2`: mmseqs cluster representatives of several source
+   databases, e.g. OMDB v2 NR95; built with `clustering_pipeline/`), with a pre-built
+   `.mmi` index (`-I 32g` mapping memory; the README says indexing needed a 2,000 GB
+   bigmem node at WHOI).
+3. SAM header filtered to the sequences with hits, sorted BAM, `samtools coverage`.
+4. `count_biogoship_taxa.py`: reads per taxon at each rank, from a taxonomy table
+   (sequence, method, domain ... species).
+5. `count_biogoship_annotations.py`: per reference sequence, **numreads from
+   samtools coverage**, split 1/n over its n eggNOG-mapper KOs (column 12); also Pfam
+   (column 21) and the root OG (column 5). Lengths are the reference sequence lengths
+   summed. Output per rank: `level_<i>_<rank>_{ko,pfam,og}_counts.tsv`.
+
+So the counts are **mapped reads per KO** (not gene counts as R15 assumed), and
+**cov50 is `--coverage_threshold 50`**: only reference sequences with >= 50% of their
+bases covered (samtools coverage column 6) count. The Snakefile's default is 0
+("coverage0"). This fits the R15 observation that the kept share falls with gene
+length: a long reference needs more reads to reach 50% covered.
+
+Inputs needed to run it on other data (all at WHOI, `/proj/omics/alexander/...`):
+the reference fasta or its `.mmi` index, `biogoship_2026_taxonomy.tsv`,
+`biogoship_eggnogmapper.tsv`. None are in the repository.

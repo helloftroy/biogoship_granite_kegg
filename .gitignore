@@ -69,3 +69,8 @@ data/external/*/manifests/site_products.csv
 data/external/*/manifests/search_cache.jsonl
 data/external/*/manifests/biogoship_tile_manifest*.csv
 data/external/*/manifests/site_tile_status.csv
+
+# Raw reads and mapping references (cluster/download_reads.sbatch)
+data/external/*/reads/fastq/
+data/reference/omdb_v2/
+*.fastq.gz

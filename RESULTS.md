@@ -1846,3 +1846,56 @@ length: a long reference needs more reads to reach 50% covered.
 Inputs needed to run it on other data (all at WHOI, `/proj/omics/alexander/...`):
 the reference fasta or its `.mmi` index, `biogoship_2026_taxonomy.tsv`,
 `biogoship_eggnogmapper.tsv`. None are in the repository.
+
+---
+
+## R31. Raw reads for the external test sets; OMDB v2.0 as interim reference (2026-11-17)
+
+**Read lists** (`scripts/build_read_manifests.py`, run locally 2026-11-17 against the ENA
+portal API; `data/external/<set>/reads/runs.csv`, `unresolved.csv`). Samples: those kept
+in the manifests and with a Sentinel-3 tile.
+
+| Set | Samples with a tile | With reads | Runs | Size (fastq.gz) | Bases | Instruments | How found |
+|---|---:|---:|---:|---:|---:|---|---|
+| Tara Pacific | 85 | 84 | 84 | 1.74 TB | 3.57 Tbp | NovaSeq 6000 78, HiSeq 4000 6 | run accessions in samples.csv |
+| JGI Flinkstrom | 90 | 90 | 90 | 0.53 TB | 0.87 Tbp | HiSeq 2500 85, NovaSeq 6000 5 | ENA sample_title = JGI sample name |
+| EMO BON | 295 | 131 | 131 | 1.19 TB | 2.48 Tbp | NovaSeq 6000 131 | biosample accession |
+
+- All runs are paired, two files per run, one run per sample.
+- Tara Pacific: TARA_SAMEA6040045 (run ERR11733808, 52.6 Gbp) has no fastq on ENA
+  (strategy OTHER, no fastq_ftp); left out.
+- Tara Pacific runs are labelled library_strategy OTHER (source METAGENOMIC); the
+  filter keeps WGS or OTHER with a metagenomic source.
+- JGI: the IMG genome id is not on the SRA run, but the sample name is the ENA
+  sample_title (e.g. Helgoland_Spring_Bloom_20160426_1 -> SRR7058375, 36.3 Gbp). A
+  fallback via the NCBI BioSample carrying IMG_genome_ID (often a MAG record, which
+  names the read experiment) was not needed.
+- **EMO BON: 164 of 295 samples have no public reads.** They have no biosample
+  accession in the logsheets (160 from 2022, 4 from 2021), and none of their
+  observatory + date combinations appears among the 192 EMO BON water runs on ENA
+  (search sample_title "EMOBON_*", 2026-11-17). The 131 with reads are all 2021.
+  ENA titles look like `EMOBON_AAOT_Wa_210622_3um_1`.
+
+**Interim reference: OMDB v2.0 NR95** (Ocean Microbiomics Database, Sunagawa lab,
+CC BY 4.0; https://sunagawalab.ethz.ch/share/microbiomics/ocean/db/2.0/data/catalogs/).
+- `OMDBv2.0_NT_G_NR95.fna.gz` (27 GB; 103,044,829 genes, mmseqs clusters at 95%
+  identity, 90% coverage of the shorter, from 508.8 M redundant genes; the published
+  MD5 41c196d8... is of the uncompressed fasta). `OMDBv2.0_NT_G_NR95.cluster.tsv.gz`
+  (3.4 GB: CLUSTER, LENGTH, SIZE, REPRESENTATIVE, MEMBERS). `OMDBv2.0_data.tsv.gz`
+  (per genome: sample, study and file URLs).
+- **The Bio-GO-SHIP reference contains OMDB NR95 verbatim**: the first OMDB gene
+  (`OMDBv2.0_NT_G_NR95_000000000001`, 189 bp) is the example in their
+  `filter_sam_header.py` (`LN:189`). Their final database adds other sources
+  (eukaryotes among them) and re-clusters at 90% identity / 90% coverage
+  (`clustering_pipeline/`, mmseqs 16).
+- **No KO annotation and no taxonomy are published for the OMDB catalog** (none in
+  catalogs/, databases/ or genomes/). Representatives are named after their genome
+  (`<study>_<sample>_MAG_<n>-scaffold_<k>_<gene>`), so gene taxonomy can come from a
+  genome table. KOs need eggNOG-mapper run ourselves, or the Bio-GO-SHIP
+  `biogoship_eggnogmapper.tsv`, which should cover these ids.
+- OMDB is prokaryotic genomes only (MAGs, SAGs, isolates); our targets also hold
+  eukaryotic KOs. A test on OMDB-mapped external data must use Bio-GO-SHIP libraries
+  mapped the same way.
+
+**Download job:** `cluster/download_reads.sbatch` (service partition, 48 h, resumable,
+MD5 per file).

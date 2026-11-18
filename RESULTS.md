@@ -1908,3 +1908,71 @@ index built in larger parts, `-I 32G`; not needed), `biogoship_2026_taxonomy.tsv
 `cluster/download_reference.sbatch` (rclone). OMDB is no longer needed; the reads job
 skips it unless `OMDB=1`. The three files together are at least 74 GB (partial
 browser downloads stopped at 26.3, 24.5 and 22.8 GB).
+
+## R32. The Bio-GO-SHIP reference on Morrill; mapping jobs for the external reads (2026-11-18)
+
+**Reference downloaded** (`cluster/download_reference.sbatch`, job 88365, 2026-11-17,
+4 h 3 min, rclone from the team Drive folder, MD5 checked) to
+`data/reference/biogoship_2026/` on Morrill. The earlier estimate of "at least 74 GB"
+(R31) was the size of stopped browser downloads; the files are 605 GB.
+
+| File | Bytes | Drive date | Use |
+|---|---:|---|---|
+| `biogoship_2026_database_v2.mmi` | 470,496,221,205 | 2026-05-01 | minimap2 index (config.yaml `input_database`) |
+| `biogoship_2026_taxonomy.tsv` | 29,266,349,170 | 2026-06-24 | reference sequence -> method, domain ... species |
+| `biogoship_eggnogmapper.tsv` | 105,721,874,584 | 2026-06-30 | eggNOG-mapper annotations |
+
+Not downloaded (also in the folder): `biogoship_2026_database_v2.fasta` (212.0 GB),
+`biogoship_2026_database_v2.tsv` (29.5 GB), `biogoship_2026_database_v2_32G.mmi`
+(427.7 GB), and the first version (`biogoship_2026_database.{fasta,mmi,tsv}`, 2026-04-13).
+
+Headers, checked against their scripts:
+- Taxonomy: `transcript, classification_method, domain, phylum_division, class, order,
+  family, genus, species` (as `count_biogoship_*.py` expect). Sequence ids look like
+  `A16;unbinned;A16_177843044` (assembly; bin; gene). Methods seen: EUKulele.
+- eggNOG: the standard eggNOG-mapper columns, `#query` first. `KEGG_ko` is column 12 and
+  `PFAMs` column 21, the indices 11 and 20 their counting script reads; `eggNOG_OGs` is
+  column 5. KOs are written `ko:K03320`.
+
+**How the external reads are processed.** We do not run their Snakefile. Instead, we
+use the same commands and their scripts unchanged (copy at 402e528, read-only), from
+three jobs:
+- `setup_mapping_env.sbatch`: builds the tools at their versions (minimap2 2.28,
+  samtools 1.18, trimmomatic 0.39).
+- `map_reads.sbatch`: one array task per run. Steps, with their parameters:
+  1. trimmomatic PE with `ILLUMINACLIP:adapters.fa:2:30:7 LEADING:2 TRAILING:2
+     SLIDINGWINDOW:4:2 MINLEN:50`; unpaired survivors are dropped, as in theirs.
+  2. `minimap2 -I32g -ax sr v2.mmi --split-prefix`.
+  3. `filter_sam_header.py`.
+  4. samtools sort, then samtools coverage and flagstat.
+
+  Where it departs from theirs:
+  - Thread counts.
+  - The trimmed pairs are mapped in chunks of 50 M pairs and the chunk BAMs merged
+    before samtools coverage. Each chunk is a checkpoint, so runs larger than one 48 h
+    job can finish. minimap2 maps each pair on its own, so the chunking does not change
+    alignments.
+- `count_reads.sbatch`: runs `count_biogoship_annotations.py` and `count_biogoship_taxa.py`
+  at coverage threshold 0 and 50. Coverage 50 matches our Bio-GO-SHIP targets; coverage
+  0 is their default.
+
+**Why the training-table total equals their output.** The training table
+(`ko_counts_cov50_all.tsv`) is per library: the KO counts summed over taxa (R21).
+Their script counts only reference sequences that have a taxonomy row. The domain
+level (`level_1_domain_ko_counts`) summed over taxa gives the same total.
+
+**Size of the job** (base counts from ENA; trimming and mapping times still unknown):
+
+| Set | Runs | Median Gbp | Largest Gbp | Total Tbp |
+|---|---:|---:|---:|---:|
+| Tara Pacific | 84 | 39.7 | 95.6 | 3.57 |
+| JGI | 90 | 7.9 | 43.1 | 0.87 |
+| EMO BON | 131 | 18.7 | 26.3 | 2.48 |
+
+**Plan:**
+1. Run a pilot on the smallest run first. It gives the minimap2 time per index part
+   and the number of parts. The index is 470 GB, likely in ~8 G-base parts, and each
+   chunk reads it all once.
+2. Use the pilot to set the chunk size and memory, then run all 305.
+3. Collect cov50 KO tables per set in the layout of `ko_counts_cov50_all.tsv`, build CLR
+   targets, and redo the external test (R29) for Tara Pacific, JGI and EMO BON.

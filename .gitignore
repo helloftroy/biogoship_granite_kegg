@@ -75,3 +75,5 @@ data/external/*/reads/fastq/
 data/reference/omdb_v2/
 *.fastq.gz
 data/reference/biogoship_2026/
+data/external/*/mapping/
+data/external/*/ko_pipeline/

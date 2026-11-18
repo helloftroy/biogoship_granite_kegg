@@ -22,14 +22,14 @@
 #   2. On Morrill:
 #        export RCLONE_CONFIG=/scratch/morrill/users/$USER/.config/rclone/rclone.conf
 #        /scratch/morrill/users/$USER/bin/rclone config
-#      n (new remote) -> name: bgs_drive -> Storage: drive
+#      n (new remote) -> name: bgs_drives -> Storage: drive
 #      -> client_id: Enter (blank) -> client_secret: Enter (blank) -> scope: 2 (drive.readonly)
 #      -> service_account_file: Enter -> Edit advanced config: n -> Use web browser
 #      to authenticate: n. It prints `rclone authorize "drive" "..."`: run that on
 #      your Mac (brew install rclone), sign in, and paste the token it prints back into
 #      the Morrill prompt. -> Shared Drive: n -> Keep this remote: y -> q.
 #      (The Drive folder id is given by the job, not in the config.)
-#   3. Check:  /scratch/morrill/users/$USER/bin/rclone lsl bgs_drive: --drive-root-folder-id 1c4wPBOLKLz7ZIIccmnKc8Rfz08r7vJXB
+#   3. Check:  /scratch/morrill/users/$USER/bin/rclone lsl bgs_drives: --drive-root-folder-id 1c4wPBOLKLz7ZIIccmnKc8Rfz08r7vJXB
 #
 # Then:
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
@@ -55,7 +55,7 @@ if [ "${1:-}" = "--install" ] || [ ! -x "${RCLONE}" ]; then
 fi
 
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
-REMOTE="${REMOTE:-bgs_drive:}"
+REMOTE="${REMOTE:-bgs_drives:}"
 FILES="${FILES:-biogoship_2026_database_v2.mmi biogoship_2026_taxonomy.tsv biogoship_eggnogmapper.tsv}"
 DEST="${REPO_ROOT}/data/reference/biogoship_2026"
 mkdir -p "${DEST}"

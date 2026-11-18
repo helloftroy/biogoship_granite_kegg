@@ -74,3 +74,4 @@ data/external/*/manifests/site_tile_status.csv
 data/external/*/reads/fastq/
 data/reference/omdb_v2/
 *.fastq.gz
+data/reference/biogoship_2026/

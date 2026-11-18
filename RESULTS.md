@@ -1899,3 +1899,12 @@ CC BY 4.0; https://sunagawalab.ethz.ch/share/microbiomics/ocean/db/2.0/data/cata
 
 **Download job:** `cluster/download_reads.sbatch` (service partition, 48 h, resumable,
 MD5 per file).
+
+**Update 2026-11-17: the Bio-GO-SHIP reference itself is available** (team Google Drive
+folder 1c4wPBOLKLz7ZIIccmnKc8Rfz08r7vJXB): `biogoship_2026_database_v2.mmi` (the index
+config.yaml names), a `biogoship_2026_database_v2_32G.mmi` variant (probably the same
+index built in larger parts, `-I 32G`; not needed), `biogoship_2026_taxonomy.tsv`,
+`biogoship_eggnogmapper.tsv`. These go straight to Morrill with
+`cluster/download_reference.sbatch` (rclone). OMDB is no longer needed; the reads job
+skips it unless `OMDB=1`. The three files together are at least 74 GB (partial
+browser downloads stopped at 26.3, 24.5 and 22.8 GB).

@@ -9,7 +9,7 @@
 
 # Raw metagenome reads of the external test sets (RESULTS.md R31), from the lists that
 # scripts/build_read_manifests.py wrote (data/external/<set>/reads/runs.csv; ENA URLs,
-# sizes, MD5s), plus the OMDB v2.0 NR95 gene catalog as the interim mapping reference.
+# sizes, MD5s). With OMDB=1 also the OMDB v2.0 NR95 gene catalog (no longer needed).
 #
 #   set             samples  runs   size
 #   tara_pacific         84    84   1.74 TB
@@ -34,7 +34,7 @@ source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
 SETS="${SETS:-tara_pacific jgi_flinkstrom emo_bon}"
 SETS="${SETS//,/ }"
 PARALLEL="${PARALLEL:-4}"
-OMDB="${OMDB:-1}"
+OMDB="${OMDB:-0}"  # 1 = also fetch OMDB v2.0 NR95 (not needed now: the Bio-GO-SHIP reference is in cluster/download_reference.sbatch)
 DONE_LOG="${REPO_ROOT}/logs/download_reads_done.txt"
 FAIL_LOG="${REPO_ROOT}/logs/download_reads_failed.txt"
 touch "${DONE_LOG}"

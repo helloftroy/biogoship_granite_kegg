@@ -16,18 +16,20 @@
 # rclone checks each file's MD5 against Drive after the transfer. Finished files are
 # skipped when re-submitted.
 #
-# One-time setup (rclone needs your Google login; the token stays in
-# ~/.config/rclone/rclone.conf on Morrill):
-#   1. On Morrill:  bash cluster/download_reference.sbatch --install   (puts rclone in
-#      /scratch/morrill/users/$USER/bin)
-#   2. On Morrill:  /scratch/morrill/users/$USER/bin/rclone config
-#        n (new remote) -> name: bgs_drive -> storage: drive -> client_id/secret: blank
-#        -> scope: 2 (drive.readonly) -> root_folder_id: 1c4wPBOLKLz7ZIIccmnKc8Rfz08r7vJXB
-#        -> service_account_file: blank -> advanced: n -> auto config: n
-#      It prints a command `rclone authorize "drive" "..."`. Run that on your Mac
-#      (brew install rclone, or the zip from rclone.org), sign in in the browser,
-#      and paste the token it prints back into the Morrill prompt. Shared drive: n.
-#   3. Check:  /scratch/morrill/users/$USER/bin/rclone lsl bgs_drive:
+# One-time setup (rclone needs your Google login; the token is kept in
+# /scratch/morrill/users/$USER/.config/rclone/rclone.conf, not in $HOME, which is full):
+#   1. On Morrill:  bash cluster/download_reference.sbatch --install
+#   2. On Morrill:
+#        export RCLONE_CONFIG=/scratch/morrill/users/$USER/.config/rclone/rclone.conf
+#        /scratch/morrill/users/$USER/bin/rclone config
+#      n (new remote) -> name: bgs_drive -> Storage: drive
+#      -> client_id: Enter (blank) -> client_secret: Enter (blank) -> scope: 2 (drive.readonly)
+#      -> service_account_file: Enter -> Edit advanced config: n -> Use web browser
+#      to authenticate: n. It prints `rclone authorize "drive" "..."`: run that on
+#      your Mac (brew install rclone), sign in, and paste the token it prints back into
+#      the Morrill prompt. -> Shared Drive: n -> Keep this remote: y -> q.
+#      (The Drive folder id is given by the job, not in the config.)
+#   3. Check:  /scratch/morrill/users/$USER/bin/rclone lsl bgs_drive: --drive-root-folder-id 1c4wPBOLKLz7ZIIccmnKc8Rfz08r7vJXB
 #
 # Then:
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
@@ -36,6 +38,10 @@
 
 set -euo pipefail
 BIN="/scratch/morrill/users/${USER}/bin"
+# $HOME is at quota on Morrill: keep the rclone config (and its token) on scratch
+export RCLONE_CONFIG="${RCLONE_CONFIG:-/scratch/morrill/users/${USER}/.config/rclone/rclone.conf}"
+mkdir -p "$(dirname "${RCLONE_CONFIG}")"
+DRIVE_FOLDER="${DRIVE_FOLDER:-1c4wPBOLKLz7ZIIccmnKc8Rfz08r7vJXB}"
 RCLONE="${BIN}/rclone"
 if [ "${1:-}" = "--install" ] || [ ! -x "${RCLONE}" ]; then
   mkdir -p "${BIN}"
@@ -57,11 +63,11 @@ mkdir -p "${DEST}"
 echo "Job started: $(date)"
 df -h "${REPO_ROOT}" | tail -1
 echo "Files in ${REMOTE} (size, date, name):"
-"${RCLONE}" lsl "${REMOTE}" --max-depth 2 | sort -k4 || true
+"${RCLONE}" lsl "${REMOTE}" --drive-root-folder-id "${DRIVE_FOLDER}" --max-depth 2 | sort -k4 || true
 
 includes=()
 for f in ${FILES}; do includes+=(--include "${f}" --include "${f}.gz"); done
-"${RCLONE}" copy "${REMOTE}" "${DEST}" "${includes[@]}" --max-depth 2 \
+"${RCLONE}" copy "${REMOTE}" "${DEST}" "${includes[@]}" --drive-root-folder-id "${DRIVE_FOLDER}" --max-depth 2 \
   --transfers 3 --checkers 4 --drive-chunk-size 128M --retries 10 --low-level-retries 20 \
   --stats 10m --stats-one-line -v
 

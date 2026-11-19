@@ -1976,3 +1976,186 @@ level (`level_1_domain_ko_counts`) summed over taxa gives the same total.
 2. Use the pilot to set the chunk size and memory, then run all 305.
 3. Collect cov50 KO tables per set in the layout of `ko_counts_cov50_all.tsv`, build CLR
    targets, and redo the external test (R29) for Tara Pacific, JGI and EMO BON.
+
+
+## R33. What the satellite misses: shared structure in the residuals (2026-11-19)
+
+**Question.** After the best Granite model, is what remains unexplained structured?
+If KOs share residual axes, those axes are functional signals that no surface input
+captures. They could reflect subsurface drivers or batch effects.
+
+**Method** (`scripts/residual_modules.py`; outputs in `data/results/residual_modules/`):
+- **Baseline.** 32 Granite PCs plus an in-situ temperature spline, ridge regression,
+  one cruise held out (the R18/R28 model). It is fitted on all 3,921 target KOs, over
+  1,216 tiles from 13 cruises; median KO R2 is 0.103. Residual = observed CLR minus the
+  cross-validated prediction.
+- **PCA of the residuals.** Each KO's residuals are standardised. It is run on the full
+  residuals (components F1, F2, …) and on the within-cruise residuals, with cruise
+  means removed (W1, W2, …).
+- **Why not NMF.** The residuals are signed, and both poles of an axis matter.
+- **Which components are real.** The usual null is a PCA of residuals with each KO
+  shuffled on its own. All 30 components tested beat it (null PC1 = 0.2% of the
+  variance), so it doesn't separate anything. The test used instead is split-half
+  reproducibility: the cruises are split into two halves at random (20 splits), and the
+  PCA is run in each half. The component's best matches in the two halves are compared
+  by loading congruence; 0.85 or more counts as the same component.
+- **Description of each component:**
+  - **Cruise eta2:** share of the component's score variance that lies between cruises.
+  - **Spearman correlation with each candidate driver:** across all tiles, and within
+    cruise (ranks centred per cruise). Also the number of cruises in which the
+    within-cruise sign holds.
+  - **Cross-validated R2 from groups of drivers.** Linear ridge, one cruise held out;
+    for the W components the drivers are centred per cruise too. The groups:
+    - sequencing: log total counts, libraries, instrument, 2021 or later
+    - sampling: year, season, local solar hour, latitude, longitude, depth
+    - GLORYS plus the history fields (R25, R27)
+    - PISCES, on the 637 forecast-period tiles only
+    - taxa: domain and phylum CLRs plus the unclassified logit. Taxa come from the same
+      reads, so they show which organisms carry a component, not what drives it.
+  - **KEGG:** the KOs with the largest loadings, and the pathways (BRITE level C) whose
+    mean loading departs most from the rest (z).
+
+**Residual variance.** 83.7% of the KO CLR variance is left after the baseline.
+- 20.1% of it lies between cruises: per-cruise offsets, which a model with the cruise
+  held out cannot learn.
+- 79.9% lies within cruises.
+
+**Components** (share = of the standardised residual variance):
+
+| Component | Share of residual variance | Split-half congruence | Splits >= 0.85 | Cruise eta2 | CV R2: sequencing | CV R2: sampling | CV R2: GLORYS+history | CV R2: all environment | CV R2: taxa (carriers) | CV R2: GLORYS+history (PISCES tiles) | CV R2: + PISCES (PISCES tiles) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| F1 | 19.4% | 0.90 | 85% | 0.36 | -0.02 | +0.03 | -0.37 | -0.16 | +0.56 | -0.14 | -0.33 |
+| F2 | 9.9% | 0.77 | 10% | 0.24 | +0.10 | -0.18 | -0.27 | -0.07 | +0.10 | -0.44 | -0.09 |
+| F3 | 6.8% | 0.65 | 0% | 0.50 | +0.32 | +0.05 | -0.38 | +0.10 | +0.10 | -0.17 | -0.41 |
+| F4 | 5.1% | 0.58 | 0% | 0.47 | -0.35 | -0.88 | -0.86 | -0.67 | -0.62 | -0.36 | -0.28 |
+| F5 | 4.7% | 0.54 | 0% | 0.19 | +0.08 | -0.11 | -0.19 | -0.14 | +0.42 | -0.43 | -0.63 |
+| F6 | 3.0% | 0.42 | 0% | 0.48 | -0.10 | -0.42 | -0.61 | -0.37 | +0.14 | +0.06 | -0.05 |
+| F7 | 2.7% | 0.37 | 0% | 0.16 | +0.13 | -0.25 | -0.19 | -0.08 | -0.17 | -0.36 | -0.42 |
+| F8 | 2.1% | 0.31 | 0% | 0.25 | -0.07 | -0.38 | -0.46 | -0.86 | +0.01 | -0.35 | -0.72 |
+| F9 | 1.8% | 0.25 | 0% | 0.37 | -0.30 | -0.40 | -0.19 | -0.32 | -0.19 | -0.34 | -0.43 |
+| F10 | 1.6% | 0.30 | 0% | 0.33 | -0.17 | -0.51 | -0.33 | -1.53 | +0.04 | -0.69 | -0.72 |
+| W1 | 17.2% | 0.95 | 100% | 0.00 | +0.00 | -0.06 | -0.05 | -0.04 | +0.46 | +0.03 | +0.01 |
+| W2 | 9.8% | 0.83 | 25% | 0.00 | +0.00 | -0.14 | -0.06 | -0.06 | +0.52 | -0.37 | -0.42 |
+| W3 | 5.8% | 0.66 | 5% | 0.00 | +0.28 | -0.02 | +0.01 | +0.18 | +0.40 | -0.03 | -0.10 |
+| W4 | 4.7% | 0.56 | 0% | 0.00 | +0.00 | -0.10 | -0.08 | -0.25 | +0.49 | -0.19 | -0.29 |
+| W5 | 3.3% | 0.41 | 0% | 0.00 | +0.21 | -0.01 | -0.13 | +0.14 | +0.28 | -0.22 | -0.35 |
+| W6 | 2.6% | 0.37 | 0% | 0.00 | +0.01 | -0.04 | -0.01 | -0.16 | -0.09 | -0.26 | -0.26 |
+| W7 | 2.0% | 0.23 | 0% | 0.00 | -0.01 | -0.13 | -0.18 | +0.03 | -0.32 | +0.02 | +0.08 |
+| W8 | 1.9% | 0.33 | 0% | 0.00 | +0.04 | -0.28 | -0.26 | -0.45 | +0.01 | -0.04 | -0.21 |
+| W9 | 1.6% | 0.27 | 0% | 0.00 | +0.01 | -0.05 | -0.09 | -0.20 | +0.08 | -0.07 | -0.26 |
+| W10 | 1.5% | 0.17 | 0% | 0.00 | -0.00 | -0.13 | -0.23 | -0.40 | +0.01 | -0.34 | -0.40 |
+
+**Driver correlations** for the stable and near-stable components. Each cell shows the
+all-tile r, then the within-cruise r, then in how many cruises the within-cruise sign
+holds. "—" means the variable is constant within cruises. All driver correlations are
+in `drivers.csv`.
+
+| Driver (n tiles) | F1 | F2 | F3 | F5 | W1 | W2 | W3 | W4 |
+|---|---|---|---|---|---|---|---|---|
+| taxa: Bacteria (CLR) (1216) | +0.53 / +0.45 (13/13) | -0.10 / +0.08 (8/13) | -0.15 / -0.33 (11/13) | +0.04 / +0.20 (7/13) | +0.39 / +0.46 (13/13) | +0.00 / +0.01 (6/13) | -0.20 / -0.22 (10/13) | +0.20 / +0.28 (10/13) |
+| taxa: Eukaryota (CLR) (1216) | -0.30 / -0.15 (9/13) | -0.03 / -0.15 (9/13) | -0.10 / +0.09 (10/13) | +0.48 / +0.47 (11/13) | -0.11 / -0.14 (9/13) | -0.10 / -0.15 (8/13) | +0.21 / +0.24 (10/13) | +0.32 / +0.40 (9/13) |
+| taxa: Archaea (CLR) (1216) | -0.13 / -0.27 (13/13) | -0.11 / -0.03 (9/13) | +0.40 / +0.27 (10/13) | -0.54 / -0.51 (13/13) | -0.24 / -0.30 (13/13) | +0.01 / +0.02 (6/13) | +0.01 / +0.03 (8/13) | -0.45 / -0.57 (13/13) |
+| taxa: unclassified (logit) (1216) | -0.23 / -0.21 (11/13) | +0.12 / +0.05 (7/13) | -0.23 / +0.05 (6/13) | +0.29 / +0.18 (8/13) | -0.15 / -0.19 (10/13) | +0.06 / +0.07 (8/13) | +0.10 / +0.11 (10/13) | +0.16 / +0.19 (9/13) |
+| sequencing: log total counts (1216) | -0.15 / -0.07 (7/13) | -0.37 / -0.17 (9/13) | -0.59 / -0.45 (12/13) | -0.23 / -0.31 (13/13) | -0.06 / -0.09 (7/13) | -0.06 / -0.08 (6/13) | -0.30 / -0.47 (12/13) | -0.02 / -0.07 (9/13) |
+| sequencing: instrument 3310 (1216) | -0.41 / — | +0.02 / — | -0.46 / — | +0.31 / — | +0.04 / — | +0.02 / — | +0.03 / — | +0.05 / — |
+| sampling: year (1216) | -0.44 / -0.06 (7/13) | +0.08 / -0.19 (6/13) | -0.47 / -0.00 (5/13) | +0.32 / +0.11 (4/13) | +0.02 / -0.06 (7/13) | -0.00 / -0.17 (6/13) | +0.05 / +0.03 (10/13) | +0.04 / +0.13 (5/13) |
+| sampling: depth (m) (1216) | +0.28 / +0.00 (4/6) | -0.03 / -0.04 (4/6) | +0.34 / -0.04 (5/6) | -0.23 / -0.06 (6/6) | -0.01 / +0.01 (4/6) | -0.03 / -0.03 (3/6) | -0.06 / -0.11 (5/6) | -0.07 / -0.03 (5/6) |
+| sampling: solar hour (cos, noon +) (1216) | -0.03 / -0.04 (8/13) | -0.09 / -0.08 (11/13) | +0.02 / +0.08 (11/13) | -0.02 / -0.06 (10/13) | -0.05 / -0.06 (10/13) | -0.07 / -0.07 (11/13) | +0.02 / +0.01 (7/13) | -0.09 / -0.07 (11/13) |
+| sampling: solar hour (sin, morning +) (1216) | -0.07 / -0.08 (10/13) | -0.03 / -0.00 (8/13) | -0.06 / -0.00 (6/13) | -0.05 / -0.02 (6/13) | -0.07 / -0.07 (10/13) | +0.02 / +0.02 (5/13) | -0.03 / -0.03 (9/13) | +0.01 / +0.00 (7/13) |
+| sampling: season (cos, local summer +) (1216) | +0.13 / -0.06 (7/13) | -0.14 / +0.03 (6/13) | -0.23 / -0.08 (6/13) | -0.07 / +0.05 (4/13) | -0.01 / -0.02 (7/13) | +0.03 / +0.04 (6/13) | -0.03 / -0.02 (7/13) | +0.09 / +0.12 (7/13) |
+| sampling: |latitude| (1216) | -0.08 / +0.09 (5/13) | -0.04 / -0.18 (10/13) | -0.00 / +0.18 (11/13) | +0.14 / -0.01 (8/13) | +0.05 / +0.08 (5/13) | -0.14 / -0.19 (10/13) | +0.12 / +0.12 (10/13) | -0.09 / -0.13 (9/13) |
+| in situ: temperature (526) | -0.22 / -0.33 (4/5) | +0.17 / +0.12 (3/5) | +0.13 / -0.22 (4/5) | -0.18 / -0.19 (3/5) | -0.23 / -0.33 (4/5) | +0.15 / +0.19 (3/5) | -0.19 / -0.21 (4/5) | +0.03 / -0.01 (3/5) |
+| in situ: log phosphate (266) | -0.05 / -0.06 (3/4) | -0.26 / +0.01 (2/4) | -0.15 / -0.01 (2/4) | +0.22 / -0.06 (2/4) | -0.10 / -0.05 (3/4) | +0.02 / +0.01 (2/4) | -0.05 / -0.03 (3/4) | -0.02 / -0.03 (2/4) |
+| in situ: log nitrate+nitrite (176) | -0.04 / -0.05 (2/4) | -0.33 / -0.13 (2/4) | -0.13 / +0.05 (2/4) | +0.09 / -0.07 (2/4) | -0.10 / -0.06 (2/4) | -0.09 / -0.11 (2/4) | -0.20 / -0.18 (3/4) | -0.03 / -0.04 (2/4) |
+| in situ (CCHDO): oxygen (296) | +0.16 / +0.20 (3/4) | -0.26 / -0.14 (2/4) | -0.05 / +0.38 (3/4) | +0.04 / +0.08 (1/4) | +0.14 / +0.19 (3/4) | -0.18 / -0.21 (2/4) | +0.25 / +0.31 (3/4) | -0.19 / -0.23 (2/4) |
+| model: mixed layer (1216) | -0.13 / -0.08 (9/13) | +0.19 / +0.02 (5/13) | +0.31 / +0.16 (11/13) | -0.08 / -0.14 (11/13) | -0.08 / -0.10 (10/13) | +0.01 / +0.02 (5/13) | +0.06 / +0.06 (8/13) | -0.17 / -0.19 (11/13) |
+| model: mixed layer, 30-day max (1216) | -0.22 / -0.04 (8/13) | +0.16 / -0.11 (8/13) | +0.25 / +0.23 (9/13) | +0.12 / +0.02 (4/13) | -0.03 / -0.04 (7/13) | -0.08 / -0.12 (7/13) | +0.10 / +0.13 (8/13) | -0.06 / -0.06 (8/13) |
+| model: chlorophyll (1216) | -0.21 / -0.08 (8/13) | +0.02 / -0.07 (8/13) | +0.09 / +0.01 (7/13) | +0.06 / -0.03 (10/13) | -0.07 / -0.07 (9/13) | -0.02 / -0.03 (7/13) | -0.03 / -0.06 (10/13) | +0.04 / +0.05 (6/13) |
+| model: primary production (1216) | -0.21 / -0.07 (7/13) | +0.01 / -0.03 (9/13) | +0.09 / -0.03 (7/13) | +0.00 / -0.07 (7/13) | -0.06 / -0.05 (9/13) | +0.01 / +0.01 (6/13) | -0.09 / -0.11 (9/13) | +0.04 / +0.04 (5/13) |
+| model: nitrate (1216) | -0.17 / +0.01 (5/13) | -0.02 / -0.13 (7/13) | +0.03 / +0.06 (7/13) | +0.10 / -0.06 (8/13) | -0.01 / +0.00 (4/13) | -0.08 / -0.12 (7/13) | -0.04 / -0.05 (8/13) | -0.01 / -0.03 (7/13) |
+| model: iron (637) | +0.22 / -0.05 (4/7) | +0.10 / +0.08 (6/7) | -0.32 / -0.09 (4/7) | +0.02 / +0.00 (2/7) | -0.06 / -0.06 (4/7) | +0.07 / +0.10 (6/7) | +0.05 / +0.08 (4/7) | +0.01 / +0.01 (3/7) |
+| model: wind, 14-day mean (1216) | -0.21 / -0.12 (9/13) | +0.04 / -0.14 (10/13) | +0.19 / +0.26 (11/13) | -0.00 / -0.08 (9/13) | -0.12 / -0.13 (10/13) | -0.11 / -0.13 (10/13) | +0.14 / +0.15 (11/13) | -0.14 / -0.16 (10/13) |
+| model: eddy kinetic energy, 30 days (1216) | -0.02 / +0.08 (8/13) | -0.18 / -0.10 (6/13) | +0.11 / -0.05 (8/13) | -0.04 / +0.03 (5/13) | +0.06 / +0.07 (8/13) | -0.09 / -0.10 (6/13) | -0.03 / -0.04 (9/13) | +0.04 / +0.04 (6/13) |
+
+**What the components are** (BRITE C pathways by z; the KOs with the largest loadings):
+
+- **F1** + pathways: ABC transporters (+5.7); Quorum sensing (+5.6); Glycine, serine and threonine metabolism (+4.9) | − pathways: Motor proteins (-9.3); Calcium signaling pathway (-7.1); Autophagy - animal (-7.0)
+  + KOs: K07258 dacC, dacA, dacD (+0.89); K02897 RP-L25, rplY (+0.88); K07090 K07090 (+0.88); K00605 gcvT, AMT (+0.88); K00674 dapD (+0.88) | − KOs: K10357 MYO5 (-0.74); K02183 CALM (-0.74); K14572 MDN1, REA1 (-0.73); K11654 SMARCA5, SNF2H, ISWI (-0.73); K21867 AKT, KAT, GORK, SKOR (-0.72)
+- **F2** + pathways: Photosynthesis (+12.5); Ribosome (+9.4); Porphyrin metabolism (+7.9) | − pathways: Flagellar assembly (-6.8); Benzoate degradation (-4.5); Butanoate metabolism (-4.4)
+  + KOs: K01737 queD, ptpS, PTS (+0.91); K10206 E2.6.1.83 (+0.89); K03789 rimI (+0.89); K01739 metB (+0.88); K05895 cobK-cbiJ (+0.88) | − KOs: K03092 rpoN (-0.50); K02396 flgK (-0.49); K03572 mutL (-0.49); K03694 clpA (-0.49); K02407 fliD (-0.48)
+- **F3** + pathways: Ribosome (+11.0); Oxidative phosphorylation (+7.3); Ribosome biogenesis in eukaryotes (+3.7) | − pathways: Flagellar assembly (-8.0); Porphyrin metabolism (-5.6); Homologous recombination (-5.4)
+  + KOs: K02907 RP-L30, MRPL30, rpmD (+0.78); K09699 DBT, bkdB (+0.72); K08681 pdxT, pdx2 (+0.70); K00340 nuoK (+0.70); K06215 pdxS, pdx1 (+0.70) | − KOs: K03631 recN (-0.75); K03695 clpB (-0.74); K00748 lpxB (-0.68); K03555 mutS (-0.67); K06158 ABCF3 (-0.67)
+- **F4** + pathways: Motor proteins (+5.0); Calcium signaling pathway (+4.6); cGMP-PKG signaling pathway (+4.2) | − pathways: Bacterial chemotaxis (-5.4); Biofilm formation - Vibrio cholerae (-5.0); Bacterial secretion system (-3.5)
+  + KOs: K04566 lysK (+0.58); K04782 pchB (+0.55); K01477 alc, ALLC (+0.54); K22073 IBA57 (+0.53); K16846 suyB (+0.52) | − KOs: K07004 K07004 (-0.68); K03615 rnfC (-0.65); K03412 cheB (-0.64); K09781 K09781 (-0.63); K07787 cusA, silA (-0.63)
+- **F5** + pathways: Motor proteins (+7.8); cGMP-PKG signaling pathway (+5.6); Calcium signaling pathway (+5.6) | − pathways: RNA polymerase (-3.7); Ribosome biogenesis in eukaryotes (-3.2); Valine, leucine and isoleucine degradation (-3.0)
+  + KOs: K11412 SIRT2, SIR2L2 (+0.59); K08296 sixA (+0.56); K00472 P4HA (+0.56); K10901 BLM, RECQL3, SGS1 (+0.53); K00476 ASPH (+0.52) | − KOs: K02319 pol (-0.69); K02322 polC (-0.68); K17734 aprX (-0.67); K02118 ATPVB, ntpB, atpB (-0.67); K10725 cdc6A (-0.67)
+- **W2** + pathways: Photosynthesis (+12.8); Porphyrin metabolism (+8.8); Ribosome (+7.5) | − pathways: Flagellar assembly (-5.2); Butanoate metabolism (-5.1); Valine, leucine and isoleucine degradation (-4.2)
+  + KOs: K01739 metB (+0.91); K01737 queD, ptpS, PTS (+0.88); K10206 E2.6.1.83 (+0.86); K00507 SCD, desC (+0.85); K03087 rpoS (+0.84) | − KOs: K00856 ADK, adoK (-0.50); K00626 ACAT, atoB (-0.48); K01006 ppdK (-0.48); K00525 E1.17.4.1A, nrdA, nrdE (-0.48); K01907 AACS, acsA (-0.46)
+
+**Conclusions**
+1. **Two residual axes are robust and one more is near-robust.** Beyond them, the
+   components rotate between halves of the data (congruence ≤ 0.58 from F4 and W4 on).
+   They account for about 36% of the standardised residual variance; the remaining
+   ~64% is not stable shared structure.
+2. **Axis 1 (F1 / W1; 19% / 17%; congruence 0.90 / 0.95): bacterial versus eukaryotic
+   share.**
+   - The + pole is core bacterial genes: dacA, rplY, gcvT, dapD and leuA, with
+     loadings around +0.88. They are enriched in ABC transporters and amino acid
+     metabolism.
+   - The − pole is eukaryotic genes: myosin, calmodulin, chromatin remodellers,
+     autophagy.
+   - It follows Bacteria CLR within every cruise (13 of 13). Taxa predict it (CV R2
+     0.56 / 0.46); no environmental group does (all ≤ 0.03).
+   - Part of it is cruise-level (eta2 0.36). Across cruises it lines up with the
+     sequencing instrument (r −0.41) and year (−0.44), which fits a protocol batch:
+     filter size or extraction.
+   - Within cruise it falls with in-situ temperature (r −0.33, 4 of 5 cruises),
+     although temperature is in the model: the temperature spline misses something.
+3. **Axis 2 (F2 / W2; 10%; congruence 0.77 / 0.83): phototroph share.**
+   - The + pole is picocyanobacterial genes (metB, queD, K10206, cobK, desC, rpoS) and
+     the photosynthesis and porphyrin pathways, together with Cryptophyta.
+   - The − pole is flagellar and motility genes and heterotrophic degradation.
+   - Within cruise, taxa explain it (R2 0.52). No surface or model field explains it:
+     chlorophyll, primary production, mixed layer, nitrate and iron all have
+     |r| ≤ 0.13 within cruise.
+   - It is the most plausible subsurface-driver axis: the share of picocyanobacteria
+     given the surface state. Candidates are nutricline or deep chlorophyll maximum
+     depth and light history. None of these is among the fields tested.
+4. **Axis 3 (F3 / W3; 6–7%; congruence 0.65): sequencing depth, a technical axis.**
+   - The + pole is ribosome and oxidative phosphorylation genes; the − pole is
+     flagellar, recombination and repair genes.
+   - It tracks log total counts: r −0.59 over all tiles and −0.45 within cruise, in 12
+     of 13 cruises. Sequencing variables predict it (CV R2 0.32 / 0.28).
+   - This is a count-depth effect on the CLR, from the pseudocount on low counts. It
+     belongs in the batch column. Log total counts could be added as a covariate, or
+     the libraries rarefied, before modelling.
+5. **F5 / W4 (5%; congruence 0.54, not stable): archaea versus eukaryotes.**
+   - Its − pole is Thermoplasmatota, marine group II archaea (r −0.51 within cruise,
+     11 of 13 cruises).
+   - It weakly follows a shallower mixed layer within cruise (−0.19, 11 of 13).
+   - It is a weak candidate for a mixing or depth-structure driver.
+6. **Ocean-model fields capture none of the residual axes.**
+   - GLORYS plus history, and PISCES on its 637 tiles, give CV R2 ≤ 0.03 for every
+     component.
+   - No model field reaches |r| 0.3 within cruise on a stable component.
+   - This matches R25 and R28: the model fields add nothing because what is left is
+     not in them.
+7. **Diel timing and sampling depth explain nothing.** Local solar hour has |r| ≤ 0.09
+   on every component. Sampling depth has within-cruise |r| ≤ 0.11 (it is all surface).
+
+**For the manuscript ("what remains unexplained"):**
+- About 84% of KO CLR variance is left after Granite plus temperature, a fifth of it
+  as cruise offsets.
+- About a third of the residual variance sits on three reproducible axes:
+  - the bacterial versus eukaryotic share of the library, partly protocol batch
+  - the picocyanobacterial or phototroph share, a candidate subsurface or light driver
+  - sequencing depth, technical
+- None is explained by ocean-model fields.
+
+**Next checks:**
+- Per-cruise protocol metadata (filter pore size, volume, extraction kit) against
+  axis 1.
+- Nutricline or deep-chlorophyll-maximum depth (CCHDO profiles, BGC-Argo) against
+  axis 2.
+- Refit with log total counts as a covariate to remove axis 3.
+- When the external sets are re-mapped (R32), project their residuals on these axes.

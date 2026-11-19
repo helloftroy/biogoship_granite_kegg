@@ -26,14 +26,17 @@
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg
 #   sbatch --account=191001-364393 cluster/download_reads.sbatch
 #   # one set only, or more parallel downloads:
-#   sbatch --account=191001-364393 --export=ALL,SETS=tara_pacific,PARALLEL=6 cluster/download_reads.sbatch
+#   sbatch --account=191001-364393 --export=ALL,SETS=tara_pacific,PARALLEL=2 cluster/download_reads.sbatch
+#   # if https keeps failing: --export=ALL,PROTO=ftp
 # Progress: grep -c . logs/download_reads_done.txt; failures in logs/download_reads_failed.txt
 
 set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/cluster/env.sh"
 SETS="${SETS:-tara_pacific jgi_flinkstrom emo_bon}"
 SETS="${SETS//,/ }"
-PARALLEL="${PARALLEL:-4}"
+PARALLEL="${PARALLEL:-3}"
+PROTO="${PROTO:-https}"  # or ftp, if ENA keeps cutting https transfers
+MAX_STALLS="${MAX_STALLS:-8}"
 OMDB="${OMDB:-0}"  # 1 = also fetch OMDB v2.0 NR95 (not needed now: the Bio-GO-SHIP reference is in cluster/download_reference.sbatch)
 DONE_LOG="${REPO_ROOT}/logs/download_reads_done.txt"
 FAIL_LOG="${REPO_ROOT}/logs/download_reads_failed.txt"
@@ -45,44 +48,70 @@ df -h "${REPO_ROOT}" | tail -1
 
 # One line per file: url, md5, bytes, destination
 LIST="${TMPDIR}/download_reads_${SLURM_JOB_ID:-local}.tsv"
-python - "${LIST}" ${SETS} <<'EOF'
+python - "${LIST}" "${PROTO}" ${SETS} <<'EOF'
 import sys
 import pandas as pd
-out, sets = sys.argv[1], sys.argv[2:]
+out, proto, sets = sys.argv[1], sys.argv[2], sys.argv[3:]
 rows = []
 for s in sets:
     runs = pd.read_csv(f"data/external/{s}/reads/runs.csv", dtype=str)
     for _, r in runs.iterrows():
         for url, md5, size in zip(r["fastq_ftp"].split(";"), r["fastq_md5"].split(";"), r["fastq_bytes"].split(";")):
-            rows.append(("https://" + url, md5, size, f"data/external/{s}/reads/fastq/" + url.rsplit("/", 1)[1]))
+            rows.append((f"{proto}://" + url, md5, size, f"data/external/{s}/reads/fastq/" + url.rsplit("/", 1)[1]))
     total = sum(int(x) for v in runs["fastq_bytes"] for x in v.split(";"))
     print(f"{s}: {len(runs)} runs, {total / 1e12:.2f} TB", flush=True)
 pd.DataFrame(rows).to_csv(out, sep="\t", header=False, index=False)
 EOF
 
+# ENA closes long HTTPS transfers part-way ("curl: (18) transfer closed") and answers
+# 403 to bursts of requests. So: resume (-C -) for as long as the file keeps growing,
+# back off between attempts (longer after a 403), and give up on a file only after
+# MAX_STALLS attempts in a row without progress. A full-size file is MD5-checked.
 fetch() {
   local url="$1" md5="$2" size="$3" dest="$4"
   [ -f "${dest}.ok" ] && return 0
   mkdir -p "$(dirname "${dest}")"
-  local k
-  for k in 1 2 3; do
-    if curl -fsSL --retry 10 --retry-delay 30 --retry-connrefused -C - -o "${dest}.part" "${url}"; then
-      if [ "$(md5sum "${dest}.part" | cut -d' ' -f1)" = "${md5}" ]; then
-        mv "${dest}.part" "${dest}" && touch "${dest}.ok"
+  local part="${dest}.part" stalls=0 bad_md5=0 before after rc
+  while [ "${stalls}" -lt "${MAX_STALLS}" ]; do
+    before=$(stat -c %s "${part}" 2>/dev/null || echo 0)
+    if [ "${before}" -lt "${size}" ]; then
+      rc=0
+      curl -fsS -L --connect-timeout 60 --speed-limit 50000 --speed-time 600 -C - -o "${part}" "${url}" 2> "${part}.err" || rc=$?
+      after=$(stat -c %s "${part}" 2>/dev/null || echo 0)
+    else
+      rc=0; after="${before}"
+    fi
+    if [ "${after}" -ge "${size}" ]; then
+      if [ "${after}" -eq "${size}" ] && [ "$(md5sum "${part}" | cut -d' ' -f1)" = "${md5}" ]; then
+        mv "${part}" "${dest}" && touch "${dest}.ok" && rm -f "${part}.err"
         echo "${dest}" >> "${DONE_LOG}"
         return 0
       fi
-      echo "MD5 mismatch (attempt ${k}): ${dest}" >&2
-      rm -f "${dest}.part"
+      echo "MD5 or size mismatch, starting over: ${dest} (${after} of ${size} bytes)" >&2
+      rm -f "${part}"
+      bad_md5=$((bad_md5 + 1))
+      [ "${bad_md5}" -ge 2 ] && break
+      continue
+    fi
+    if [ "${after}" -gt "${before}" ]; then
+      stalls=0
+      sleep 10
     else
-      echo "curl failed (attempt ${k}): ${url}" >&2
+      stalls=$((stalls + 1))
+      if grep -q "error: 403" "${part}.err" 2>/dev/null; then
+        echo "403 (throttled?), waiting $((300 * stalls)) s: ${url}" >&2
+        sleep $((300 * stalls))
+      else
+        echo "no progress (curl exit ${rc}: $(tr '\n' ' ' < "${part}.err")), waiting $((60 * stalls)) s: ${url}" >&2
+        sleep $((60 * stalls))
+      fi
     fi
   done
   echo -e "${url}\t${dest}" >> "${FAIL_LOG}"
   return 0
 }
 export -f fetch
-export DONE_LOG FAIL_LOG
+export DONE_LOG FAIL_LOG MAX_STALLS
 
 # The reference first (small, and needed before any mapping)
 if [ "${OMDB}" = "1" ]; then

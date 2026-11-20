@@ -3892,3 +3892,119 @@ These wait until the remaining variables are worked out.
 - the GC job on Morrill (R40)
 - light history and back-trajectories for axis 2
 - whether the P02 HWKVFDSX5 libraries can be counted
+
+## R42. Axis 2: viral read share (null); water-mass history and light-history job (2026-11-20)
+
+**Order of tests** (suggested 2026-11-20, now that axis 2 isn't shrinkage):
+1. water-mass origin and age, along Parcels back-trajectories
+2. light history
+3. grazing and viral lysis
+
+The viral share is available locally, so it ran first. The other two need a Morrill
+job, which is ready.
+
+### 1. Viral read share: no link to axis 2
+
+**Script** `transfer/scripts/viral_share_test.py`; outputs in `transfer/results/viral_share/`.
+- Data: domain and phylum read counts per library (`data/targets/taxa/`), summed per
+  sample over the real-target libraries.
+- Per tile: the mean over its samples.
+- Real model: 1,215 tiles, R36 scores.
+
+To reproduce, run from the repository root:
+
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python transfer/scripts/viral_share_test.py
+
+**Spearman r**, all tiles / within cruise (cruises with the pooled sign, of 13):
+
+| Feature | F1 | F2 | W1 | W2 | W3 |
+|---|---|---|---|---|---|
+| Viruses CLR (4 domains) | +0.15 / +0.18 (8) | +0.15 / +0.04 (8) | +0.17 / +0.19 (9) | +0.02 / +0.02 (9) | −0.17 / −0.19 (10) |
+| log10 Viruses / Bacteria | −0.22 / −0.12 (8) | +0.17 / −0.01 (6) | −0.10 / −0.12 (9) | +0.01 / +0.01 (8) | +0.01 / −0.00 (7) |
+| log10 Viruses / Cyanobacteriota | −0.01 / +0.01 (6) | −0.23 / −0.38 (11) | −0.03 / −0.03 (7) | −0.34 / −0.38 (11) | +0.08 / +0.09 (11) |
+| viral share of classified reads | −0.13 / −0.04 (7) | +0.17 / +0.02 (9) | −0.03 / −0.03 (7) | +0.03 / +0.04 (10) | −0.05 / −0.07 (9) |
+
+**Does the viral share itself carry the platform batch?** Eta2 of cruise means,
+NovaSeq 6000 vs X:
+
+| Feature | Eta2 | p |
+|---|---:|---:|
+| Viruses CLR | 0.07 | 0.40 |
+| Viruses / Bacteria | 0.11 | 0.27 |
+| Viruses / Cyanobacteriota | 0.05 | 0.66 |
+| viral share | 0.13 | 0.23 |
+
+None does.
+
+**Reading.**
+- **No viral signal on axis 2.** The viral share and Viruses / Bacteria have
+  within-cruise r ≤ 0.04 with W2.
+- **The Viruses / Cyanobacteria ratio is circular.** It correlates −0.38 with W2, but
+  only through its denominator: W2 tracks Cyanobacteriota at +0.38 (R38).
+- The viral CLR goes weakly with W1 (+0.19) and against W3 (−0.19).
+- Caveats:
+  - On 0.22 µm Sterivex filters most viral reads are prophages, large viruses inside
+    cells, or virions caught on the filter. So this is a weak lysis proxy.
+  - It is descriptive, like taxa.
+- Grazing has no measurable proxy in these data.
+
+### 2. Water-mass history and light: job for Morrill
+
+**Script** `transfer/scripts/water_mass_history.py`, run by
+`transfer/cluster/water_mass.sbatch` (service partition, Copernicus Marine login,
+biogoship conda env with parcels).
+
+**Steps.**
+1. **Currents.** GlobCurrent at 0.25°, daily, 15 m, per section:
+   - the samples' box ±15°, from 62 days before the first sample to 1 day after the
+     last
+   - multi-year, near-real-time after 2026-03-31
+   - boxes crossing the date line (P02, P04E, HLY2202 at the Bering Strait) are
+     fetched in two pieces and stored in 0–360°
+   - stored in `transfer/data/currents60/`
+2. **Tracking.** One particle per sample (2,014), released at the sampling position
+   and time and advected **60 days backward**:
+   - OceanParcels RK4, dt 30 min, no diffusion; positions every 6 h
+   - the same kernel as `biogoship/advection.py`, backward only
+   - output `trajectories.csv`, with a `stuck_at_end` flag for particles that reached
+     land
+3. **Fields** at the daily positions, days 0 to −60, nearest grid value. Output
+   `along_track.csv`, in long format.
+   - OSTIA SST
+   - GlobColour gap-free chlorophyll
+   - GLORYS mixed layer
+   - GlobColour gap-free KD490, if the transparency dataset opens
+   - GLORYS sea-floor depth
+4. **Light probe.** It lists which Copernicus ocean-colour datasets open, with their
+   variables. That finds a daily PAR product for the light test. If Copernicus has
+   none, NASA OB.DAAC daily PAR (MODIS-Aqua / VIIRS) through the Earthdata login is the
+   fallback (`build_new_cruise_manifest.py` already has the Earthdata download code).
+
+**Checks run locally.**
+- The section boxes from the local manifests: 14 sections, 2,014 samples.
+- The date-line fix for HLY2202: its box is now 176.6–225.0°.
+- **Not run locally:** the Parcels step (parcels isn't on the Mac). It uses the same
+  Parcels calls as `cluster/backtrack.sbatch`, which has run on Morrill.
+
+**Run on Morrill:**
+
+    cd /scratch/morrill/users/$USER/biogoship_granite_kegg && git pull
+    sbatch --account=191001-364393 transfer/cluster/water_mass.sbatch
+
+**Bring back:** `transfer/results/water_mass/trajectories.csv`, `along_track.csv` and
+the job's .out.
+
+**Features to compute on the Mac** (`water_mass_test.py`, to be written when the data
+are back), against W2 and the other axes:
+- **Water-mass age:**
+  - days since the track was last over the shelf (sea floor < 200 m; censored at 60)
+  - days since the water was ≥ 1 °C colder than at sampling (time since upwelling or
+    mixing)
+- **Trajectory means:** SST and log chlorophyll over 30 and 60 days; the SST and
+  chlorophyll change along the track; the 60-day maximum mixed layer.
+- **Origin:** position at −30 and −60 days, displacement and path length, and origin
+  region (basin / latitude band, or Longhurst province if a table is added).
+- **Light:**
+  - mean PAR over 14 and 28 days along the track
+  - mixed-layer light = PAR × (1 − e^(−Kd·MLD)) / (Kd·MLD), with Kd(PAR) from KD490
+    (Morel et al. 2007)

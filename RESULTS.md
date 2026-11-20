@@ -3162,8 +3162,9 @@ its sign-flip null (999 flips of whole pairs).
 - **Protocol A vs B (no beads + lysis buffer vs bead beating + Shield)** shifts axes 2
   and 3 and the Archaea share. It doesn't shift axis 1 (W1 +0.03; F1 +0.07).
   - The A/B pairs span both A16N LT4 runs: 8 A samples on 22NCJYLT4, 9 on 23LT2GLT4.
-  - The within-pair contrast therefore isolates preservation plus bead beating. The
-    bench extraction downstream is the same.
+  - Whether each A and its B partner ran on the same flowcell isn't checked here.
+  - As far as recorded, the within-pair contrast is preservation plus bead beating. The
+    bench extraction after that isn't documented for either protocol.
   - That technical push along axis 2, −0.6 SD per sample, is real. But within cruises
     axis 2 can't come from it: every other sample in a cruise used one protocol, and
     section 2 shows the same axis in both workflows.

@@ -15,7 +15,10 @@ Steps:
      replicate; names are exact and win.)
   2. Drop controls (blanks, mocks, references), other projects, libraries with
      fewer than --min-total counts, and non-surface samples (depth > --max-depth;
-     samples without a recorded depth are kept, as for the tiles).
+     samples without a recorded depth are kept, as for the tiles). Also drop the
+     samples in --exclude-samples (data/manifests/excluded_samples.csv: technical
+     protocol variants such as the A16N 2023 Protocol A duplicates, RESULTS.md R36);
+     --exclude-samples none keeps them (the testing version).
   3. Proportions per library; libraries of one sample are averaged.
   4. Features present in at least --min-prevalence of the kept samples; CLR with
      half a count as pseudocount.
@@ -58,6 +61,11 @@ def main() -> None:
     drop = info["samp_name"].isna() | info["samp_name"].fillna("").str.contains(CONTROL) | info["cruise"].isna()
     print(f"Libraries without a sample, controls or other projects: {int(drop.sum()):,}")
     info = info[~drop]
+    if args.exclude_samples is not None and args.exclude_samples.exists():
+        excluded = set(pd.read_csv(args.exclude_samples)["sample_key"])
+        hit = info["sample_key"].isin(excluded)
+        print(f"Libraries of excluded samples ({args.exclude_samples.name}): {int(hit.sum()):,}")
+        info = info[~hit]
     low = info["total"] < args.min_total
     print(f"Libraries below {args.min_total:,.0f} counts: {int(low.sum()):,}")
     info = info[~low]
@@ -123,6 +131,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--faire-samples", type=Path, default=REPO_ROOT / "data" / "faire" / "faire_samples.csv")
     parser.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
     parser.add_argument("--out-dir", type=Path, default=REPO_ROOT / "data" / "targets")
+    parser.add_argument("--exclude-samples", type=lambda v: None if v == "none" else Path(v),
+                        default=MANIFEST_DIR / "excluded_samples.csv", help="sample_key list to leave out; 'none' keeps all")
     parser.add_argument("--max-depth", type=float, default=10.0)
     parser.add_argument("--min-total", type=float, default=1e5, help="Smallest library total kept.")
     parser.add_argument("--min-prevalence", type=float, default=0.9, help="Share of samples a feature must be present in.")

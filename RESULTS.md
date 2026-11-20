@@ -1989,8 +1989,10 @@ A copy of both is in `transfer/`.
 
 To reproduce, run from the repository root:
 
-    OMP_NUM_THREADS=4 ~/miniforge3/bin/python scripts/residual_modules.py
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python scripts/residual_modules.py --targets data/targets/ko_clr_incl_protocolA.csv
 
+- Since R36, `data/targets/ko_clr.csv` leaves out the A16N Protocol A samples. R33 was
+  run on the earlier targets, kept as `ko_clr_incl_protocolA.csv`; hence the `--targets`.
 - The defaults are `--components 10 --null-draws 20 --splits 20 --seed 0`.
 - Software: Python 3.9.10, numpy 1.21.5, pandas 1.4.3, scikit-learn 1.6.1.
 - All random steps (nulls, splits) use the seed, and the PCA and ridge fits are deterministic.
@@ -2998,3 +3000,224 @@ With the 30 km / 1 d match: −0.031, −0.013, −0.042, −0.043.
 - Where are the P02 HWKVFDSX5 libraries (Shield pairs)? Their counts are missing from
   the KO table.
 - Library prep kit per sequencing run.
+
+## R36. Protocol A out of the real model; axis 2 is workflow-independent; C13.5 v1/v2 are duplicates; sequencer and library prep (2026-11-19)
+
+**Decisions.**
+- **A16N Protocol A samples are dropped from the real model**, and their Protocol B
+  partners are kept.
+  - They stay available for testing, in `data/targets/ko_clr_incl_protocolA.csv`.
+  - Defined in the A16N 2023 leg 1 cruise report, section 6.13.3, p. 57. Both are
+    0.22 µm Sterivex, −80 °C.
+    - Protocol A: a duplicate underway DNA sample, no bashing beads, 1,600 µL lysis
+      buffer, about every 3 days.
+    - Protocol B: the standard underway sample, Zymo ZR BashingBeads, 1,000 µL DNA/RNA
+      Shield.
+- **Other multi-sample tiles stay averaged.** These are:
+  - C13.5 v1/v2 (tested below)
+  - GOMECC4 A/B/C
+  - HLY2202 re-sequencing: 50 samples on two NovaSeq 6000 runs, HFJLFDSX7 and
+    HMY7WDSX7
+  - co-located samples
+
+**Implementation.**
+- `data/manifests/excluded_samples.csv` (tracked; copy in `transfer/results/protocol/`)
+  lists the 17 Protocol A sample keys with the reason.
+  - They are the A16N samples whose workbook note says "Protocol A": T-008 … T-121 and
+    UW944, all inline.
+- `scripts/build_ko_targets.py` has a new `--exclude-samples` option. It reads that
+  file by default; `none` keeps all samples.
+- The earlier targets are kept as `data/targets/ko_clr_incl_protocolA.csv` and
+  `ko_samples_incl_protocolA.csv`.
+- Check: rebuilding with `--exclude-samples none` reproduces them exactly (2,007
+  samples × 3,921 KOs, max |difference| 0).
+- New targets: 1,990 samples. Leaving out the 17 libraries lets 12 more KOs pass the 90%
+  prevalence filter, so there are **3,933 KOs**; none are lost. The model then has
+  **1,215 tiles**: one tile held only a Protocol A sample.
+- **R33–R35 used the earlier targets.** `residual_axes_followup.py` now defaults to
+  them, and R33's command is updated to pass them.
+
+**Scripts.**
+- `scripts/residual_modules.py --out-dir transfer/results/residual_modules_noA`: the
+  refit.
+- `transfer/scripts/axis2_protocol_check.py`, written to `transfer/results/axis2_protocol/`:
+  refit vs R33, the protocol-group PCA and the paired tests.
+- `transfer/scripts/cruise_methods_table.py`, now with library prep, sequencer and
+  flowcells.
+
+To reproduce, run from the repository root:
+
+    ~/miniforge3/bin/python scripts/build_ko_targets.py        # real targets, Protocol A excluded
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python scripts/residual_modules.py --out-dir transfer/results/residual_modules_noA
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python transfer/scripts/axis2_protocol_check.py
+    ~/miniforge3/bin/python transfer/scripts/cruise_methods_table.py
+
+### 1. Residual PCA without Protocol A
+
+**Baseline.** Median KO R2 is 0.103. Residual share is 83.8%, 20.1% of it between
+cruises.
+
+**Loadings vs R33**, on the 3,921 shared KOs:
+
+| Component | Cosine with R33 | Share (R33) | Split-half (R33) |
+|---|---:|---|---|
+| F1 | 1.000 | 19.4% (19.4%) | 0.90 (0.90) |
+| F2 | 1.000 | 9.9% (9.9%) | 0.80 (0.77) |
+| F3 | 1.000 | 6.8% (6.8%) | 0.55 (0.65) |
+| F4 | 0.998 | 5.1% (5.1%) | 0.37 (0.58) |
+| F5 | 0.999 | 4.7% (4.7%) | 0.56 (0.54) |
+| W1 | 1.000 | 17.3% (17.2%) | 0.95 (0.95) |
+| W2 | 1.000 | 9.8% (9.8%) | 0.83 (0.83) |
+| W3 | 1.000 | 5.8% (5.8%) | 0.65 (0.66) |
+| W4 | 1.000 | 4.6% (4.7%) | 0.59 (0.56) |
+| W5 | 1.000 | 3.3% (3.3%) | 0.49 (0.41) |
+
+The F3–F5 split-half values move because a different random split sequence follows from
+the changed tile set.
+
+**Interpretation.** Axis 2 comes back with identical loadings. But the refit changes
+only the 12 tiles where A and B were averaged, plus the A-only tiles, so on its own it
+cannot separate biology from protocol. The test that can is next.
+
+### 2. Is axis 2 workflow-dependent? PCA within each workflow
+
+**Method.**
+- The within-cruise residuals of the new real model are PCA'd separately in two
+  groups:
+  - old workflow: enzymatic extraction, lysis buffer, Nextera, NovaSeq 6000. I09N,
+    P18, I07N, AMT28, C13.5/A13.5 and HLY2202; HLY used DNA Flex prep.
+  - new workflow: bead beating, DNA/RNA Shield, "LT4" flowcells. A16N, I05, A13.5,
+    I08S and GOMECC4; GOMECC4 used beads and no preservative.
+  - P02 and I09N-2025 are left out: their workflow is not verified.
+- Reference: 200 random splits of the same 11 cruises into 6 + 5.
+
+| Axis | Old workflow: rank (share), cos with full fit | New workflow: rank (share), cos | Old vs new congruence | Random 6+5 splits: median (5th pct) | Random splits lower |
+|---|---|---|---:|---|---:|
+| W1 | 1 (16.2%), 0.97 | 1 (18.5%), 0.98 | 0.91 | 0.94 (0.84) | 25% |
+| **W2** | **2 (9.7%), 0.95** | **2 (11.4%), 0.94** | **0.79** | **0.81 (0.62)** | **38%** |
+| W3 | 3 (6.6%), 0.95 | 4 (5.4%), 0.92 | 0.78 | 0.68 (0.47) | 82% |
+
+**Reading.**
+- **Axis 2 is the same in both workflows.** It is the second component in each, at
+  9.7% and 11.4% of the variance.
+- Its loadings match the full fit at cosine 0.95 and 0.94.
+- The old and new versions agree as well as random cruise splits do: 0.79 against a
+  median of 0.81.
+- So the within-cruise phototroph axis doesn't depend on extraction, preservation,
+  library prep or sequencer. **It is biology**, or at least nothing about the workflow.
+- The same holds for W1 and W3.
+- The R34 cruise-level offsets of axis 1 are a separate question; the next section
+  takes it up.
+
+### 3. Paired samples: A16N Protocol A vs B, and C13.5 v2 vs v1
+
+**Method.**
+- Data: the targets that keep every sample, on the 3,921 shared KOs.
+- Pair difference: the difference of CLRs, standardised by the within-cruise residual
+  SDs of the real model, then projected on its loadings (in SD of the tile scores).
+  Both samples sit in one tile, so the tile prediction cancels.
+- C13.5 pairs: the 29 v1/v2 sample pairs share time and position and come from
+  underway collection on run HKNJLDRXX. They have separate BioSamples and SRA runs. 24
+  pairs have both libraries.
+- **The records show no protocol difference between v1 and v2.** The FAIRe workbook
+  holds a single row per pair, with serial number "…v1", and has no notes.
+
+| Variable | Protocol A − B (16 pairs): mean (SD; same sign; Wilcoxon p) | C13.5 v2 − v1 (24 pairs) |
+|---|---|---|
+| F1 | +0.069 (0.559; 9/16; 0.67) | −0.058 (0.368; 13/24; 0.57) |
+| F2 | −0.418 (0.620; 14/16; 0.009) | −0.149 (0.601; 16/24; 0.17) |
+| F3 | +0.899 (0.524; 15/16; < 0.001) | +0.205 (0.470; 17/24; 0.016) |
+| W1 | +0.027 (0.691; 8/16; 0.98) | −0.101 (0.495; 14/24; 0.41) |
+| W2 | −0.628 (0.719; 13/16; 0.003) | −0.180 (0.565; 16/24; 0.12) |
+| W3 | +0.935 (0.824; 14/16; < 0.001) | +0.069 (0.828; 14/24; 0.49) |
+| Archaea CLR | +0.381 (0.351; 14/16; 0.002) | −0.043 (0.153; 15/24; 0.25) |
+| Bacteria CLR | −0.189 (0.252; 10/16; 0.016) | −0.120 (0.176; 17/24; 0.005) |
+| Eukaryota CLR | −0.156 (0.280; 12/16; 0.051) | +0.011 (0.241; 11/24; 0.51) |
+
+**KO-level systematic effect.** The RMS over KOs of the mean paired difference, against
+its sign-flip null (999 flips of whole pairs).
+
+| Contrast | RMS effect | Sign-flip null median | p | KOs with \|t\| > 3 |
+|---|---:|---:|---:|---:|
+| A16N Protocol A − B | 0.463 | 0.260 | 0.001 | 16.0% |
+| C13.5 v2 − v1 | 0.210 | 0.174 | 0.070 | 1.5% |
+
+- Cosine of the A − B effect with the loadings: F1 +0.09, F2 −0.32, F3 +0.58, W1 +0.02,
+  W2 −0.42, W3 +0.49.
+- For C13.5 v2 − v1: F1 −0.13, F2 −0.25, F3 +0.30, W1 −0.20, W2 −0.27, W3 +0.08.
+
+**C13.5 v2 vs v1, sequencing depth.** log10 total counts differ by −0.063 on average,
+12 of 24 negative, p 0.47. The Bacteria difference does not track the depth difference
+(Spearman −0.12, p 0.58).
+
+**Reading.**
+- **C13.5 v1/v2 behave as duplicates, not a protocol contrast.**
+  - The KO-level systematic effect isn't significant (p 0.07).
+  - Strongly shifted KOs are 1.5% for C13.5 against 16% for Protocol A.
+  - No axis score differs, apart from a small F3 shift.
+  - One small consistent difference remains: v2 has 0.12 lower Bacteria CLR (17 of 24
+    pairs). It isn't a depth effect. It is a third of the size of the Protocol A archaeal
+    shift, and it could come from filter order or extraction batch.
+  - **They stay averaged as replicates.**
+- **Protocol A vs B (no beads + lysis buffer vs bead beating + Shield)** shifts axes 2
+  and 3 and the Archaea share. It doesn't shift axis 1 (W1 +0.03; F1 +0.07).
+  - The A/B pairs span both A16N LT4 runs: 8 A samples on 22NCJYLT4, 9 on 23LT2GLT4.
+  - The within-pair contrast therefore isolates preservation plus bead beating. The
+    bench extraction downstream is the same.
+  - That technical push along axis 2, −0.6 SD per sample, is real. But within cruises
+    axis 2 can't come from it: every other sample in a cruise used one protocol, and
+    section 2 shows the same axis in both workflows.
+
+### 4. Sequencer and library preparation; what is left for the axis-1 offsets
+
+**Library prep** (published run table, supplied 2026-11-19):
+- All six runs of the original 2011–2020 collection used the same custom Nextera-style
+  prep: Illumina Tagment DNA Enzyme and Buffer kit 20034197, custom 8-bp dual indexes,
+  modified low-input tagmentation.
+- Runs:
+
+| Published run | Cruises | Sequencer | Libraries |
+|---|---|---|---:|
+| 1 | I09N | HiSeq | 24 |
+| 2 | I09N, AE1319, BVAL46, NH1418 | HiSeq | 30 |
+| 3 | I09N | NovaSeq | 215 |
+| 4 | P18, AMT28, AE1319, BVAL46, NH1418 | NovaSeq | 203 |
+| 5 | I07N | NovaSeq | 248 |
+| 6 | C13.5 | NovaSeq | 251 |
+
+- HLY2202: Nextera DNA Flex, low-volume, custom dual indexes, NovaSeq 6000.
+- P02, A16N, I05, A13.5, I08S, I09N-2025: library prep and sequencer not verified.
+
+**Matched to the FAIRe flowcells.** The coded columns are now in `cruise_methods.csv`:
+library_prep, sequencer, flowcells, sequencer_coded.
+- HiSeq = the "…BBXX" flowcells: HKMFTBBXX for I09N-2016, and HWKN2BBXX for I09N,
+  AE1319, BVAL46 and NH1418.
+- NovaSeq 6000: HHGJFDSXX, HMMFVDSXX, H357JDSXY, HKNJLDRXX, and HLY's HFJLFDSX7 /
+  HMY7WDSX7.
+- The 2023–2025 cruises are on "…LT4" flowcells: 22NCJYLT4, 23LT2GLT4, 22YJMLLT4. That
+  is the NovaSeq X-series ID format, inferred, **not verified**.
+- **No HiSeq library is in a modelled tile.** I09N-2016's 54 tiles are all NovaSeq
+  (HHGJFDSXX), and AE1319, BVAL46 and NH1418 predate Sentinel-3 matching. So HiSeq
+  vs NovaSeq doesn't enter the model.
+- There is no direct sequencer contrast on the same DNA.
+  - P02's 2023 NovaSeq 6000 run (HWKVFDSX5, 58 libraries) holds different samples from
+    its 2025 LT4 run, and it isn't in the KO table.
+  - HLY's two runs are both NovaSeq 6000.
+
+**What the axis-1 cruise offsets can still be.**
+- Ruled out as the main driver:
+  - **Library prep**, Nextera tagmentation vs DNA Flex: HLY2202 (DNA Flex) sits with
+    the tagmentation cruises (F1 +0.78).
+  - **Preservation plus bead beating**: the A16N A/B pairs show no axis-1 shift.
+  - **Sampling year**, within the enzymatic cruises: R35.
+- Still confounded with the offset:
+  - the sequencing platform: NovaSeq 6000 vs the LT4 flowcells
+  - the bench extraction kit and the library prep of the 2023–2025 cruises, both not
+    verified
+  - a real change between the regions and years sampled
+- The decisive check would be any one of these:
+  - the library prep / sequencer of the new cruises
+  - the same DNA re-sequenced on both platforms
+  - the P02 2023 NovaSeq 6000 libraries mapped through our pipeline (R32), then
+    compared with neighbouring P02 samples on 22YJMLLT4. Not paired, but the same
+    cruise and the same water masses.

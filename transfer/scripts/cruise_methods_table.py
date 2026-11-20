@@ -74,12 +74,49 @@ ROWS = [
 ]
 
 
+# Library preparation and sequencer (second table supplied 2026-11-19, from the published run table:
+# all six original runs used the same custom Nextera-style prep, Illumina Tagment DNA Enzyme and
+# Buffer kit 20034197, custom 8-bp dual indexes, modified low-input tagmentation; runs 1-2 HiSeq,
+# 3-6 NovaSeq). Flowcells from the FAIRe workbook (experimentRunMetadata seq_run_id), libraries
+# in the KO table. Sequencer of the 2023-2025 flowcells ("...LT4") inferred from the flowcell-ID
+# format of the NovaSeq X series: NOT verified.
+LIBRARY = {
+    "BVAL46": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "HiSeq (run 2) + NovaSeq (run 4)", "HWKN2BBXX; HMMFVDSXX"),
+    "AE1319": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "HiSeq (run 2) + NovaSeq (run 4)", "HWKN2BBXX; HMMFVDSXX"),
+    "NH1418": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "HiSeq (run 2) + NovaSeq (run 4)", "HWKN2BBXX; HMMFVDSXX"),
+    "I09N": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "HiSeq (runs 1-2, 26 libraries) + NovaSeq (run 3, 213)", "HKMFTBBXX; HWKN2BBXX; HHGJFDSXX"),
+    "P18": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "NovaSeq (run 4)", "HMMFVDSXX"),
+    "I07N": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "NovaSeq (run 5)", "H357JDSXY"),
+    "AMT28": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "NovaSeq (run 4)", "HMMFVDSXX"),
+    "C13.5/A13.5": ("Nextera-style tagmentation (Illumina 20034197), custom 8-bp dual indexes", "NovaSeq (run 6)", "HKNJLDRXX"),
+    "HLY2202": ("Nextera DNA Flex, low-volume, custom dual indexes", "NovaSeq 6000", "HFJLFDSX7"),
+    "P02W": ("not verified", "KO-table libraries: 22YJMLLT4 (NovaSeq X?, 2025); Shield pairs: HWKVFDSX5 (2023, not in KO table)", "22YJMLLT4; HWKVFDSX5"),
+    "P02E": ("not verified", "as P02W", "22YJMLLT4; HWKVFDSX5"),
+    "A16N, leg 1": ("not verified", "NovaSeq X? (not verified)", "22NCJYLT4; 23LT2GLT4"),
+    "A16N, leg 2": ("not verified", "NovaSeq X? (not verified)", "22NCJYLT4; 23LT2GLT4"),
+    "I05": ("not verified", "NovaSeq X? (not verified)", "23LT2GLT4"),
+    "A13.5": ("not verified", "NovaSeq X? (not verified)", "23LT2GLT4"),
+    "I08S": ("not verified", "NovaSeq X? (not verified)", "22YJMLLT4"),
+    "I09N 2025": ("not verified", "NovaSeq X? (not verified)", "22YJMLLT4"),
+    "GOMECC4": ("not verified", "NovaSeq X? (not verified)", "23LT2GLT4"),
+}
+# A16N Protocol A vs B (A16N 2023 leg 1 cruise report, section 6.13.3, p. 57): both 0.22 um Sterivex,
+# -80 C. A = duplicate underway DNA sample, no bashing beads, 1,600 uL lysis buffer, about every
+# 3 days; B = standard underway sample, Zymo ZR BashingBeads, 1,000 uL DNA/RNA Shield.
+
+
 def main() -> None:
     out = REPO / "transfer" / "results" / "protocol"
     out.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(ROWS, columns=COLS)
+    df["library_prep"] = df["row"].map(lambda r: LIBRARY[r][0])
+    df["sequencer"] = df["row"].map(lambda r: LIBRARY[r][1])
+    df["flowcells"] = df["row"].map(lambda r: LIBRARY[r][2])
+    # coded for the libraries in the KO table (P02: 22YJMLLT4; its NovaSeq 6000 run HWKVFDSX5 is not in the table)
+    df["sequencer_coded"] = df["row"].map(lambda r: "NovaSeq X? (unverified)" if LIBRARY[r][2].startswith("2")
+                                          else ("HiSeq + NovaSeq 6000" if "BBXX" in LIBRARY[r][2] else "NovaSeq 6000"))
     df.to_csv(out / "cruise_methods.csv", index=False)
-    print(df[["row", "cruise", "preservation", "extraction", "prefilter", "volume_l", "store_c"]].to_string(index=False))
+    print(df[["row", "cruise", "preservation", "extraction", "prefilter", "volume_l", "sequencer_coded", "flowcells"]].to_string(index=False))
 
 
 if __name__ == "__main__":

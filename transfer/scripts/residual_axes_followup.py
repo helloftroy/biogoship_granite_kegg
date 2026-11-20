@@ -60,7 +60,8 @@ R33 = REPO / "data" / "results" / "residual_modules"
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--parts", nargs="+", default=["protocol", "depth"], choices=["protocol", "depth", "region", "spatial", "methods", "pairs", "nutricline"])
-    p.add_argument("--targets", type=Path, default=REPO / "data" / "targets" / "ko_clr.csv")
+    # R34/R35 were run on the targets that still include the A16N Protocol A samples (R36); the pairs part needs them
+    p.add_argument("--targets", type=Path, default=REPO / "data" / "targets" / "ko_clr_incl_protocolA.csv")
     p.add_argument("--embeddings-dirs", type=Path, nargs="+",
                    default=[REPO / "data" / "embeddings_sst_l4", REPO / "data" / "faire" / "embeddings_sst_l4"])
     p.add_argument("--protocol", type=Path, default=REPO / "transfer" / "results" / "protocol" / "sample_protocol.csv")

@@ -1984,36 +1984,142 @@ level (`level_1_domain_ko_counts`) summed over taxa gives the same total.
 If KOs share residual axes, those axes are functional signals that no surface input
 captures. They could reflect subsurface drivers or batch effects.
 
-**Method** (`scripts/residual_modules.py`; outputs in `data/results/residual_modules/`):
-- **Baseline.** 32 Granite PCs plus an in-situ temperature spline, ridge regression,
-  one cruise held out (the R18/R28 model). It is fitted on all 3,921 target KOs, over
-  1,216 tiles from 13 cruises; median KO R2 is 0.103. Residual = observed CLR minus the
-  cross-validated prediction.
-- **PCA of the residuals.** Each KO's residuals are standardised. It is run on the full
-  residuals (components F1, F2, …) and on the within-cruise residuals, with cruise
-  means removed (W1, W2, …).
-- **Why not NMF.** The residuals are signed, and both poles of an axis matter.
-- **Which components are real.** The usual null is a PCA of residuals with each KO
-  shuffled on its own. All 30 components tested beat it (null PC1 = 0.2% of the
-  variance), so it doesn't separate anything. The test used instead is split-half
-  reproducibility: the cruises are split into two halves at random (20 splits), and the
-  PCA is run in each half. The component's best matches in the two halves are compared
-  by loading congruence; 0.85 or more counts as the same component.
-- **Description of each component:**
-  - **Cruise eta2:** share of the component's score variance that lies between cruises.
-  - **Spearman correlation with each candidate driver:** across all tiles, and within
-    cruise (ranks centred per cruise). Also the number of cruises in which the
-    within-cruise sign holds.
-  - **Cross-validated R2 from groups of drivers.** Linear ridge, one cruise held out;
-    for the W components the drivers are centred per cruise too. The groups:
-    - sequencing: log total counts, libraries, instrument, 2021 or later
-    - sampling: year, season, local solar hour, latitude, longitude, depth
-    - GLORYS plus the history fields (R25, R27)
-    - PISCES, on the 637 forecast-period tiles only
-    - taxa: domain and phylum CLRs plus the unclassified logit. Taxa come from the same
-      reads, so they show which organisms carry a component, not what drives it.
-  - **KEGG:** the KOs with the largest loadings, and the pathways (BRITE level C) whose
-    mean loading departs most from the rest (z).
+**Method.** Script `scripts/residual_modules.py`; outputs in `data/results/residual_modules/`.
+A copy of both is in `transfer/`.
+
+To reproduce, run from the repository root:
+
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python scripts/residual_modules.py
+
+- The defaults are `--components 10 --null-draws 20 --splits 20 --seed 0`.
+- Software: Python 3.9.10, numpy 1.21.5, pandas 1.4.3, scikit-learn 1.6.1.
+- All random steps (nulls, splits) use the seed, and the PCA and ridge fits are deterministic.
+- The script's docstring still describes the permutation null as the selection rule.
+  That rule was dropped (see step 5). The script reports it but keeps the first 10
+  components either way.
+
+*1. Inputs.*
+- **Targets.** `data/targets/ko_clr.csv`, built by `scripts/build_ko_targets.py` from
+  `ko_counts_cov50_all.tsv`, with these filters:
+  - libraries with at least 1e5 KO counts, from at most 10 m depth
+  - library proportions averaged per sample
+  - KOs present in at least 90% of samples, giving 3,921 KOs
+  - CLR = log(p + 0.5 / total) minus the sample's mean log
+  The pseudocount depends on the total. This is why depth reaches the CLR (axis 3).
+- **Embeddings.** Granite, from `data/embeddings_sst_l4/` and
+  `data/faire/embeddings_sst_l4/`.
+  - One chosen tile per sample: position "fixed", best tile "prefer-sst".
+  - Only samples with in-situ temperature are kept.
+- **Tiles.**
+  - Samples with identical embeddings (rounded to 5 decimals) form one tile.
+  - Their CLRs and temperatures are averaged.
+  - The result is 1,216 tiles from 13 cruises (`tune_figure_kos.load`).
+
+*2. Baseline* (`added_fields_all_kos.cv`). One cruise is held out per fold, and
+everything below is fitted on the other 12:
+- embeddings standardised, then PCA, keeping 32 components (random_state 0); the
+  components are standardised again
+- in-situ temperature standardised, then expanded with a cubic B-spline (8 knots,
+  linear extrapolation)
+- RidgeCV on the concatenated features, alphas = logspace(−1, 5, 25), one alpha per
+  KO
+- predictions made for the held-out cruise
+
+Residual R = Y − Ŷ (1,216 × 3,921). KO R2 is pooled over all held-out predictions;
+its median is 0.103.
+
+*3. Variance split.*
+- Residual share = Σ(R − mean R)² / Σ(Y − mean Y)², with sums over tiles and KOs.
+- Between-cruise share = Σ(cruise mean of R − mean R)² / Σ(R − mean R)².
+
+*4. PCA.*
+- Two input matrices, with each KO column centred and divided by its SD:
+  - "full" (F): R itself
+  - "within cruise" (W): R minus its per-cruise KO means, then standardised
+- Eigen-decomposition of the tile Gram matrix ZZᵀ, which is exact and faster than
+  3,921².
+- KO-space vectors v = Zᵀu / √λ.
+- Share of residual variance = λ / Σλ.
+- Score s = Zv / √λ, with unit sum of squares.
+- Loading = v·√(λ / (n−1)): the correlation of a KO's standardised residual with the
+  score.
+- Sign: chosen so that the loadings sum to positive.
+
+*5. Which components are real.*
+- **Permutation null** (reported, not used). 20 draws; each KO's residuals are
+  permuted across tiles on their own. A component passes if its eigenvalue beats the
+  95th percentile at its rank. It breaks the KO–KO covariance, so any shared
+  structure passes.
+- **Split-half reproducibility** (used).
+  - Each of 20 splits divides the 13 cruises at random into 6 and 7.
+  - Each half's matrix (F or W) is re-standardised, and its first 30 vectors are
+    computed.
+  - For each full-data component, the best match in each half is the vector with the
+    largest |cosine|.
+  - Congruence = |cosine| between the two matches.
+  - Reported: the median over the 20 splits, and the share of splits with congruence
+    ≥ 0.85 (Lorenzo-Seva and ten Berge's "fair similarity" bar).
+
+*6. Candidate drivers.*
+- **Values per tile.** Per sample, then averaged over the samples in a tile.
+- **Sources:**
+  - Sampling time and position: `data/model_fields/sample_model_fields.csv`.
+    - Year as a decimal.
+    - Season as cos/sin of (day of year − 172), multiplied by the hemisphere sign.
+    - Local solar hour = UTC hour + lon/15, entered as cos and sin.
+  - Depth: `ko_samples.csv`.
+  - In situ (manifest): temperature, log10 phosphate (floor 0.005), log10
+    nitrate+nitrite (floor 0.01).
+  - CCHDO bottles (`biogoship_samples_cchdo.csv`): salinity, oxygen, log silicate,
+    log nitrite, DIC, alkalinity, pH.
+  - Model fields: GLORYS and PISCES day fields, plus the R27 history fields, with the
+    log floors of `model_field_first.VARIABLES` / `HISTORY`.
+  - Sequencing:
+    - log10 total KO counts
+    - number of libraries
+    - instrument OBI_3310 share
+    - share from 2021 on
+  - Taxa: domain CLRs, the unclassified-read logit, and all phylum CLRs.
+
+*7. Description statistics.*
+- **Cruise eta2** = var(per-cruise mean of the score, broadcast to tiles) / var(score).
+- **Spearman correlations.**
+  - "All" uses ranks over all tiles.
+  - "Within" ranks over all tiles, then demeans the ranks per cruise for both
+    variables, then takes the Pearson r.
+  - A driver is used only with ≥ 100 non-missing tiles in ≥ 3 cruises.
+  - Sign consistency: among cruises with ≥ 15 tiles and a non-constant driver, the
+    number whose own Spearman r has the sign of the pooled within r.
+  - The table lists the 3 phyla with the largest |within r|.
+- **Group CV R2.**
+  - Leave one cruise out.
+  - Missing values are filled with training medians.
+  - Standardised, then RidgeCV with alphas = logspace(−2, 4, 25).
+  - Pooled R2 = 1 − SSE / SST over all tiles. Negative means worse than predicting
+    the mean.
+  - For W components the predictors are centred per cruise first.
+  - Groups:
+    - sequencing: all "sequencing:" columns
+    - sampling: all "sampling:" columns
+    - GLORYS+history: model columns with > 90% tile coverage
+    - all environment: sequencing + sampling + GLORYS+history
+    - taxa: domain CLRs, unclassified logit, phylum CLRs
+    - PISCES comparison: on the 637 tiles where every model column exists,
+      GLORYS+history with and without the PISCES fields
+- **KEGG.**
+  - `data/reference/kegg_brite_ko00001.csv`, restricted to the four pathway A-classes:
+    Metabolism, Genetic and Environmental Information Processing, Cellular Processes.
+  - Categories at levels B and C with ≥ 10 of the target KOs.
+  - z = (mean loading in the category − mean over all KOs) / (SD over all KOs / √k).
+
+*8. Outputs.*
+- `components.csv`: share, null share, split-half congruence, eta2, group R2.
+- `drivers.csv`: every driver × component.
+- `categories.csv`: KEGG B and C z per component.
+- `top_kos.csv`: the 10 KOs at each pole.
+- `scores.csv`: tile × component, with section and sample_id.
+- `loadings.csv.gz`: KO × component.
+- `summary.txt`: the console log.
 
 **Residual variance.** 83.7% of the KO CLR variance is left after the baseline.
 - 20.1% of it lies between cruises: per-cruise offsets, which a model with the cruise

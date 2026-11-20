@@ -15,8 +15,13 @@ Output layout = ko_counts_cov50_all.tsv: header "count.ko.Kxxxxx ..." with NO ro
 "<library>\\t<counts...>". KO columns: those of --template (ko_counts_cov50_all.tsv) in its order, then any
 other KOs. Files may be plain or .gz. A library found twice: the first is kept and the repeat is reported.
 
+Roots may also be Google Drive zips (drive-download-*.zip, members <library>/level_*.tsv): with --stash DIR,
+the level-1 KO and abundance files of every library are first copied gzipped to DIR/<library>/ (small; the
+zips can then be deleted), and the merge reads DIR.
+
 Usage:
     python scripts/merge_ko_counts.py <root> [<root> ...] --out ko_counts_cov0_all.tsv
+    python scripts/merge_ko_counts.py drive-download-*.zip --stash data/targets/cov0_stash --out ko_counts_cov0_all.tsv
 """
 
 from __future__ import annotations
@@ -43,7 +48,28 @@ def main() -> None:
     p.add_argument("roots", type=Path, nargs="+", help="folders holding <library>/level_*_ko_counts.tsv (searched recursively)")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--template", type=Path, default=REPO / "ko_counts_cov50_all.tsv")
+    p.add_argument("--stash", type=Path, help="extract level-1 files from zip roots into this folder first")
     args = p.parse_args()
+    zips = [r for r in args.roots if r.suffix == ".zip"]
+    if zips:
+        if args.stash is None:
+            raise SystemExit("zip roots need --stash")
+        import zipfile
+
+        n = 0
+        for z in zips:
+            with zipfile.ZipFile(z) as zf:
+                for name in zf.namelist():
+                    m = re.search(r"(?:^|/)([^/]+)/(level_1_[a-z_]+_(ko_counts|abundance))\.tsv$", name)
+                    if not m:
+                        continue
+                    dest = args.stash / m.group(1) / (m.group(2) + ".tsv.gz")
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(name) as src, gzip.open(dest, "wb") as out:
+                        out.write(src.read())
+                    n += 1
+        print(f"stashed {n:,} level-1 files from {len(zips)} zips into {args.stash}")
+        args.roots = [r for r in args.roots if r.suffix != ".zip"] + [args.stash]
 
     libs: dict[str, Path] = {}
     for root in args.roots:

@@ -4590,3 +4590,77 @@ Remaining per-KO effects vs KO properties (Spearman):
   number cov0 has to remove for the breadth-filter explanation to hold.
 - Note on the mapping rate: the domain abundance counts are also coverage-filtered (count_biogoship_taxa
   uses the same threshold), so at cov0 it measures all mapped reads.
+
+### R47 results: cov0 arrived (Google Drive zips, 175 libraries) (2026-11-20)
+
+**Data.**
+- 13 Google Drive zips (`drive-download-20261120T231310Z-1-001…013.zip`, 6.0 GB) held 175 complete
+  libraries, every level present.
+- The zips had no `level_1_*_abundance.tsv`, so there is no cov0 mapping rate.
+- `scripts/merge_ko_counts.py` (now reads zips) copied each library's level-1 (domain) KO file gzipped to
+  `data/targets/cov0_stash/<library>/` (46 MB) and merged them into `ko_counts_cov0_all.tsv.gz`
+  (175 libraries × 19,340 KOs, against 18,836 at cov50). The zips were then deleted.
+- Command:
+  `python scripts/merge_ko_counts.py figures/output/drive-download-*.zip --stash data/targets/cov0_stash --out ko_counts_cov0_all.tsv`.
+- Libraries by cruise: I09N-2016 HiSeq 4000 4 / NovaSeq 6000 95; NH1418-2014 HiSeq 5 (2 surface) /
+  NovaSeq 7; AE1319-2013 HiSeq 1; HLY2202-2022 50 (all on flowcell HMY7WDSX7); AMT28-2018 7; P18-2016 6.
+  BVAL46-2011 is absent.
+
+**Checks.**
+- No KO count is lower at cov0 than at cov50 in any library: the filter only removes reads.
+- KO-assigned reads cov0 / cov50: median 2.19× (range 1.40–78.3).
+- KOs detected per library: median 14,580 at cov0 vs 7,063 at cov50.
+
+**Test.** `scripts/coverage_threshold_test.py`: 158 libraries in both tables and above 250,000 KO reads.
+- Mixed cruises with both platforms: I09N-2016 (HiSeq 4 vs NovaSeq 91, surface) and NH1418-2014 (HiSeq 2
+  vs 7, surface).
+- No rerun control: cov0 has only one HLY2202 flowcell.
+- Within-cruise SDs are computed on these same 158 libraries, separately for each coverage.
+
+| Metric | cov50 gap (raw) | cov50 (within-cruise SD) | p | cov0 gap (raw) | cov0 (within-cruise SD) | p | Share of the SD-scaled gap left at cov0 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Profile spread (SD of CLR) | +0.2054 | +1.68 | 0.002 | +0.0899 | +1.64 | 0.012 | 98% |
+| Undetected KOs | +0.0838 | +1.98 | 0.006 | +0.0140 | +1.91 | 0.008 | 96% |
+| Shannon | −0.0796 | −1.68 | 0.0005 | −0.0408 | −1.32 | 0.019 | 79% |
+| Axis-1 score, CLR | +31.82 | +1.52 | 0.004 | +14.32 | +1.12 | 0.058 | 74% |
+| Axis-1 score, genome equivalents | −10.16 | −0.45 | 0.36 | −4.96 | −0.29 | 0.56 | 65% |
+
+Per cruise:
+- cov50: I09N spread +0.065, undetected +0.015, F1 +10.6; NH1418 spread +0.485, undetected +0.221,
+  F1 +74.4.
+- cov0: I09N spread +0.025, undetected +0.003, F1 +4.2; NH1418 spread +0.220, undetected +0.035,
+  F1 +34.6.
+
+Per-library change from cov50 to cov0 (mixed cruises, surface; mean):
+
+| Platform | Spread | Undetected | Shannon | F1 (CLR) | F1 (GE) |
+|---|---:|---:|---:|---:|---:|
+| HiSeq 4000 | −0.423 | −0.135 | +0.090 | −60.5 | −0.19 |
+| NovaSeq 6000 | −0.346 | −0.085 | +0.056 | −47.7 | −2.01 |
+
+Figure: `figures/output/coverage_threshold_gap.png`. Three panels: undetected KOs, profile spread and the
+CLR axis-1 score, each centred within cruise, by platform, at ≥ 50% coverage and with no filter.
+
+**Conclusions** (two cruises and 6 surface HiSeq libraries, so low power)
+1. **The 50% filter amplifies the gap but does not create it.**
+   - Without the filter, the raw HiSeq − NovaSeq gaps shrink by half or more (undetected KOs
+     0.084 → 0.014; F1 31.8 → 14.3).
+   - The HiSeq libraries also lose more to the filter (undetected −0.135 vs −0.085).
+   - But library-to-library variation shrinks in step. Relative to it, the HiSeq libraries remain about
+     as unusual: unevenness keeps 96–98% of its gap, CLR axis 1 keeps 74%.
+   - So the coverage threshold is not what converts complexity into missing KOs. The deficit, fewer
+     distinct KOs per read, is already present in the mapped reads.
+2. **This points to the reads themselves: library complexity, i.e. fewer distinct fragments.**
+   - The duplicate-rate / library-complexity check is now the main test, not just a confirmation:
+     `fastp` duplication or `samtools markdup` on subsampled reads for the mixed cruises, on Morrill.
+   - Other read-level options are still open: a different library-prep kit or input amount per platform
+     batch.
+3. **On the genome-equivalent scale there is no significant platform gap at either coverage**
+   (−0.45 / −0.29 SD, p ≥ 0.36), consistent with R46. The transform choice matters more than the
+   coverage threshold for axis 1.
+4. **Limits.**
+   - The gap rests mostly on NH1418 (2 surface HiSeq libraries, one extreme); I09N's gap is small at
+     both coverages.
+   - No same-DNA control at cov0.
+   - Re-run with the remaining cov0 libraries if more arrive (e.g. BVAL46, AE1319 NovaSeq, the second
+     HLY2202 flowcell).

@@ -28,6 +28,8 @@ library in ko_counts_cov50_all.tsv without a workbook row. Columns, with where e
                          at >= 50% reference coverage, split 1/n). Mapped-read counts (flagstat) are
                          not available to us: mapped_reads is left empty.
   sra_run                SRA run accession, where one exists
+  seq_lab, run_name      sequencing-run list from the team (transfer/maybe_useful_README.txt: run, lab
+                         group whoi / uci / noaa, run name, cruises)
   source_of_information  per-field sources, compact
 
 ENA run records are fetched once (study PRJNA656268) into transfer/data/ena_PRJNA656268_runs.tsv.
@@ -64,6 +66,13 @@ warnings.filterwarnings("ignore")
 ENA = ("https://www.ebi.ac.uk/ena/portal/api/search?result=read_run&query=study_accession=PRJNA656268"
        "&fields=run_accession,sample_accession,instrument_model,library_name,library_strategy,library_layout,"
        "read_count,base_count,run_alias&limit=0&format=tsv")  # fmt: skip
+
+# Sequencer read directly from an original FASTQ header (the instrument id; "LH" = NovaSeq X series)
+HEADER_EVIDENCE = {
+    "22YJMLLT4": ("Illumina NovaSeq X", "FASTQ header @LH00626:65:22YJMLLT4 (xR058-L2-P01 READ1, checked 2026-11-20); "
+                  "quality scores binned I/9/-/# (NovaSeq X style)"),
+}
+README = REPO / "transfer" / "maybe_useful_README.txt"
 
 # cruise (FAIRe short_name) -> (extraction, library prep, sequencer, confidence), from the tables supplied 2026-11-19/20
 DOCUMENTED = {
@@ -180,7 +189,9 @@ def main() -> None:
         if en is not None and sra is None:
             sra = en.name
         doc = DOCUMENTED.get(cruise, ("not verified", "not verified", "not verified", "none"))
-        if en is not None:
+        if flowcell in HEADER_EVIDENCE:
+            seq, seq_src = HEADER_EVIDENCE[flowcell]
+        elif en is not None:
             seq, seq_src = en["instrument_model"], "ENA/SRA run record"
         elif doc[2] != "not verified":
             seq, seq_src = doc[2], "published table (cruise level)"
@@ -221,12 +232,25 @@ def main() -> None:
                 "total_reads: FAIRe input_read_count" if e is not None else "", "lane: library/file name" if lane else ""] if x),
         })  # fmt: skip
     df = pd.DataFrame(out)
+    if README.exists():
+        rd = pd.read_csv(README, sep="\t").dropna(subset=["seq_run_id"])
+        # one run (23LT2GLT4) was shared by two labs: map by run and library-name prefix
+        def lab(row):
+            g = rd[rd["seq_run_id"] == row["seq_run_id"]]
+            if len(g) > 1:
+                pre = "GSI05|GOMECC" if str(row["lib_id"]).startswith(("GSI05", "GOMECC")) else "GSA"
+                g = g[g["cruises"].str.contains(pre.split("|")[0]) | (g["cruises"].str.contains("GOMECC") & pre.startswith("GSI"))]
+            return (g["group"].iloc[0], g["run_name"].iloc[0]) if len(g) else (None, None)
+        labs = df.apply(lab, axis=1, result_type="expand")
+        df["seq_lab"], df["run_name"] = labs[0], labs[1]
+        df["source_of_information"] = df["source_of_information"] + np.where(df["seq_lab"].notna(), "; lab/run name: team run list (README)", "")
     df.to_csv(args.out_dir / "library_metadata.csv", index=False)
 
     summ = df.groupby("cruise", dropna=False).agg(
         libraries=("lib_id", "size"), in_ko_table=("in_ko_table", "sum"), in_real_targets=("in_real_targets", "sum"),
         flowcells=("flowcell_id", lambda v: "; ".join(f"{k} ({n})" for k, n in v.value_counts().items())),
         sequencer=("sequencer_model", lambda v: "; ".join(f"{k} ({n})" for k, n in v.value_counts().items())),
+        labs=("seq_lab", lambda v: "; ".join(f"{k} ({n})" for k, n in v.value_counts().items())),
         lanes=("lane", lambda v: ", ".join(sorted(v.dropna().unique()))), sra_runs=("sra_run", lambda v: v.notna().sum()),
         extraction_batches=("extraction_batch", lambda v: v.nunique()), prep=("library_prep_kit", "first"))
     summ.to_csv(args.out_dir / "cruise_summary.csv")

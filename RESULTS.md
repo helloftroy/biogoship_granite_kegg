@@ -3597,3 +3597,164 @@ and `sequencer_contrasts_summary.txt` in `transfer/results/library_metadata/`):
    Morrill).
 3. If platform is confirmed, model it: era/platform as a covariate, or a
    batch-correction step for the KO targets.
+
+## R40. Sequencer confirmed from a FASTQ header; the team's run list; axis 1 follows platform, not lab; GC job (2026-11-20)
+
+### 1. New sources (in `transfer/`)
+
+**`maybe_useful_README.txt`** (downloaded 2026-11-20): the team's list of metagenome
+sequencing runs, giving library count, lab group, `seq_run_id`, cruises and run name.
+
+| Libraries | Lab | seq_run_id | Cruises | Run name | Notes |
+|---:|---|---|---|---|---|
+| 24 | whoi | 20170925_HKMFTBBXX_MetaG_PE150 | I09N 2016 | larkin_1 | |
+| 31 | whoi | 20189999_HWKN2BBXX_MetaG_PE150 | I09N 2016, AE1319 2013, BVAL46 2011, NH1418 2014 | larkin_2 | |
+| 215 | whoi | 20190318_HHGJFDSXX_MetaG_PE150 | I09N 2016 | larkin_3 | |
+| 203 | whoi | 20190730_HMMFVDSXX_MetaG_PE150 | P18 2016–2017, AMT-28 2018, AE1319 2013, BVAL46 2011, NH1418 2014 | larkin_4 | |
+| 237 | whoi | 20200318_H357JDSXY_MetaG_PE150 | I07N 2018 | larkin_5 | |
+| 251 | whoi | 20200909_HKNJLDRXX_MetaG_PE150 | C13.5 2020 | larkin_6 | |
+| 82 | whoi | 20230419_HWKVFDSX5_MetaG_PE150 | ARC 2022, P02 2022, Intercal | 2023_mixed | |
+| 143 | uci | 20230803_HFJLFDSX7_MetaG_PE150 | HEALY2202 2022 | mlbrock23080541 | |
+| 50 | uci | 20231029_HMY7WDSX7_MetaG_PE150 | HEALY2202 2022 | tchungsw23103138 | resequenced samples from mlbrock23080541? |
+| 288 | whoi | 20250405_22NCJYLT4_MetaG_PE150 | A16N 2023 | thompson_2025 | |
+| 634 | uci | 20250730_22YJMLLT4_MetaG_PE150 | I08S 2024, I09N 2025, P02 2022, NP | BGS1:7 | |
+| 813 | noaa | 20260406_23LT2GLT4_MetaG_PE150 | GSI052023, GOMECC4 | thompson_2026 | |
+| 200 | whoi | 20260406_23LT2GLT4_MetaG_PE150 | GSA1352024, GSA16N2023 | thompson_2026 | |
+
+- HMY7WDSX7 re-sequenced HFJLFDSX7 samples. R39 confirms this: 50 HLY samples are on
+  both runs.
+- One flowcell, 23LT2GLT4, was shared by NOAA (I05-2023, GOMECC4) and WHOI (A13.5-2024,
+  A16N-2023).
+
+**`xR058-L2-P01-TAAGGCGA-AGGCTTAG-READ1-Sequences.txt.gz`** (2.2 GB): an original READ1
+file from run 22YJMLLT4, lane 2.
+- First header: `@LH00626:65:22YJMLLT4:2:1101:2991:1056 1:N:0:TNAGGCGA+AGGCTTAG`.
+  - Instrument **LH00626**: the "LH" prefix is the NovaSeq X series.
+  - Run 65, flowcell 22YJMLLT4, lane 2.
+  - The index pair matches the file name.
+- All of the first 100,000 reads carry the same instrument, run, flowcell and lane.
+- Their quality scores use four bins (in Phred+33):
+  - `I` (Q40): 14,097,930
+  - `9` (Q24): 619,474
+  - `-` (Q12): 382,445
+  - `#` (Q2): 151
+
+  This is the NovaSeq X binning. NovaSeq 6000 bins as F / : / , / #, as in the ENA
+  reads of R39.
+- **22YJMLLT4 (UCI; I08S-2024, I09N-2025, P02-2022) is therefore a NovaSeq X run,
+  confirmed.**
+  - The other two "…LT4" flowcells (22NCJYLT4: A16N; 23LT2GLT4: A13.5, A16N, I05,
+    GOMECC4) share the format but are still unconfirmed.
+  - One header from each would settle them.
+- The file is large and not needed further. It shouldn't stay in `transfer/` unless
+  wanted.
+
+**Library table updated** (`transfer/scripts/library_metadata.py`):
+- New columns `seq_lab` and `run_name`, from the README.
+  - 23LT2GLT4 libraries are split by name prefix: GSI05 / GOMECC to NOAA, GSA to WHOI.
+- For 22YJMLLT4, `sequencer_model` is now "Illumina NovaSeq X", with the header as its
+  source. Per flowcell:
+
+| Flowcell | Sequencer | Source |
+|---|---|---|
+| HKMFTBBXX, HWKN2BBXX | Illumina HiSeq 4000 | ENA |
+| HHGJFDSXX, HMMFVDSXX, H357JDSXY, HKNJLDRXX | Illumina NovaSeq 6000 | ENA |
+| HFJLFDSX7, HMY7WDSX7, HWKVFDSX5 | NovaSeq 6000 | published (HLY) / flowcell format |
+| 22YJMLLT4 | Illumina NovaSeq X | FASTQ header |
+| 22NCJYLT4, 23LT2GLT4 | NovaSeq X? | flowcell format, unconfirmed |
+
+### 2. Axis-1 cruise offsets: platform or lab?
+
+**Data.** Real model, R36 scores. Per cruise: the mean F score in SD of the tile scores.
+Output in `transfer/results/library_metadata/cruise_axis_by_lab_platform.csv`.
+
+| Cruise | Lab | Platform | F1 | F2 | F3 |
+|---|---|---|---:|---:|---:|
+| HLY2202-2022 | uci | NovaSeq 6000 | +0.79 | +0.16 | −0.95 |
+| AMT28 | whoi | NovaSeq 6000 | +0.25 | −0.06 | −0.12 |
+| C13.5/A13.5 | whoi | NovaSeq 6000 | +0.47 | +0.16 | +0.54 |
+| I07N | whoi | NovaSeq 6000 | +0.26 | −0.11 | +0.71 |
+| I09N | whoi | NovaSeq 6000 | +0.62 | +0.14 | +1.46 |
+| P18 | whoi | NovaSeq 6000 | +0.64 | −0.73 | +0.17 |
+| GOMECC4 | noaa | NovaSeq X (?) | +0.10 | −0.84 | −0.26 |
+| I05-2023 | noaa | NovaSeq X (?) | −1.28 | +0.69 | +0.63 |
+| I08S-2024 | uci | NovaSeq X | −0.16 | −0.49 | −0.40 |
+| I09N-2025 | uci | NovaSeq X | −0.77 | −0.38 | −1.09 |
+| P02-2022 | uci | NovaSeq X | −0.29 | −0.91 | −0.64 |
+| A13.5-2024 | whoi | NovaSeq X (?) | −0.21 | −0.11 | −0.69 |
+| A16N-2023 | whoi | NovaSeq X (?) | +0.22 | +0.57 | −0.74 |
+
+**Group means.**
+
+| Grouping | F1 | F2 | F3 |
+|---|---:|---:|---:|
+| NovaSeq 6000, uci (1 cruise) | +0.79 | +0.16 | −0.95 |
+| NovaSeq 6000, whoi (5) | +0.45 | −0.12 | +0.55 |
+| NovaSeq X, noaa (2) | −0.59 | −0.08 | +0.18 |
+| NovaSeq X, uci (3) | −0.41 | −0.59 | −0.71 |
+| NovaSeq X, whoi (2) | +0.01 | +0.23 | −0.72 |
+| NovaSeq 6000 (6) | +0.50 | −0.07 | +0.30 |
+| NovaSeq X (7) | −0.34 | −0.21 | −0.46 |
+
+**Eta2 over the 13 cruises** (label permutation, 9,999):
+
+| Axis | Platform | Lab |
+|---|---|---|
+| F1 | **0.55 (p 0.003)** | 0.34 (p 0.12) |
+| F2 | 0.02 (p 0.64) | 0.13 (p 0.50) |
+| F3 | 0.27 (p 0.072) | 0.37 (p 0.10) |
+
+**Reading.**
+- **The axis-1 offset follows the platform, not the lab.**
+  - Within UCI, the NovaSeq 6000 cruise HLY2202 (+0.79) sits far above its three
+    NovaSeq X cruises (−0.41). Same lab, library prep at least partly the same group,
+    different platform: a 1.20 SD drop.
+  - Within WHOI the step has the same sign: NovaSeq 6000 +0.45 against NovaSeq X +0.01,
+    a 0.44 SD drop.
+  - Together with R39, three findings agree:
+    - HiSeq 4000 → NovaSeq 6000 within cruises moves libraries the same way
+    - same-platform re-sequencing doesn't move them
+    - library prep and preservation don't move them
+
+    So **axis 1's cruise offsets are largely a sequencing-platform batch effect.**
+- **The bacterial / eukaryotic composition (axis 1) still has real within-cruise
+  structure.** W1 is identical in both workflows (R36) and links weakly to
+  stratification and bloom phase (R35, R37). Only the cruise-level offset is the
+  platform's.
+- **Axis 2 doesn't follow platform** (eta2 0.02), in line with R36.
+
+**Consequences for the model.**
+- Carry the platform (NovaSeq 6000 vs NovaSeq X) as a covariate. Or correct it before
+  training, for example by matching the axis-1 offsets per platform.
+- When the external sets are mapped (R32), record each one's platform. A held-out set
+  on a different platform from most of training will carry this offset.
+
+### 3. GC check: job for Morrill
+
+**Question.** If the axis-1 loadings follow the GC content of the KOs' genes, the
+mechanism is a chemistry-dependent GC bias:
+- HiSeq 4000 four-colour SBS
+- NovaSeq 6000 two-colour
+- NovaSeq X XLEAP-SBS
+
+**Script** `transfer/scripts/ko_gc_content.py`, run by `transfer/cluster/ko_gc.sbatch`
+(morrill partition, 96 GB):
+- It streams the eggNOG table (gene → KOs), the taxonomy (gene → domain) and the
+  reference FASTA.
+- It keeps a deterministic 1-in-10 sample of genes (crc32 of the id).
+- Per KO it writes the weighted mean and SD of gene GC, mean length, and mean GC per
+  domain. Multi-KO genes are split 1/n, as in the counting.
+- Tested on a synthetic set: GC and per-domain values are right.
+
+**Run order.** The FASTA (212 GB) wasn't part of the R32 download.
+
+    cd /scratch/morrill/users/$USER/biogoship_granite_kegg && git pull
+    df -h /scratch/morrill/users/$USER        # about 215 GB free needed
+    jid=$(sbatch --parsable --account=191001-364393 \
+           --export=ALL,FILES="biogoship_2026_database_v2.fasta" cluster/download_reference.sbatch)
+    sbatch --account=191001-364393 --dependency=afterok:${jid} transfer/cluster/ko_gc.sbatch
+
+**Bring back** `transfer/results/ko_gc/ko_gc.csv` and the job's .out.
+
+**Then, locally:** correlate GC with the F1 / W1 loadings (overall and within domain),
+with the platform contrasts of R39, and with the Protocol A effect.

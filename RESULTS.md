@@ -3644,7 +3644,8 @@ file from run 22YJMLLT4, lane 2.
 - **22YJMLLT4 (UCI; I08S-2024, I09N-2025, P02-2022) is therefore a NovaSeq X run,
   confirmed.**
   - The other two "…LT4" flowcells (22NCJYLT4: A16N; 23LT2GLT4: A13.5, A16N, I05,
-    GOMECC4) share the format but are still unconfirmed.
+    GOMECC4) share the format but are still unconfirmed. (Both were confirmed NovaSeq X
+    later, in R41.)
   - One header from each would settle them.
 - The file is large and not needed further. It shouldn't stay in `transfer/` unless
   wanted.
@@ -3758,3 +3759,136 @@ mechanism is a chemistry-dependent GC bias:
 
 **Then, locally:** correlate GC with the F1 / W1 loadings (overall and within domain),
 with the platform contrasts of R39, and with the Protocol A effect.
+
+## R41. All flowcells identified; platforms in training and test sets; summary of the residual-axis work (R33–R41) (2026-11-20)
+
+### 1. The last two flowcells: NovaSeq X
+
+Two more original FASTQ files were downloaded 2026-11-20; the first 100,000 reads of
+each were read, then the files were deleted.
+
+| File | First header | Instrument | Run | Flowcell | Lane | Quality bins (first 100 k reads) |
+|---|---|---|---:|---|---:|---|
+| GOMECC4011_SA_L001_R2_001.fastq.gz | `@LH00316:31:23LT2GLT4:5:1101:34662:1014 2:N:0:NTGTTGGTCC+NACGGTCTAT` | LH00316 | 31 | 23LT2GLT4 | 5 | I 14,356,485; 9 499,540; * 243,598; # 377 |
+| GS-A16N-2023-011_SA_L001_R1_001.fastq.gz | `@LH00162:255:22NCJYLT4:8:1101:1671:1042 1:N:0:CGCAGCAATT+ATAGCGGAAT` | LH00162 | 255 | 22NCJYLT4 | 8 | I 12,272,457; 9 424,453; * 125,922; # 1,337 |
+| (R40) xR058-L2-P01 READ1 | `@LH00626:65:22YJMLLT4:2:1101:2991:1056 …` | LH00626 | 65 | 22YJMLLT4 | 2 | I / 9 / - / # |
+
+- **All three 2023–2025 flowcells are NovaSeq X** (LH instruments).
+- They ran on three different instruments.
+- The two WHOI/NOAA runs bin the third quality level as `*` (Q9), while the UCI-provider
+  run uses `-` (Q12). That is a different instrument software setting, a possible
+  sub-batch within NovaSeq X. Nothing so far shows an effect: the within-X lab means
+  differ but not significantly (R40).
+- `library_metadata.py` records the header evidence for all three.
+
+**Platform per library now** (KO-table libraries; in brackets, in the real targets):
+
+| Platform | Libraries | In real targets | Source |
+|---|---:|---:|---|
+| Illumina HiSeq 4000 | 54 | 38 | ENA. None of these samples is in a modelled tile (R36). |
+| Illumina NovaSeq 6000 | 901 + 192 | 897 + 186 | ENA (2016–2020); published + flowcell format (HLY2202) |
+| Illumina NovaSeq X | 1,899 | 920 | FASTQ headers (all three flowcells) |
+| unknown | 35 | 0 | ERR libraries of another project in the KO table |
+
+### 2. Are other platforms missing?
+
+**Training set:** no. Every library in the real targets is on a known platform:
+- NovaSeq 6000: 2016–2022
+- NovaSeq X: 2023–2025 cruises, including P02-2022 and GOMECC4
+- HiSeq 4000: only samples that don't reach a modelled tile
+
+**External test sets** (ENA `instrument_model`, in `data/external/<set>/reads/runs.csv`):
+
+| Set | Platforms (runs) |
+|---|---|
+| Tara Pacific | NovaSeq 6000 (78), HiSeq 4000 (6) |
+| JGI (Flinkstrom) | **HiSeq 2500 (85)**, NovaSeq 6000 (5) |
+| EMO BON | NovaSeq 6000 (131) |
+
+- **HiSeq 2500 is in no training sample.** HiSeq 2500 is four-colour SBS like the
+  HiSeq 4000, which R39 found shifted toward the bacterial pole of axis 1. So JGI's
+  predictions should carry a platform offset of unknown size.
+- No test set is on NovaSeq X.
+- When the platform covariate is added, the test sets would be predicted at
+  "NovaSeq 6000", except JGI. JGI would need either a HiSeq-family value or to be
+  reported separately.
+- A further check is planned for when external sets are mapped: R39's
+  HiSeq 4000 − NovaSeq 6000 contrast, repeated on Tara's 6 HiSeq 4000 runs.
+
+### 3. Summary of findings, R33–R41
+
+**What remains after the satellite model** (Granite 32 PCs + temperature spline,
+cruise held out; median KO R2 0.103):
+- 84% of KO CLR variance is left, a fifth of it as cruise offsets.
+- About a third of the residual variance lies on three reproducible axes. Beyond them
+  the residual has no stable shared structure. Ocean-model fields, sampling time and
+  depth explain none of the axes.
+
+**Axis 1: bacterial vs eukaryotic genes (17–19% of the residual).**
+- **Its cruise offsets are mostly a sequencing-platform batch effect.**
+  - They split NovaSeq 6000 vs NovaSeq X (eta2 0.55, p 0.003). Lab doesn't explain
+    them (0.34, p 0.12).
+  - Within UCI and within WHOI, moving from NovaSeq 6000 to NovaSeq X lowers the cruise
+    means: by 1.20 and 0.44 SD.
+  - HiSeq 4000 vs NovaSeq 6000 within the same cruises shifts libraries the same way:
+    +1.19× the era offset, p < 0.001, in all four cruises.
+  - Re-sequencing the same DNA on the same platform shifts nothing (HLY2202).
+- Ruled out as drivers of the offset:
+  - library prep: Nextera tagmentation vs DNA Flex (HLY2202)
+  - preservation and bead beating: the A16N Protocol A/B pairs
+  - sampling year, within one extraction workflow
+  - flowcell, storage time, volume, collection method, extraction plate
+- **Its within-cruise part (W1) is real and the same in every workflow.** It links
+  weakly to stratification (DCM strength, nitracline below the mixed layer, low
+  surface nitrate; r ≈ 0.2) and to bloom phase (after a peak; r ≈ 0.14).
+- The R33 "temperature" link was an artefact of a five-cruise subset; its sign differs
+  by era.
+
+**Axis 2: phototrophs (Cyanobacteria / Cryptophyta, photosynthesis genes; 10%).**
+- **It is biology.**
+  - It has the same loadings in the old and new workflows: cosine 0.95 and 0.94 with
+    the full fit, old vs new 0.79 against a random-split median of 0.81.
+  - It isn't related to platform (eta2 0.02).
+  - It survives dropping the Protocol A samples.
+- **It isn't ridge shrinkage.**
+  - Calibration slopes are below 1: the predictions are over-dispersed, not compressed.
+  - The axis correlates negatively with the predicted signal.
+  - It survives recalibration (cosine 0.985).
+- **It is spatially smooth.** Decorrelation length is about 560 km. About half its
+  variance varies over hundreds of km, about a quarter is replicate-level noise, which
+  is the predictability floor.
+- **No tested variable explains it:**
+  - surface and model fields
+  - nutricline and DCM, from CCHDO profiles
+  - bloom phase, from 28-day satellite chlorophyll
+  - protocols and sampling time
+
+  It is the part of the phototroph community orthogonal to what Granite and
+  temperature capture. The model does predict the Cyanobacteria share itself well
+  within cruise (r 0.79).
+- **Untested candidates:** light history (cloud / PAR, mixed-layer light), water-mass
+  origin (back-trajectories), grazing and viruses.
+
+**Axis 3: sequencing depth (6–7%).**
+- Technical: it comes from the CLR pseudocount 0.5 / total.
+- Log total counts as a covariate removes it completely and raises the median KO R2 to
+  0.145.
+- Protocol A samples also load on it.
+
+**Protocol decisions made.**
+- A16N Protocol A samples are out of the real targets: no beads + lysis buffer, a
+  strong technical effect.
+- C13.5 v1/v2, GOMECC4 A/B/C and HLY re-sequencing are replicates and stay averaged.
+- The P02 Shield pairs can't be tested: their 2023 libraries aren't in the KO table.
+
+**Model changes agreed, not yet tested:**
+- platform covariate: NovaSeq 6000 / NovaSeq X / HiSeq family
+- sequencing-depth covariate
+- alpha chosen by leave-cruise-out (R38 found the predictions over-dispersed)
+
+These wait until the remaining variables are worked out.
+
+**Pending:**
+- the GC job on Morrill (R40)
+- light history and back-trajectories for axis 2
+- whether the P02 HWKVFDSX5 libraries can be counted

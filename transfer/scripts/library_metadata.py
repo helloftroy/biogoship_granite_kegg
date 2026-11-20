@@ -71,6 +71,10 @@ ENA = ("https://www.ebi.ac.uk/ena/portal/api/search?result=read_run&query=study_
 HEADER_EVIDENCE = {
     "22YJMLLT4": ("Illumina NovaSeq X", "FASTQ header @LH00626:65:22YJMLLT4 (xR058-L2-P01 READ1, checked 2026-11-20); "
                   "quality scores binned I/9/-/# (NovaSeq X style)"),
+    "23LT2GLT4": ("Illumina NovaSeq X", "FASTQ header @LH00316:31:23LT2GLT4 (GOMECC4011_SA_L001 R2, checked 2026-11-20); "
+                  "quality scores binned I/9/*/#"),
+    "22NCJYLT4": ("Illumina NovaSeq X", "FASTQ header @LH00162:255:22NCJYLT4 (GS-A16N-2023-011_SA_L001 R1, checked 2026-11-20); "
+                  "quality scores binned I/9/*/#"),
 }
 README = REPO / "transfer" / "maybe_useful_README.txt"
 

@@ -4124,3 +4124,128 @@ for the full (F) and within-cruise (W) residual PCA of R36, against the permutat
   - The GC check may tighten the platform attribution.
   - A platform covariate and a depth covariate in the model would move their slices
     into "explained".
+
+## R44. GC content per KO: the platform offset is not a sequencing GC bias; water-mass fields step fixed (2026-11-20)
+
+**Question.** Is the axis-1 platform offset (R39/R40) caused by GC-dependent sequencing chemistry? This would
+mean HiSeq 4000 (four-colour) vs NovaSeq 6000 / NovaSeq X (two-colour) cover low- and high-GC genes
+differently. If so, the per-KO platform effect should follow the GC content of the KO's genes, and GC
+should explain why that effect resembles the axis-1 loading.
+
+**Data.**
+- Per-KO GC came from `transfer/scripts/ko_gc_content.py` on Morrill (`transfer/cluster/ko_gc.sbatch`, after
+  downloading `biogoship_2026_database_v2.fasta`, 212 GB, job 88833).
+  - It uses a deterministic 1-in-10 sample (zlib.crc32 of the sequence id) of the reference genes with a
+    KEGG KO.
+  - GC of each gene is GC / (A+C+G+T). Each KO gets the gene-weighted mean, with weight 1/n for genes
+    carrying n KOs.
+  - The output also has means overall and per domain, plus mean gene length and the eukaryote share
+    (genes_Eukaryota / genes).
+  - Output: `transfer/results/ko_gc/ko_gc.csv`, 19,210 KOs.
+- All 3,933 real-model KOs have a GC value. The median is 1,044 sampled genes per KO; GC median 0.517,
+  IQR 0.490–0.540.
+
+**Method.** Script: `transfer/scripts/ko_gc_test.py`. Per-KO effects are in units of the KO's pooled
+within-cruise SD, as in R39. Library CLR is rarefied to 250,000 KO reads (seed 0) and cached in
+`rarefied_clr.npz`. The effects:
+- `hiseq`: HiSeq 4000 − NovaSeq 6000, different samples within a cruise, surface libraries.
+  - Cruises: I09N-2016, AE1319-2013, BVAL46-2011, NH1418-2014.
+  - Per-cruise mean difference, pooled with each cruise weighted by its smaller group.
+- `era`: mean of the cruise-mean library CLR, NovaSeq 6000 cruises minus NovaSeq X ("…LT4") cruises.
+  - Modelled surface libraries only.
+  - This contrast mixes platform, years and regions.
+- `rerun`: HLY2202, the same DNA on two NovaSeq 6000 flowcells (HMY7WDSX7 − HFJLFDSX7), 21 pairs.
+  - This is the control: same chemistry.
+- `protocolA`: A16N Protocol A − B, 16 pairs.
+- `c13_v2`: C13.5 v2 − v1, 24 pairs (duplicates).
+- The loadings F1–F3 and W1–W3 (`residual_modules_noA`).
+
+**Statistics.**
+- Spearman ρ of each effect with GC.
+- Partial Spearman controlling for the eukaryote share and mean gene length (ranks residualised).
+- ρ with bacterial-gene GC, for KOs with ≥ 20 sampled bacterial genes (3,507 KOs).
+- Share of each effect's per-KO variance explained by a cubic spline in GC (6 knots).
+- Whether controlling for GC removes the resemblance of the technical contrasts to F1/W1.
+- KOs are not independent, so p values are not reported. The comparison against the rerun control is
+  what carries the argument.
+
+**Results** (`transfer/results/ko_gc/gc_correlations.csv`, `gc_deciles.csv`, `gc_effects.csv`, `summary.txt`)
+
+| Effect | ρ with GC | Partial ρ (euk share, length) | ρ with bacterial-gene GC | ρ with eukaryote share |
+|---|---:|---:|---:|---:|
+| F1 | −0.268 | −0.211 | −0.198 | −0.41 |
+| W1 | −0.299 | −0.240 | −0.242 | −0.41 |
+| F2 | −0.213 | −0.235 | −0.259 | +0.16 |
+| W2 | −0.188 | −0.224 | −0.229 | +0.19 |
+| F3 | −0.122 | −0.114 | −0.093 | +0.11 |
+| W3 | −0.090 | −0.131 | −0.195 | +0.32 |
+| HiSeq − NovaSeq 6000 (within cruise) | −0.257 | −0.250 | −0.304 | −0.02 |
+| NovaSeq 6000 − X cruises (era) | −0.207 | −0.177 | −0.133 | −0.22 |
+| Same DNA, two NovaSeq 6000 runs (control) | +0.187 | +0.196 | +0.200 | −0.03 |
+| A16N Protocol A − B | −0.077 | −0.050 | −0.015 | −0.01 |
+| C13.5 v2 − v1 | +0.146 | +0.143 | +0.160 | +0.04 |
+
+GC vs eukaryote share: ρ +0.223. Gene length vs the effects: |ρ| ≤ 0.10 for all of them.
+
+| Effect | ρ with F1 | Partial ρ with F1 (GC, euk share, length) | ρ with W1 | Partial ρ with W1 | Variance explained by a GC spline | RMS (SD) | GC-decile range (SD) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| HiSeq − NovaSeq 6000 | +0.617 | +0.665 | +0.665 | +0.713 | 0.083 | 0.445 | 0.382 |
+| Era (6000 − X) | +0.587 | +0.538 | +0.497 | +0.432 | 0.046 | 0.402 | 0.260 |
+| Rerun (control) | −0.037 | −0.018 | −0.034 | −0.007 | 0.039 | 0.236 | 0.144 |
+
+Mean effect by GC decile (SD units; loadings as they are):
+
+| Decile | GC | F1 | W1 | F2 | W2 | F3 | W3 | HiSeq | Era | Rerun | Protocol A | C13.5 v2 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0.439 | 0.231 | 0.239 | 0.086 | 0.082 | 0.007 | 0.022 | 0.172 | 0.117 | −0.091 | 0.013 | −0.044 |
+| 1 | 0.475 | 0.337 | 0.353 | 0.141 | 0.097 | 0.061 | 0.076 | 0.310 | 0.170 | −0.060 | 0.087 | −0.086 |
+| 2 | 0.490 | 0.317 | 0.321 | 0.122 | 0.091 | 0.035 | 0.037 | 0.273 | 0.194 | −0.030 | 0.026 | −0.061 |
+| 3 | 0.501 | 0.301 | 0.304 | 0.108 | 0.083 | 0.027 | 0.013 | 0.284 | 0.205 | −0.007 | −0.007 | −0.032 |
+| 4 | 0.512 | 0.173 | 0.174 | 0.071 | 0.054 | 0.011 | −0.011 | 0.156 | 0.128 | 0.010 | −0.028 | −0.006 |
+| 5 | 0.521 | 0.106 | 0.106 | 0.001 | −0.013 | 0.007 | −0.009 | 0.094 | 0.114 | 0.015 | −0.029 | 0.008 |
+| 6 | 0.530 | 0.023 | 0.028 | 0.015 | 0.006 | 0.002 | −0.001 | 0.030 | 0.042 | 0.031 | −0.005 | −0.008 |
+| 7 | 0.540 | 0.024 | 0.025 | −0.022 | −0.040 | 0.002 | 0.027 | 0.061 | 0.028 | 0.035 | 0.000 | 0.027 |
+| 8 | 0.552 | −0.005 | −0.002 | −0.032 | −0.040 | −0.031 | −0.006 | −0.014 | −0.022 | 0.043 | −0.005 | 0.009 |
+| 9 | 0.574 | 0.037 | 0.027 | −0.096 | −0.095 | −0.099 | −0.053 | −0.072 | −0.055 | 0.053 | −0.057 | 0.006 |
+
+Figure: `transfer/figures/ko_gc_effects.png`. Each panel plots per-KO effect against gene GC, with the mean
+in 20 GC bins. Panels, left to right: HiSeq − NovaSeq 6000; the same-DNA rerun; NovaSeq 6000 − X; the F1
+loading.
+
+**Conclusions**
+1. **GC is not the mechanism of the platform offset.**
+   - GC explains 8% of the per-KO HiSeq − NovaSeq effect and 5% of the era effect.
+   - The resemblance of the HiSeq effect to axis 1 does not shrink when GC is controlled for:
+     F1 +0.62 → +0.67, W1 +0.67 → +0.71.
+   - So the platform effect lands on axis 1 through something other than GC.
+2. **GC-linked run-to-run variation exists, but it is ordinary.**
+   - The same DNA on two NovaSeq 6000 runs shows a GC slope of similar size and the opposite sign:
+     ρ +0.19, decile range 0.14 SD, against 0.38 SD for HiSeq.
+   - The C13.5 duplicates show the same kind of slope (ρ +0.15).
+   - These GC slopes have no axis-1 shape (rerun vs F1 ρ −0.04).
+   - So a GC tilt is a generic batch nuisance here, not what makes axis 1.
+3. **Axis 1 itself leans low-GC** (F1 vs GC ρ −0.27; low- and mid-GC deciles load +0.23 to +0.34).
+   - This survives controlling for the eukaryote share (−0.21) and holds among bacterial genes (−0.20).
+   - The likely reason is taxonomic: KOs typical of low-GC oligotrophs (e.g. SAR11, Prochlorococcus) load
+     on the bacterial side of axis 1.
+   - This is biology in the axis, not evidence of a chemistry bias.
+4. **The platform offset is still unexplained mechanistically.** Remaining candidates, none tested yet:
+   - library-prep kit or batch that changed together with the platform;
+   - read length or insert size, and therefore mapping and KO-assignment sensitivity;
+   - duplicate rate or index hopping;
+   - quality-filter behaviour on two-colour data (poly-G tails).
+   For modelling this changes nothing: platform enters as a covariate (agreed; testing on hold).
+5. **The Protocol A effect is not GC-linked** (ρ −0.08). Its F3 resemblance (ρ +0.57) is its own pattern.
+
+**Water-mass job (R42): fields step fixed.**
+- The trajectories came back complete: 2,014 samples, 60 days back at 6-h steps, none stuck or lost
+  (`transfer/results/water_mass/trajectories.csv`).
+- The along-track fields, however, held day 0 only for nearly every track:
+  - Parcels outputs on a 6-h clock offset by a fraction of an hour from each sample's time, and the
+    script kept only exact whole-day points.
+  - `daily_positions` now interpolates each track linearly to days 0 … −60. Longitude is unwrapped
+    before interpolating, then wrapped back.
+  - Checked: 61 points for all 2,014 tracks; day 0 equals the release position; the 18 tracks crossing
+    180° wrap correctly.
+- The output is now `along_track_daily.csv`; `along_track.csv` from the first run is obsolete.
+- The sbatch takes `STEPS=fields` to re-run that step alone. Commit 38d2e93.

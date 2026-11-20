@@ -13,19 +13,22 @@ carries the imprint of where its water came from, the Lagrangian history should 
                  biogoship/advection.py, backward only), positions every 6 h. A particle that leaves the
                  currents box is dropped from then on; one stuck on land stays put (velocity 0) and is
                  flagged. transfer/results/water_mass/trajectories.csv.
-  step fields    at the daily positions (day 0, -1, ..., -DAYS), nearest grid value of:
+  step fields    at the daily positions (day 0, -1, ..., -DAYS; interpolated linearly between the 6-hourly
+                 track points, see daily_positions), nearest grid value of:
                    sst      OSTIA L4 analysed_sst (reprocessed, then near-real-time), C
                    chl      GlobColour L4 gap-free CHL (multi-year, interim, near-real-time), mg m-3
                    mld      GLORYS12 mlotst (multi-year, interim, analysis-forecast), m
                    kd490    GlobColour L4 gap-free transparency KD490 if the dataset opens, m-1
                    depth    GLORYS12 static deptho (sea-floor depth), m
-                 transfer/results/water_mass/along_track.csv (long: sample_id, day, lat, lon, variable, value).
+                 transfer/results/water_mass/along_track_daily.csv (long: sample_id, day, lat, lon, variable, value).
+                 (along_track.csv from the first run is obsolete: whole-day points were selected, not
+                 interpolated, which left only day 0 for almost every track.)
                  Resumable (values appended per sample and variable).
   --probe-light  lists candidate Copernicus Marine ocean-colour datasets with their variables, to find
                  a daily PAR product (for the light-history test) and KD490.
 
 Features (time since shelf water, trajectory-mean SST / chlorophyll, origin region, mixed-layer light)
-are computed afterwards on the Mac from along_track.csv and trajectories.csv
+are computed afterwards on the Mac from along_track_daily.csv and trajectories.csv
 (transfer/scripts/water_mass_test.py), so their definitions can change without re-running this.
 
 Usage (Morrill, service partition: transfer/cluster/water_mass.sbatch):
@@ -224,17 +227,32 @@ def step_track(samples, args) -> None:
               f"full {DAYS} d: {np.mean(np.array(reach) >= args.days - 0.3):.0%}", flush=True)  # fmt: skip
 
 
+def daily_positions(tr: pd.DataFrame) -> pd.DataFrame:
+    """Positions at exactly 0, -24, -48, ... hours, linearly interpolated between the 6-hourly outputs.
+
+    Parcels writes on a 6-hour clock that is not aligned to each sample's own time (offsets of a fraction
+    of an hour), so whole-day outputs exist only at day 0; selecting them (the first version) left one
+    point per track. Longitude is unwrapped before interpolating so a track across 180 deg stays continuous."""
+    rows = []
+    for sid, g in tr.groupby("sample_id", sort=False):
+        g = g.sort_values("hours")
+        h = g["hours"].to_numpy()
+        days = np.arange(0, int(np.floor(h.min() / 24)) - 1, -1)
+        days = days[24 * days >= h.min() - 1e-6]
+        lon = np.degrees(np.unwrap(np.radians(g["lon"].to_numpy())))
+        lo = np.interp(24.0 * days, h, lon)
+        rows.append(pd.DataFrame({"sample_id": sid, "day": days, "lat": np.interp(24.0 * days, h, g["lat"].to_numpy()),
+                                  "lon": (lo + 180) % 360 - 180}))  # fmt: skip
+    return pd.concat(rows, ignore_index=True)
+
+
 def step_fields(samples, args) -> None:
     import xarray as xr
 
-    tr = pd.read_csv(OUT / "trajectories.csv")
-    day = (tr["hours"] / 24).round()
-    tr = tr[(np.abs(tr["hours"] - 24 * day) < 0.05) & (tr["hours"] <= 0)].copy()  # whole days only
-    tr["day"] = (tr["hours"] / 24).round().astype(int)
-    tr = tr.drop_duplicates(["sample_id", "day"])
+    tr = daily_positions(pd.read_csv(OUT / "trajectories.csv"))
     st = samples.set_index("sample_id")["sample_time"]
     tr["time"] = tr["sample_id"].map(st).dt.tz_convert(None).dt.floor("D") + pd.to_timedelta(tr["day"], unit="D")
-    path = OUT / "along_track.csv"
+    path = OUT / "along_track_daily.csv"
     done = set(map(tuple, pd.read_csv(path, usecols=["sample_id", "variable"]).drop_duplicates().values)) if path.exists() else set()
     groups = {sid: g for sid, g in tr.groupby("sample_id")}
     print(f"{len(groups):,} tracks with daily points", flush=True)

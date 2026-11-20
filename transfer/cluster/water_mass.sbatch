@@ -15,9 +15,11 @@
 #
 #   cd /scratch/morrill/users/$USER/biogoship_granite_kegg && git pull
 #   sbatch --account=191001-364393 transfer/cluster/water_mass.sbatch
+#   # re-run only the along-track fields (trajectories already done):
+#   sbatch --account=191001-364393 --export=ALL,STEPS=fields transfer/cluster/water_mass.sbatch
 #
 # Bring back (scp to the same paths on the Mac):
-#   transfer/results/water_mass/trajectories.csv and along_track.csv, and this job's .out
+#   transfer/results/water_mass/along_track_daily.csv (and trajectories.csv if re-made), and this job's .out
 
 set -euo pipefail
 export BGS_CONDA_ENV="${BGS_CONDA_ENV:-/scratch/morrill/users/${USER}/conda_envs/biogoship}"
@@ -35,6 +37,6 @@ mkdir -p "${COPERNICUSMARINE_CREDENTIALS_DIRECTORY}"
 
 echo "Job started: $(date)"
 python transfer/scripts/water_mass_history.py --probe-light || true
-python transfer/scripts/water_mass_history.py --steps currents track fields --workers "${WORKERS:-4}"
+python transfer/scripts/water_mass_history.py --steps ${STEPS:-currents track fields} --workers "${WORKERS:-4}"
 echo "Job finished: $(date)"
-echo "Bring back: transfer/results/water_mass/trajectories.csv, along_track.csv and this .out"
+echo "Bring back: transfer/results/water_mass/along_track_daily.csv (and trajectories.csv) and this .out"

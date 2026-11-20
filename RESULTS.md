@@ -3432,3 +3432,168 @@ Recalibrated vs baseline W2: loading cosine 0.985, score r 0.958.
   - Choosing alpha by leave-cruise-out (GroupKFold) inside the training cruises, or a
     post-hoc shrink factor learned the same way, should improve held-out R2. This is
     worth testing on the main model.
+
+## R39. Per-library sequencing metadata; platform contrasts along axis 1 (2026-11-20)
+
+### 1. The library table
+
+**Files.**
+- `transfer/scripts/library_metadata.py` writes
+  `transfer/results/library_metadata/library_metadata.csv` (3,222 rows) and
+  `cruise_summary.csv`.
+- ENA run records are cached in `transfer/data/ena_PRJNA656268_runs.tsv`.
+
+**Rows.**
+- Every MetaG library in the FAIRe workbook.
+- Plus the KO-table libraries that have no workbook row:
+  - 35 ERR accessions from another project
+  - SRR12480044 (I7N2018_248), which isn't in the targets
+- 3,045 of the 3,081 KO-table libraries match a FAIRe run row.
+
+**Columns, with the source of each.** A per-row `source_of_information` column lists
+them.
+
+| Column | Source |
+|---|---|
+| lib_id, faire_lib_id, sample_id, samp_name, cruise | KO table + FAIRe; sample key via `build_ko_targets.library_samples` |
+| in_ko_table, in_real_targets, excluded_protocol_a | KO table, `data/targets/ko_samples.csv`, `excluded_samples.csv` |
+| seq_run_id, sequencing_date, flowcell_id, read_length | FAIRe `seq_run_id` (date_flowcell_MetaG_PE150; "20189999" = 2018, day unknown). Read length is checked against ENA bases per spot: 302 for 937 runs, 300 for the 24 HKMFTBBXX runs. |
+| lane | library / file name (`_L00n`, `-Ln-`) where encoded. Not encoded for the 2016–2020 libraries. |
+| instrument_id | FAIRe instrument (OBI term) |
+| sequencer_model | (1) ENA/SRA run record; (2) the published cruise table; (3) inferred from the flowcell-ID format, flagged unverified. `sequencer_source` says which. |
+| library_prep_kit, extraction, documentation | the cruise table supplied 2026-11-20 (below) |
+| extraction_batch | FAIRe `extract_id` plate (+ `date_ext`). Recorded only for A13.5-2024 (2 plates), A16N (4), GOMECC4 (6) and I05 (4). |
+| preservation_protocol | methods table (R35), per sample for A16N Protocol A/B and the P02 "shield" samples |
+| total_reads, ena_read_count | FAIRe `input_read_count`; ENA `read_count` |
+| ko_assigned_reads | the library's row sum in `ko_counts_cov50_all.tsv` |
+| mapped_reads | **empty**: mapping (flagstat) counts aren't available to us |
+| sra_run | FAIRe `associatedSequences` / ENA |
+
+**Shortcuts tried.**
+- **ENA/SRA run records.** Only the 2016–2020 cruises are accessioned:
+  PRJNA656268, 971 WGS runs, all matched.
+  - instrument_model gives Illumina NovaSeq 6000 for 917 runs and HiSeq 4000 for 54.
+  - library_construction_protocol is empty for every run.
+  - The 2022–2025 cruises have no accessions, so nothing exists for them in SRA.
+- **The flowcell-ID convention, checked against ENA on all accessioned runs:**
+  - "…BBXX" flowcells are always HiSeq 4000: HKMFTBBXX (24), HWKN2BBXX (30).
+  - "…DSXX", "…DSXY" and "…DRXX" are always NovaSeq 6000: H357JDSXY, HHGJFDSXX,
+    HKNJLDRXX, HMMFVDSXX (906).
+  - So the flowcell suffix identifies the hardware family for these runs. The "…LT4"
+    flowcells of 2023–2025 (22NCJYLT4, 23LT2GLT4, 22YJMLLT4) have the NovaSeq X-series
+    format, but nothing can check that against a record. **Unverified.**
+- **FASTQ headers.** The ENA copies are rewritten (`@SRR12479652.1 1/1`), so instrument,
+  run, flowcell and lane can't be read from public files.
+  - The original files of any 2023–2025 library would settle the sequencer. A NovaSeq X
+    instrument ID starts with "LH".
+  - This needs the Bio-GO-SHIP team's raw files. Our Morrill downloads are the external
+    sets only.
+
+**Per cruise** (libraries; in the KO table; in the real targets; flowcells; sequencer;
+SRA runs; extraction batches):
+
+| Cruise | Libraries | In KO table | In targets | Flowcells (libraries) | Sequencer (source) | SRA runs | Extraction batches |
+|---|---:|---:|---:|---|---|---:|---:|
+| BVAL46-2011 | 16 | 16 | 12 | HMMFVDSXX (10); HWKN2BBXX (6) | NovaSeq 6000 (10), HiSeq 4000 (6) (ENA) | 16 | — |
+| AE1319-2013 | 18 | 18 | 13 | HWKN2BBXX (11); HMMFVDSXX (7) | HiSeq 4000 (11), NovaSeq 6000 (7) (ENA) | 18 | — |
+| NH1418-2014 | 30 | 29 | 23 | HMMFVDSXX (19); HWKN2BBXX (11) | NovaSeq 6000 (19), HiSeq 4000 (10) (ENA); 1 published | 29 | — |
+| I09N-2016 | 242 | 242 | 239 | HHGJFDSXX (215); HKMFTBBXX (24); HWKN2BBXX (3) | NovaSeq 6000 (215), HiSeq 4000 (27) (ENA) | 242 | — |
+| P18-2016 | 104 | 103 | 102 | HMMFVDSXX (104) | NovaSeq 6000 (ENA) | 104 | — |
+| I07N-2018 | 237 | 235 | 235 | H357JDSXY (237) | NovaSeq 6000 (ENA) | 237 | — |
+| AMT28-2018 | 63 | 62 | 62 | HMMFVDSXX (63) | NovaSeq 6000 (ENA) | 63 | — |
+| C13.5/A13.5-2020 | 251 | 249 | 249 | HKNJLDRXX (251) | NovaSeq 6000 (ENA) | 251 | — |
+| HLY2202-2022 | 200 | 192 | 186 | HFJLFDSX7 (142); HMY7WDSX7 (50); HWKVFDSX5 (8) | NovaSeq 6000 (published) | 0 | — |
+| P02-2022 | 391 | 333 | 123 | 22YJMLLT4 (333); HWKVFDSX5 (58, not in KO table) | LT4: NovaSeq X? (inferred); HWKVFDSX5: NovaSeq 6000? (inferred) | 0 | — |
+| GOMECC4 | 472 | 458 | 172 | 23LT2GLT4 (472) | NovaSeq X? (inferred) | 0 | 6 |
+| A16N-2023 | 345 | 341 | 203 | 22NCJYLT4 (279); 23LT2GLT4 (66) | NovaSeq X? (inferred) | 0 | 4 |
+| I05-2023 | 312 | 308 | 160 | 23LT2GLT4 (312) | NovaSeq X? (inferred) | 0 | 4 |
+| A13.5-2024 | 134 | 132 | 131 | 23LT2GLT4 (134) | NovaSeq X? (inferred) | 0 | 2 |
+| I08S-2024 | 44 | 44 | 28 | 22YJMLLT4 (44) | NovaSeq X? (inferred) | 0 | — |
+| I09N-2025 | 190 | 190 | 103 | 22YJMLLT4 (190) | NovaSeq X? (inferred) | 0 | — |
+| InterCal (not a cruise) | 30 | 0 | 0 | HWKVFDSX5 (30) | NovaSeq 6000? (inferred) | 0 | — |
+| no cruise (controls, blanks, mocks, unlinked) | 143 | 129 | 0 | mixed | — | 1 | 6 |
+
+**Documented processing per cruise** (supplied 2026-11-20; it fills `extraction`,
+`library_prep_kit` and `documentation`):
+
+| Cruises / batch | DNA extraction | Library preparation | Sequencer | Confidence |
+|---|---|---|---|---|
+| Original I09N, P18, I07N, AMT28, C13.5 and earlier cruises | Enzymatic lysis + Zymo purification | Modified Nextera tagmentation, Illumina kit 20034197, custom dual indexes | HiSeq 4000 or NovaSeq 6000 | Published |
+| HLY2202 (2022) | Original-style enzymatic lysis + Zymo purification | Nextera DNA Flex, low-volume protocol, custom dual indexes | NovaSeq 6000, PE150 | Published |
+| P02W/P02E (2022) | P02W shipped to UC Irvine; final extraction needs confirmation | ? | 2023 NovaSeq 6000 run (HWKVFDSX5) for some libraries; accession mapping missing | Partial |
+| A16N (2023) | Processing assigned to NOAA AOML / Northern Gulf Institute; lab workflow not verified | ? | ? | Collection documented |
+| I05 (2023), A13.5 (2024), I08S (2024), I09N (2025) | ? | ? | ? | Collection documented |
+
+### 2. Library-level platform contrasts along axis 1
+
+**Method** (`transfer/scripts/sequencer_contrasts.py`; outputs `sequencer_contrasts.csv`
+and `sequencer_contrasts_summary.txt` in `transfer/results/library_metadata/`):
+- **Rarefying.** Every library is rarefied to 250,000 KO-assigned reads: one multinomial
+  draw over all 18,836 KO features, seed 0. 2,943 libraries pass; 103 below that depth
+  are left out.
+  - This is needed. Without it, depth differences between runs dominate. HLY2202's
+    second run, HMY7WDSX7, is a shallow top-up: median 1.2 M KO reads against 4.2 M.
+    NH1418's HiSeq libraries are about 3× shallower than its NovaSeq ones.
+  - The unrarefied first pass gave a same-DNA run-to-run SD of 7× the era offset. That
+    was a depth artefact.
+- **CLR.** Over the 3,933 real-model KOs, pseudocount 0.5 / N.
+- **Projection.** Centred on the contrast's reference group, divided by the KO's pooled
+  within-cruise SD of the observed tile CLR, projected on the unit F1 loading of the
+  real model.
+- **Scale ("era").** The same projection of cruise means of modelled surface libraries:
+  NovaSeq 6000 cruises minus LT4 cruises = +14.96 projection units. Cruise means run from
+  I05-2023 −51.1 to BVAL46 +31.9.
+- **Domain CLRs** come from `data/targets/taxa/domain_counts.tsv`, not rarefied.
+- Surface libraries only (≤ 10 m).
+
+| Contrast | Libraries / pairs | Axis-1 (F1) difference, × era offset | Bacteria CLR diff | Eukaryota CLR diff |
+|---|---:|---:|---:|---:|
+| **a. HiSeq 4000 − NovaSeq 6000, different samples of one cruise** | | | | |
+| I09N-2016: HiSeq (26) − NovaSeq (206) | 232 | +0.86 | +0.134 | +0.140 |
+| AE1319-2013: HiSeq (6) − NovaSeq (7) | 13 | +1.76 | +0.476 | +0.009 |
+| BVAL46-2011: HiSeq (2) − NovaSeq (10) | 12 | +0.89 | +0.608 | +0.430 |
+| NH1418-2014: HiSeq (4) − NovaSeq (19) | 23 | +2.63 | +0.476 | +0.007 |
+| pooled (weighted by the smaller group; label permutation within cruise, 9,999) | 280 | **+1.19, p < 0.001** | | |
+| **b. Same DNA, two NovaSeq 6000 runs** (HLY2202, HMY7WDSX7 − HFJLFDSX7) | 21 pairs | mean −0.03 (SD of pair differences 1.20) | −0.003 | +0.097 |
+| **c. Two libraries of one sample, same flowcell** (I09N-2025) | 3 pairs | mean +0.12 (SD 0.58) | −0.057 | −0.008 |
+| **d. Two LT4 flowcells within A16N** (23LT2GLT4 (44) − 22NCJYLT4 (158), different samples) | 202 | +0.68 | +0.170 | −0.099 |
+
+**Reading.**
+- **Sequencing the same DNA again on the same platform doesn't move axis 1.**
+  - HLY2202's 21 same-DNA pairs on two NovaSeq 6000 runs differ by −0.03× the era
+    offset on average.
+  - The per-library scatter (SD 1.2× era) is single-library noise at 250 k reads. It
+    averages out over a cruise.
+- **The platform does move it.**
+  - Within each of the four early cruises, the HiSeq 4000 libraries sit further toward
+    the bacterial (+) pole of axis 1 than the NovaSeq 6000 libraries: +0.86 to +2.63×
+    the era offset, pooled +1.19×, p < 0.001.
+  - Their Bacteria CLR is also higher, by 0.13–0.61.
+  - Caveat: these are different samples. The HiSeq libraries were early batches, so
+    station selection could add to the difference. The permutation treats libraries
+    within a cruise as exchangeable.
+  - The sign is the same in all four cruises, and the effect is as large as the era
+    offset itself.
+  - HiSeq 4000 (four-colour SBS) and NovaSeq 6000 (two-colour SBS) differ in chemistry.
+    A shift from bacterial toward eukaryotic genes between them fits chemistry-dependent
+    GC or coverage bias.
+- **No HiSeq library is in a modelled tile** (R36), so this contrast doesn't affect the
+  model directly. It shows that **axis 1 responds to the sequencing platform.**
+  - The 2023–2025 cruises' "LT4" flowcells: if they are NovaSeq X, that is another
+    chemistry (XLEAP-SBS).
+  - That makes the platform change the leading explanation of the axis-1 era offset,
+    ahead of the unverified extraction and library prep of those cruises.
+  - It also fits R36: library prep (HLY's DNA Flex) and preservation / bead beating
+    (A16N A/B) don't move axis 1.
+- **The A16N two-flowcell difference** (+0.68×) is between different samples, and the
+  R34 rotation test within A16N found no flowcell effect on W1 (p 0.58). It isn't
+  evidence of a run effect.
+
+**Next.**
+1. Confirm the 2023–2025 sequencer: one original FASTQ header from any LT4 library, or
+   the sequencing-facility record.
+2. A GC check: if the axis-1 loadings follow the KOs' GC content, a platform GC bias is
+   the mechanism. This needs per-KO GC from the reference genes (eggNOG table on
+   Morrill).
+3. If platform is confirmed, model it: era/platform as a covariate, or a
+   batch-correction step for the KO targets.

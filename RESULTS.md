@@ -4249,3 +4249,182 @@ loading.
     180° wrap correctly.
 - The output is now `along_track_daily.csv`; `along_track.csv` from the first run is obsolete.
 - The sbatch takes `STEPS=fields` to re-run that step alone. Commit 38d2e93.
+
+## R45. Read length, mapping yield and KO-profile spread: axis 1 is largely a KO-profile spread axis, and the platform offset runs through it (2026-11-20)
+
+From here on, new files go in the normal repo folders (`scripts/`, `data/results/`, `figures/output/`), not
+`transfer/`.
+
+**Question.** Is the platform offset on axis 1 a mapping or annotation effect rather than sequencing
+chemistry? The hypothesis has three parts:
+- newer runs have longer reads;
+- longer reads map more eukaryotic and divergent genes;
+- so the eukaryotic share rises on newer runs.
+
+**Pipeline facts** (biogoship-metagenomics/mapping_pipeline, read-only):
+- Mapping is `minimap2 -ax sr` against the reference, with no identity or MAPQ filter, so per-read hit
+  identity is never logged.
+- Reads per reference gene come from `samtools coverage` (numreads: both mates; secondary, QC-fail and
+  duplicate reads are excluded, but duplicates are never marked).
+- Genes are kept when their breadth of coverage passes `--coverage_threshold`; this is 50% for
+  `ko_counts_cov50_all.tsv`.
+- KO counts come from the eggNOG table.
+
+**Method.** Script: `scripts/platform_mapping_yield.py`.
+- Libraries are taken from `transfer/results/library_metadata/library_metadata.csv`: those in the KO table,
+  with blanks and controls dropped and > 100k reads.
+- Per-library quantities:
+  - nominal read length (FAIRe seq_run_id);
+  - ENA base_count / read_count;
+  - mapping rate: domain-assigned reads (sum of `data/targets/taxa/domain_counts.tsv`) / total read pairs
+    (FAIRe input_read_count). Both mates count, so this is reads per pair, range 0–2;
+  - KO yield: KO-assigned reads / total pairs;
+  - KO share of mapped reads;
+  - eukaryote fraction: Eukaryota / (Archaea + Bacteria + Eukaryota);
+  - log10 reads;
+  - from the library KO CLR rarefied to 250,000 KO reads (seed 0; as R39/R44):
+    - KO-profile spread, the SD of the CLR over the 3,933 KOs;
+    - undetected KOs, the share of KOs with zero rarefied count;
+    - Shannon diversity of the KO proportions;
+    - the F1 projection.
+- Tests:
+  1. Platform and cruise medians.
+  2. HiSeq 4000 − NovaSeq 6000 within the four mixed cruises (surface libraries): pooled, each cruise
+     weighted by its smaller group; permutation within cruise (1,999).
+  3. HLY2202, the same DNA on two NovaSeq 6000 flowcells (40 sample pairs over all depths), as a control.
+  4. Within-cruise Spearman correlations (cruise-centred; 2,863 libraries).
+  5. Mediation: the HiSeq − NovaSeq F1 difference after removing a within-cruise linear fit of F1 on each
+     candidate.
+  6. Per-KO effects (R44 `gc_effects.csv`) vs eukaryote share of genes, mean abundance (mean CLR over
+     targets) and gene length.
+  7. Cruise-level Spearman correlations.
+- Outputs:
+  - `data/results/platform_mapping/library_yield.csv` (per library), `cruise_yield.csv`, `tests.csv`,
+    `summary.txt`;
+  - `figures/output/platform_mapping_yield.png`, three panels:
+    - mapped reads per pair by platform in the mixed cruises;
+    - the libraries' axis-1 scores there;
+    - within-cruise axis-1 score vs KO-profile spread, all libraries.
+
+**1. Read length does not step with platform.**
+- Nominal length is PE150 on HiSeq 4000, NovaSeq 6000 and NovaSeq X.
+- ENA bases per spot: median 302 for HiSeq 4000 (n 52) and for NovaSeq 6000 (n 900). NovaSeq X runs are
+  not in ENA.
+
+**Medians by platform:**
+
+| Platform | Libraries | Reads (pairs) | Mapped / pair | KO yield | KO / mapped | Eukaryote fraction |
+|---|---:|---:|---:|---:|---:|---:|
+| HiSeq 4000 | 52 | 12.4 M | 0.318 | 0.213 | 0.686 | 0.017 |
+| NovaSeq 6000 | 1,082 | 11.4 M | 0.425 | 0.273 | 0.655 | 0.024 |
+| NovaSeq X | 1,873 | 18.2 M | 0.419 | 0.258 | 0.607 | 0.030 |
+
+The cruise medians are in `cruise_yield.csv`. Across single-platform cruises (n 12), cruise mean F1
+correlates (Spearman) with:
+- KO / mapped: +0.94
+- eukaryote fraction: −0.60
+- read depth: −0.42
+- mapping rate: +0.19
+- KO yield: +0.25
+
+**2. HiSeq 4000 − NovaSeq 6000 within the mixed cruises** (pooled; permutation p):
+
+| Metric | Difference | p |
+|---|---:|---:|
+| Mapped / pair | −0.177 | 0.0005 |
+| KO yield | −0.115 | 0.0005 |
+| KO / mapped | +0.013 | 0.10 |
+| Eukaryote fraction | −0.005 | 0.26 |
+| log10 reads | +0.110 | 0.005 |
+| KO-profile spread (SD of CLR) | +0.124 | 0.0005 |
+| Undetected KOs (share) | +0.041 | 0.0005 |
+| Shannon | −0.059 | 0.0005 |
+| F1 | +17.44 | 0.0005 |
+
+Within-cruise SDs, for scale: spread 0.129, undetected 0.037, Shannon 0.059. So the HiSeq libraries:
+- map about 18 percentage points fewer reads per pair;
+- have more reads;
+- have the same KO share among mapped reads and the same eukaryote fraction;
+- have a less even KO profile: about +1 within-cruise SD of spread and 4% more KOs undetected.
+
+Per cruise (HiSeq vs NovaSeq medians of mapped / pair): I09N-2016 0.312 vs 0.364; AE1319-2013 0.451 vs
+0.702; BVAL46-2011 0.366 vs 0.649; NH1418-2014 0.169 vs 0.697.
+
+**3. The same-DNA rerun (HLY2202, n 40) shows no shift in any metric.**
+- Mean differences: mapped / pair +0.012, KO / mapped +0.004, eukaryote fraction +0.023, spread +0.010,
+  undetected +0.007, Shannon +0.003, F1 −0.49.
+- The pair SDs are large (mapped / pair 0.21, F1 18.0), but there is no shift.
+
+**4. Within cruise (Spearman, n 2,863):**
+- **F1 vs:** spread +0.729, Shannon −0.670, KO / mapped +0.637, eukaryote fraction −0.588, undetected
+  +0.540, KO yield +0.263, log10 reads −0.177, mapped / pair +0.153.
+- **Eukaryote fraction vs:** spread −0.561, undetected −0.428, KO / mapped −0.410, KO yield −0.350,
+  mapped / pair −0.298, Shannon +0.333, log10 reads +0.044.
+- **Spread vs:** undetected +0.923, Shannon −0.493, log10 reads −0.378, KO / mapped +0.336.
+- **Undetected vs log10 reads:** −0.449.
+
+**5. Mediation of the HiSeq − NovaSeq F1 difference (+17.44):**
+
+| Removed (within-cruise linear fit) | Within-cruise R² of F1 | F1 difference after | Share explained |
+|---|---:|---:|---:|
+| Mapped / pair | 0.020 | +21.67 | −24% |
+| KO / mapped | 0.391 | +14.12 | +19% |
+| log10 reads | 0.034 | +19.48 | −12% |
+| Mapped / pair + KO / mapped + log10 reads | 0.455 | +18.73 | −7% |
+| KO-profile spread | 0.539 | +1.07 | +94% |
+| Shannon | 0.468 | +1.40 | +92% |
+| Undetected KOs | 0.247 | +4.44 | +75% |
+| Eukaryote fraction | 0.419 | +16.93 | +3% |
+| Spread + eukaryote fraction | 0.669 | +4.71 | +73% |
+
+**6. Per KO (Spearman):**
+
+| Effect | vs eukaryote share of genes | vs mean abundance (mean CLR) | vs gene length |
+|---|---:|---:|---:|
+| HiSeq − NovaSeq 6000 | −0.017 | +0.570 | −0.096 |
+| Era (6000 − X) | −0.223 | +0.322 | +0.091 |
+| Rerun (control) | −0.032 | −0.016 | +0.046 |
+| F1 loading | −0.410 | +0.709 | +0.102 |
+
+**7. Cruise level (all 16 cruises), Spearman with mean F1:** spread +0.83, Shannon −0.88, undetected
++0.65, eukaryote fraction −0.66.
+
+**Conclusions**
+1. **The read-length and annotation-yield mechanism is not supported.**
+   - Read length is PE150 everywhere.
+   - HiSeq libraries do map fewer reads, but the KO share among mapped reads and the eukaryote fraction
+     are unchanged.
+   - Mapping rate explains none of the F1 offset (removing it slightly enlarges it).
+   - The eukaryote fraction explains 3% of it.
+   - The per-KO HiSeq effect is unrelated to how eukaryotic a KO is (ρ −0.02).
+2. **Axis 1 is largely a KO-profile spread (evenness) axis.**
+   - The F1 loading tracks KO mean abundance (ρ +0.71): a high F1 score means common KOs are more
+     dominant and rare KOs fall out.
+   - A library's spread explains 54% of its within-cruise F1 variance.
+   - At cruise level, spread vs F1 is ρ +0.83 and Shannon vs F1 is −0.88.
+   - Part of this is biology. Eukaryote-rich libraries have more even KO profiles (eukaryote fraction vs
+     spread ρ −0.56), and the eukaryote fraction alone explains 42% of within-cruise F1. That is the R33
+     "bacteria vs eukaryotes" reading.
+3. **The platform offset runs through spread, not through composition.**
+   - HiSeq libraries are less even (+1 SD; 4% more KOs undetected) with the same eukaryote fraction and
+     more reads.
+   - Removing spread removes 94% of the HiSeq − NovaSeq F1 difference.
+   - The same DNA rerun on the same chemistry shows no spread shift.
+   - So the platform changes how many distinct KOs are detected, and axis 1 picks that up.
+4. **Likely mechanism (untested): library complexity combined with the 50% breadth filter.**
+   - Fewer unique molecules (PCR or optical duplicates, which this pipeline does not remove; or low-input
+     library prep) give fewer distinct fragments per gene.
+   - Then fewer rare genes reach 50% breadth and their KOs drop to zero, even at equal read counts.
+   - This is consistent with: more reads not helping the HiSeq libraries; undetected KOs falling with depth
+     within cruise (ρ −0.45); and the effect landing on rare KOs.
+   - It is a counting-pipeline effect, not chemistry or GC (R44).
+   - Direct test, to do: duplicate rate / library complexity per library from the FASTQs on Morrill (e.g.
+     `fastp` duplication or `samtools markdup` on a subsample of BAMs) for the four mixed cruises and the
+     LT4 vs NovaSeq 6000 era. Also: re-count with `--coverage_threshold 0` for a few libraries and check
+     whether the spread offset disappears.
+5. **For modelling** (testing on hold, as agreed):
+   - A per-library spread / detected-KO covariate (or a count transform that does not reward detection)
+     would likely absorb the platform offset better than a platform label, but it carries some biology
+     (the eukaryote fraction).
+   - Dropping rare KOs from the targets is another option.
+   - None of these has been tested yet.

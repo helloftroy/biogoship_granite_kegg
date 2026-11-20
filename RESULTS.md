@@ -3222,3 +3222,113 @@ library_prep, sequencer, flowcells, sequencer_coded.
   - the P02 2023 NovaSeq 6000 libraries mapped through our pipeline (R32), then
     compared with neighbouring P02 samples on 22YJMLLT4. Not paired, but the same
     cruise and the same water masses.
+
+## R37. Bloom phase: satellite chlorophyll history against the residual axes (2026-11-20)
+
+**Question.** Is axis 2 (phototrophs) the bloom phase: whether chlorophyll was rising
+or falling over the 2–4 weeks before sampling? Does chlorophyll history help predict
+KOs?
+
+**Data.** `transfer/results/chl_history/sample_chl_history.csv` and
+`provenance_chl_history.json`, from Morrill job `transfer/cluster/chl_history.sbatch`
+(script `transfer/scripts/extract_chl_history.py`, R35 §5).
+- Product: GlobColour gap-free L4 daily chlorophyll, 4 km, dataset
+  `cmems_obs-oc_glo_bgc-plankton_my_l4-gapfree-multi-4km_P1D` (1997-09-04 to
+  2026-11-11). The multi-year product covered every sample, so the interim and NRT
+  products weren't needed.
+- 2,014 samples, including P04E-2026, which is not in the model. Each has 26–29 of
+  the 29 days, median 29.
+- Box mean ±0.125°, days −28 to 0.
+
+**Sample distributions:**
+
+| Feature | Median | IQR | Range |
+|---|---:|---|---|
+| chl day 0 (mg m⁻³) | 0.099 | 0.064–0.142 | 0.013–5.81 |
+| slope 14 d (log10 / 10 d) | −0.003 | −0.060 to +0.059 | −0.68 to +0.82 |
+| slope 28 d | −0.006 | −0.037 to +0.025 | −0.24 to +0.29 |
+| peak ratio 28 d (log10 max/day 0) | 0.130 | 0.064–0.220 | 0–1.09 |
+| days since 28-day max | 15 | 5–24 | 0–28 |
+
+**Analysis.** Script `transfer/scripts/chl_history_test.py`; outputs in
+`transfer/results/chl_history_test/`. It runs on the real model: Protocol A excluded,
+1,215 tiles, 3,933 KOs, with the residual PCA of R36
+(`transfer/results/residual_modules_noA/`). Every tile has history.
+
+To reproduce, run from the repository root:
+
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python transfer/scripts/chl_history_test.py
+
+**1. Spearman r**, all tiles / within cruise (cruises with the pooled sign, of 13):
+
+| Feature | F1 | F2 | W1 | W2 | W3 |
+|---|---|---|---|---|---|
+| chlorophyll, day 0 (log) | −0.10 / −0.05 (8) | +0.02 / −0.09 (7) | −0.06 / −0.06 (8) | −0.05 / −0.06 (6) | −0.08 / −0.09 (10) |
+| chlorophyll, 28-day mean (log) | −0.06 / +0.02 (7) | +0.03 / −0.08 (6) | +0.01 / +0.01 (6) | −0.05 / −0.06 (6) | −0.07 / −0.07 (8) |
+| chlorophyll, 28-day max (log) | −0.06 / +0.02 (7) | +0.04 / −0.09 (6) | +0.01 / +0.02 (5) | −0.05 / −0.07 (6) | −0.07 / −0.08 (7) |
+| slope, 14 days | −0.07 / −0.12 (9) | +0.05 / +0.00 (6) | −0.12 / −0.12 (9) | +0.02 / +0.02 (6) | −0.01 / −0.02 (8) |
+| slope, 28 days | −0.14 / −0.11 (7) | +0.09 / +0.02 (7) | −0.12 / −0.12 (7) | +0.04 / +0.04 (8) | +0.08 / +0.08 (7) |
+| past the 28-day peak | +0.07 / +0.14 (8) | +0.02 / +0.01 (7) | +0.14 / +0.14 (8) | −0.01 / −0.02 (7) | −0.01 / −0.01 (7) |
+| days since the 28-day max | +0.09 / +0.05 (9) | −0.04 / +0.03 (7) | +0.08 / +0.08 (8) | +0.02 / +0.01 (8) | −0.04 / −0.04 (8) |
+| CV over 28 days | −0.07 / −0.00 (4) | +0.02 / −0.08 (6) | +0.00 / +0.00 (9) | −0.05 / −0.06 (7) | −0.01 / −0.03 (7) |
+| PISCES chlorophyll, day 0 (R25) | −0.21 / −0.08 (8) | +0.02 / −0.07 (8) | −0.07 / −0.07 (9) | −0.02 / −0.03 (7) | −0.04 / −0.06 (10) |
+
+**2. W2 from the features.** Within-cruise ridge, cruise held out, 1,215 tiles:
+
+| Predictors | CV R2 |
+|---|---:|
+| satellite chlorophyll, day 0 | −0.015 |
+| PISCES chlorophyll, day 0 | −0.018 |
+| slopes + peak ratio + days since max | −0.016 |
+| all 8 satellite history features | −0.038 |
+
+**3. As a KO predictor.** The baseline (32 PCs + temperature spline, cruise held out)
+plus one feature's spline, on 1,215 tiles. Baseline median KO R2 is 0.103.
+
+| Added | Median KO R2 | Median gain | KOs gaining > 0.02 | KOs losing > 0.02 |
+|---|---:|---:|---:|---:|
+| chlorophyll, day 0 (log) | 0.089 | −0.0118 | 8% | 35% |
+| chlorophyll, 28-day mean (log) | 0.080 | −0.0188 | 9% | 48% |
+| slope, 14 days | 0.098 | −0.0035 | 7% | 12% |
+| slope, 28 days | 0.101 | −0.0052 | 13% | 20% |
+| past the 28-day peak | 0.106 | −0.0019 | 14% | 9% |
+
+**4. Spatial scale.** Within-cruise correlation of pairs by distance (km):
+
+| Series | 0–15 | 15–40 | 40–75 | 75–150 | 150–300 | 300–600 | 600–1200 | 1200–2400 | 2400–5000 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| slope, 14 days | 0.83 | 0.69 | 0.68 | 0.41 | 0.28 | 0.18 | −0.03 | −0.12 | −0.01 |
+| past the 28-day peak | 0.82 | 0.76 | 0.69 | 0.46 | 0.28 | 0.06 | 0.00 | −0.06 | −0.09 |
+| satellite chlorophyll, day 0 | 0.99 | 0.94 | 0.92 | 0.81 | 0.72 | 0.50 | 0.22 | −0.17 | −0.29 |
+| W2 (real model) | 0.56 | 0.49 | 0.49 | 0.39 | 0.32 | 0.24 | 0.15 | −0.02 | −0.09 |
+
+**Reading.**
+- **Bloom phase doesn't explain axis 2.**
+  - Every chlorophyll-history feature has within-cruise |r| ≤ 0.07 with W2.
+  - The ridge gives no cross-validated R2.
+  - The scales don't match either. Bloom phase decorrelates faster than W2: the
+    14-day slope falls to 0.18 by 300–600 km and the peak ratio to 0.06, while W2
+    keeps 0.24 there and 0.15 at 600–1,200 km.
+- **Axis 1 has a weak bloom-phase link.** Its bacterial pole lies slightly past a
+  chlorophyll peak and on decaying slopes: W1 +0.14 with the peak ratio, −0.12 with
+  the 14- and 28-day slopes, in 7–9 of 13 cruises. That fits the R35 stratification
+  link: bacteria are favoured after the bloom. It is small.
+- **Chlorophyll history doesn't improve KO prediction.**
+  - Day-0 or mean chlorophyll lowers median KO R2 by 0.012–0.019. Granite already sees
+    the ocean colour, so a second, noisier copy overfits.
+  - The slope and peak-ratio splines are neutral to slightly negative. The best is
+    the peak ratio at median R2 0.106, but the median per-KO gain is −0.002.
+  - They are not worth adding.
+- **Axis 2 after R34–R37.** A smooth, roughly 560 km, workflow-independent phototroph
+  axis that none of these explains:
+  - surface or model fields
+  - the vertical nutrient structure
+  - the bloom phase
+  - the protocols
+  - sampling time
+- Candidates not yet tested:
+  - light history: cloud cover / PAR over the previous weeks, and mixed-layer light
+  - temperature history beyond 14 days
+  - water-mass origin: Lagrangian back-trajectory age and source region; the
+    backtrack job exists, cluster/backtrack.sbatch
+  - top-down control: grazing and viruses, which no product resolves

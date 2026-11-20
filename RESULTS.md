@@ -4428,3 +4428,108 @@ Per cruise (HiSeq vs NovaSeq medians of mapped / pair): I09N-2016 0.312 vs 0.364
      (the eukaryote fraction).
    - Dropping rare KOs from the targets is another option.
    - None of these has been tested yet.
+
+## R46. Does the CLR amplify KO dropouts? Single-copy-marker denominator ("per genome equivalent"), coverage-50% counts (2026-11-20)
+
+**Question.**
+- In the CLR, the denominator is the geometric mean over all 3,933 KOs. When rare KOs drop to the
+  pseudocount, that mean falls and every detected KO's CLR rises.
+- So a library that detects fewer KOs looks like "common KOs up": the axis-1 / platform pattern of R45.
+- A fixed reference of universal single-copy genes would give log copies per genome equivalent (GE):
+  GE_k = log(p_k + e) − mean over markers m of log(p_m + e).
+- Equivalently, from the same rarefied proportions, GE_k = CLR_k − mean_M CLR_m.
+- With this denominator, rare-KO dropouts cannot move common KOs.
+
+**Markers.**
+- The set: prokaryote-type ribosomal proteins in the KO set, i.e. KEGG names with an rpl* / rps* / rpm* gene
+  symbol and "ribosomal protein" (rim* / prm* modifying enzymes excluded).
+- All 54 are detected in every rarefied library, and all are used (`markers.csv`).
+- They are universal single-copy in Bacteria and Archaea. The mitochondrial and plastid MRPL/MRPS copies
+  share these KOs.
+- Eukaryotic cytosolic ribosomal proteins are separate "…e" KOs. Their 27 KOs have prevalence 0.71–0.94, so
+  they are not universal here; reported, not used.
+- GE is therefore per prokaryote genome equivalent: eukaryotic KOs rise with the eukaryote : prokaryote
+  ratio instead of being normalised by it.
+- Within-library SD of the 54 markers' log proportions (median): HiSeq 4000 0.513, NovaSeq 6000 0.504,
+  NovaSeq X 0.471. So the reference mean has an SE of about 0.07.
+
+**KOs that are not 100% prevalent.**
+- A zero stays at the rarefied detection limit, log(0.5 / N) minus the marker mean.
+- Every library is rarefied to the same N, so the limit is comparable across libraries.
+- Unlike in the CLR, a zero no longer shifts any other KO.
+- A KO's own zeros still need care. Options: treat them as censored, or restrict a given analysis to KOs
+  above a prevalence cut.
+
+**Method.** Script: `scripts/marker_normalisation.py --counts ko_counts_cov50_all.tsv --label cov50`.
+- 2,865 libraries (KO table, blanks dropped), rarefied to 250,000 KO reads (seed 0); proportions + 0.5/N
+  over the real-model KOs.
+- Per transform (CLR, GE), per-KO effects are in units of the KO's within-cruise library SD under that
+  transform:
+  - HiSeq 4000 − NovaSeq 6000 within the four mixed cruises (surface);
+  - era: NovaSeq 6000 − NovaSeq X cruise means (modelled surface libraries);
+  - HLY2202 same-DNA rerun (control).
+- Summaries: RMS over KOs; share with |effect| > 0.5 SD; Spearman with KO mean abundance (the dropout
+  signature); cosine with the R45 F1 loading.
+- Spread coupling: per KO, the within-cruise Spearman correlation with library KO-profile spread (SD of
+  CLR; R45), as the median over all KOs and over the 500 most abundant.
+- Outputs: `data/results/marker_norm/cov50/` (`summary.csv`, `ko_effects.csv`, `markers.csv`,
+  `summary.txt`).
+
+| Transform | Contrast | RMS (SD) | Share \|effect\| > 0.5 SD | ρ with KO mean abundance | Cosine with F1 |
+|---|---|---:|---:|---:|---:|
+| CLR | HiSeq − NovaSeq 6000 | 0.415 | 0.247 | +0.544 | +0.633 |
+| CLR | Era (6000 − X) | 0.362 | 0.170 | +0.356 | +0.596 |
+| CLR | Rerun (control) | 0.211 | 0.026 | −0.035 | −0.045 |
+| GE | HiSeq − NovaSeq 6000 | 0.343 | 0.152 | +0.246 | +0.077 |
+| GE | Era (6000 − X) | 0.329 | 0.131 | +0.261 | +0.467 |
+| GE | Rerun (control) | 0.213 | 0.027 | +0.077 | +0.112 |
+
+Spread coupling (median within-cruise ρ of a KO with library spread):
+
+| Transform | All KOs | 500 most abundant KOs |
+|---|---:|---:|
+| CLR | +0.151 | +0.425 |
+| GE | −0.065 | −0.030 |
+
+Remaining per-KO effects vs KO properties (Spearman):
+
+| Effect | Eukaryote share of genes | Prevalence | GC | Mean abundance | Mean effect |
+|---|---:|---:|---:|---:|---:|
+| CLR HiSeq | −0.01 | +0.56 | −0.25 | +0.54 | +0.114 |
+| GE HiSeq | +0.05 | +0.25 | −0.14 | +0.25 | −0.187 (markers −0.006) |
+| CLR era | −0.22 | +0.43 | −0.22 | +0.36 | +0.080 |
+| GE era | −0.22 | +0.33 | −0.18 | +0.26 | +0.003 |
+
+**Conclusions**
+1. **The CLR does amplify the dropout pattern.**
+   - Under GE, the HiSeq − NovaSeq effect no longer resembles axis 1 (cosine 0.63 → 0.08).
+   - Its common-KO signature halves (ρ 0.54 → 0.25), and its size shrinks (RMS 0.42 → 0.34 SD; share
+     > 0.5 SD 25% → 15%).
+   - Common KOs stop co-varying with profile spread (top-500 median ρ +0.43 → −0.03).
+   - So most of the platform's axis-1 signature in R39–R45 is the CLR redistributing dropouts onto common
+     KOs.
+2. **The rest of the HiSeq effect is mostly a uniform shift.**
+   - Non-marker KOs are about 0.19 SD lower per genome equivalent on HiSeq; the markers themselves are
+     −0.006.
+   - That is, the conserved, highly mappable ribosomal proteins take a slightly larger share of KO reads on
+     HiSeq.
+   - This fits the R45 picture (lower mapping; fewer distinct genes detected) and stays a technical offset.
+   - It is still larger than the same-DNA rerun floor (RMS 0.34 vs 0.21).
+3. **The era contrast changes less** (cosine with F1 0.60 → 0.47; RMS 0.36 → 0.33). It also mixes region,
+   year and biology. Part of the axis-1 era offset is therefore not a CLR artefact.
+4. **Next steps**
+   - Re-run on the coverage-0% counts when they arrive, to separate the breadth filter from the transform:
+     `scripts/marker_normalisation.py --counts <cov0 table> --label cov0`.
+   - Then consider GE targets for the real model, with the residual PCA re-run to see whether axis 1
+     persists. Eukaryotic KOs under GE move with the eukaryote : prokaryote ratio, so a second, eukaryotic
+     reference may be needed for those.
+
+**Note: filter size and early processing (to test on Tara).**
+- Filter pore size and early sample processing may drive part of the Bacteria : Eukaryota differences.
+- We have no per-sample filter or extraction methods for Bio-GO-SHIP (R35/R36), and R45 found the platform
+  offset unrelated to the eukaryote fraction. So this cannot be tested here.
+- Tara Oceans does record size fractions and protocols. Test there once the Tara read counting on Morrill
+  finishes (still downloading, 2026-11-20). Questions:
+  - Does the size fraction shift the eukaryote fraction?
+  - Does it shift KO-profile spread / GE profiles?
+  - Does it move samples along our axes?

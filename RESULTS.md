@@ -3332,3 +3332,103 @@ plus one feature's spline, on 1,215 tiles. Baseline median KO R2 is 0.103.
   - water-mass origin: Lagrangian back-trajectory age and source region; the
     backtrack job exists, cluster/backtrack.sbatch
   - top-down control: grazing and viruses, which no product resolves
+
+## R38. Is axis 2 ridge shrinkage rather than a missing driver? No (2026-11-20)
+
+**Hypothesis** (suggested 2026-11-20).
+- Ridge predictions might be compressed. With a calibration slope b > 1, the residual
+  ≈ (b − 1) × prediction + noise.
+- Then a residual axis would inherit the target's smooth spatial pattern without any
+  missing variable, and new features couldn't explain it.
+
+**Signatures that would show it.** Correlation with the *observed* values doesn't
+discriminate, since residual = observed − predicted for any residual axis. Under
+compression we would see all of these:
+- calibration slopes > 1 for the axis-2 KOs
+- the axis-2 score correlating **positively** with the predicted axis-2 signal
+- the axis vanishing once the predictions are rescaled
+
+**Method.** Script `transfer/scripts/axis2_shrinkage_check.py`; outputs in
+`transfer/results/axis2_shrinkage/`. Real model: Protocol A excluded, 1,215 tiles,
+3,933 KOs, baseline 32 PCs + temperature spline, cruise held out.
+- W2 is recomputed: within-cruise component 2, 9.8%. Its cosine with the R36 W2 is
+  1.000; split-half 0.84.
+- **Slopes:** OLS of observed on cross-validated predicted, per KO, both centred per
+  cruise ("within") or overall ("pooled").
+  - KO sets: the 50 KOs loading most positively and most negatively on W2, the KEGG
+    photosynthesis KOs (BRITE C "Photosynthesis…"), and all KOs.
+  - Comparison: the median slope of KOs in the same R2 decile.
+- **Composite:** the mean within-cruise z of the +50 KOs minus the −50 KOs, z-scored
+  with the observed SDs. It is computed from the observed and from the predicted CLRs.
+  - Also the Cyanobacteriota and Cryptophyta phylum CLRs, predicted by the same
+    baseline.
+- **Recalibration:**
+  - For each held-out cruise and KO, the within-cruise slope is estimated on the other
+    12 cruises' out-of-fold predictions and applied to the held-out cruise.
+  - Then the within-cruise residual PCA is redone.
+  - There is a mild leak: those predictions came from models that saw the held-out
+    cruise. It can only help remove the axis.
+
+To reproduce, run from the repository root:
+
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python transfer/scripts/axis2_shrinkage_check.py
+
+**1. Calibration slopes.** 1 = calibrated, > 1 = compressed, < 1 = over-dispersed.
+
+| KO set | KOs | Median R2 | Median slope, within cruise | Median slope, pooled | Same-R2-decile KOs | Slope > 1.5 |
+|---|---:|---:|---:|---:|---:|---:|
+| W2 + pole (top 50) | 50 | 0.248 | 0.78 | 0.76 | 0.69 | 0% |
+| W2 − pole (top 50) | 50 | 0.083 | 0.50 | 0.66 | 0.58 | 0% |
+| KEGG photosynthesis KOs | 65 | 0.106 | 0.55 | 0.65 | 0.62 | 0% |
+| all KOs | 3,933 | 0.103 | 0.59 | 0.67 | 0.58 | 0% |
+
+**2. W2 score against the observed and predicted axis-2 signal**, within cruise
+(Pearson r):
+
+| Series | r(W2, observed) | r(W2, predicted) | r(observed, predicted) | SD predicted / observed | Calibration slope |
+|---|---:|---:|---:|---:|---:|
+| KO composite (+50 minus −50) | +0.75 | −0.20 | +0.38 | 0.62 | 0.61 |
+| Cyanobacteriota CLR | +0.38 | −0.04 | +0.79 | 0.80 | 0.99 |
+| Cryptophyta CLR | +0.56 | −0.03 | +0.43 | 0.64 | 0.67 |
+
+**3. Recalibrated predictions:**
+
+| Residuals | W2 rank (share) | Cosine with R36 W2 | Split-half | Photosynthesis z | Median within-cruise KO R2 |
+|---|---|---:|---:|---:|---:|
+| baseline | 2 (9.8%) | 1.000 | 0.84 | +12.8 | 0.051 |
+| recalibrated | 2 (9.8%) | 0.985 | 0.84 | +12.5 | 0.085 |
+
+Recalibrated vs baseline W2: loading cosine 0.985, score r 0.958.
+
+**Reading.**
+- **The predictions aren't compressed; they are over-dispersed.**
+  - Every set has a median slope below 1. The axis-2 KOs have 0.78 / 0.50, and all KOs
+    0.59.
+  - No KO set has slopes above 1.5.
+  - The cross-validated predictions overshoot: they vary more than the part of the
+    observed variation they capture. The axis-2 KOs are no more attenuated than other
+    KOs of the same R2.
+- **The W2 score correlates negatively with the predicted signal (−0.20), not
+  positively.**
+  - With slope b < 1, the residual carries −(1 − b) × prediction, which is the
+    opposite of the shrinkage signature.
+  - A negative correlation with the predicted values therefore points to
+    over-dispersed predictions, not to attenuation.
+- **Rescaling the predictions doesn't remove axis 2.**
+  - After per-KO recalibration, W2 is still component 2, at 9.8%, with the same
+    loadings (cosine 0.985) and the same Photosynthesis enrichment (z +12.5).
+- **The phototroph signal the model does capture is separate from W2.**
+  - The baseline predicts Cyanobacteriota well within cruise: observed–predicted r
+    0.79, slope 0.99.
+  - W2 is uncorrelated with that prediction (−0.04) and tracks Cryptophyta (+0.56)
+    and the KO composite (+0.75).
+  - So **axis 2 is the part of the phototroph community orthogonal to what Granite and
+    temperature see.** It is not an attenuated copy of what the model already knows.
+- **Side finding for the real model.** Recalibrating raises the median within-cruise
+  KO R2 from 0.051 to 0.085. The leak above flatters this number, but the
+  over-dispersion is real.
+  - The ridge alpha chosen per KO (RidgeCV, internal leave-one-out across tiles
+    regardless of cruise) is too weak for transfer to a new cruise.
+  - Choosing alpha by leave-cruise-out (GroupKFold) inside the training cruises, or a
+    post-hoc shrink factor learned the same way, should improve held-out R2. This is
+    worth testing on the main model.

@@ -4533,3 +4533,60 @@ Remaining per-KO effects vs KO properties (Spearman):
   - Does the size fraction shift the eukaryote fraction?
   - Does it shift KO-profile spread / GE profiles?
   - Does it move samples along our axes?
+
+## R47. Coverage-0 vs coverage-50 counts: merge and test set up; cov50 baseline (2026-11-20; cov0 pending)
+
+**Hypothesis.**
+- Under the 50% breadth-of-coverage filter, a library with fewer unique fragments covers fewer rare genes
+  far enough to count them.
+- Their KOs then go to zero, the KO profile becomes less even, and through the CLR axis 1 rises (R45/R46).
+- If the HiSeq − NovaSeq gap in unevenness and axis 1 mostly disappears in the unfiltered (cov0) counts,
+  the filter is what converts library complexity into missing KOs. Duplicate rates would then only explain
+  why some libraries have lower complexity.
+
+**Merge.** `scripts/merge_ko_counts.py`, run on Morrill by `cluster/merge_ko_counts.sbatch`:
+- `--export=ALL,ROOT=<folder with the per-library folders>`.
+- It sums each library's `level_<n>_<rank>_ko_counts.tsv` over taxa, using the lowest level present.
+- It writes `ko_counts_cov0_all.tsv(.gz)` in the layout of `ko_counts_cov50_all.tsv`, plus
+  `ko_counts_cov0_all_domain_counts.tsv` from `level_1_*_abundance.tsv`.
+- Validation on the local cov50 per-taxon stash (`data/targets/taxa/ko_by_taxon`, 1,417 libraries also in
+  `ko_counts_cov50_all.tsv`):
+  - every library with a level-2 file reproduces its cov50 row (relative difference < 1e-5, from
+    printing; the output now uses 10 significant digits);
+  - the 52 libraries with only an order-level file lose about 3% of counts (ratio 0.906–0.994, median
+    0.971), because genes without an order assignment drop out. The script flags such libraries.
+- The cov0 folders were not on the Mac, so the merge has to run on Morrill.
+
+**Test.** `scripts/coverage_threshold_test.py`. It shares the rarefaction helper (now gzip-aware) with
+`scripts/marker_normalisation.py`.
+- Per coverage table, libraries are rarefied to 250,000 KO reads (seed 0) over the 3,933 real-model KOs.
+- Per-library metrics:
+  - profile spread (SD of CLR), undetected KOs, Shannon;
+  - axis-1 score on CLR and on genome equivalents (the cov50 F1 loading and target SDs, so both tables
+    are on one scale);
+  - mapping rate.
+- Contrasts:
+  - HiSeq 4000 − NovaSeq 6000 within the four mixed cruises: pooled, with permutation p (1,999), also in
+    within-cruise SD units, and per cruise;
+  - the HLY2202 same-DNA rerun (control).
+- Comparison: the share of the cov50 gap left at cov0, and per-library cov0 − cov50 changes by platform.
+- Outputs: `data/results/coverage_threshold/` and `figures/output/coverage_threshold_gap.png`.
+
+**cov50 baseline** (HiSeq − NovaSeq 6000, mixed cruises, surface; rerun = HLY2202 same DNA, 21 pairs):
+
+| Metric | Gap | Within-cruise SD units | p | I09N | AE1319 | BVAL46 | NH1418 | Rerun mean (SD) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Profile spread (SD of CLR) | +0.1250 | +0.96 | 0.0005 | +0.093 | +0.152 | +0.037 | +0.338 | +0.006 (0.153) |
+| Undetected KOs | +0.0412 | +1.12 | 0.0005 | +0.029 | +0.033 | +0.017 | +0.143 | +0.005 (0.044) |
+| Shannon | −0.0594 | −1.01 | 0.0005 | −0.062 | −0.055 | +0.029 | −0.090 | +0.001 (0.038) |
+| Axis-1 score, CLR | +17.82 | +0.77 | 0.0005 | +12.99 | +26.08 | +12.54 | +39.45 | −0.67 (18.11) |
+| Axis-1 score, genome equivalents | +1.08 | +0.05 | 0.81 | +3.39 | +8.00 | −5.59 | −21.02 | +1.77 (10.32) |
+| Mapped reads / pair | −0.187 | −1.29 | 0.0005 | −0.090 | −0.304 | −0.275 | −0.549 | −0.062 (0.141) |
+
+**Readout.**
+- On the genome-equivalent scale, the platform gap on axis 1 is already gone at cov50 (+0.05 SD, p 0.81),
+  consistent with R46.
+- The undetected-KO gap (+1.1 SD) is in the counts themselves; the transform cannot change it. That is the
+  number cov0 has to remove for the breadth-filter explanation to hold.
+- Note on the mapping rate: the domain abundance counts are also coverage-filtered (count_biogoship_taxa
+  uses the same threshold), so at cov0 it measures all mapped reads.

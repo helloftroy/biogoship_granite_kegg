@@ -39,6 +39,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import re
 from pathlib import Path
 
@@ -62,13 +63,15 @@ def rarefied_logp(counts: Path, libs: set, kos: list[str], cache: Path) -> pd.Da
         z = np.load(cache, allow_pickle=True)
         return pd.DataFrame(z["x"], index=z["index"], columns=z["columns"])
     rng = np.random.default_rng(0)
-    header = open(counts).readline().rstrip("\n").split("\t")
+    opener = (lambda: gzip.open(counts, "rt")) if str(counts).endswith(".gz") else (lambda: open(counts))
+    with opener() as fh:
+        header = fh.readline().rstrip("\n").split("\t")
     col = {re.sub(r"^count\.ko\.", "", c).replace("ko:", ""): i for i, c in enumerate(header)}
     missing = [k for k in kos if k not in col]
     if missing:
         print(f"{len(missing)} KOs not in {counts.name}; set to zero")
     rows, keys = [], []
-    with open(counts) as fh:
+    with opener() as fh:
         fh.readline()
         for line in fh:
             name, rest = line.split("\t", 1)

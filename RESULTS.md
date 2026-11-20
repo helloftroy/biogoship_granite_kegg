@@ -2638,3 +2638,363 @@ missing, one that none of the tested surface or model fields captures.
    - the nutricline / deep chlorophyll maximum depth (CCHDO CTD profiles, BGC-Argo),
      and the 14- and 28-day chlorophyll trend, against W2
    - from Bio-GO-SHIP: the older cruises' pre-filter, volume and kit, against axis 1
+
+## R35. Cruise methods table, paired protocol samples, nutricline / DCM, chlorophyll history job (2026-11-19)
+
+**Question.**
+- Do the documented methods explain the residual axes of R33 and R34? Methods here
+  means pre-filter, volume, preservation and extraction, plus the paired protocol
+  tests on A16N and P02.
+- Does subsurface structure explain axis 2 (phototrophs)? Structure here means
+  nitracline depth, DCM depth and strength, and mixed layer.
+
+**Scripts.** All in `transfer/`:
+- `scripts/cruise_methods_table.py` writes `results/protocol/cruise_methods.csv`.
+- `scripts/cchdo_profiles.py` writes `results/nutricline/station_profiles.csv`.
+  - It downloads the public CCHDO bottle and CTD files into `transfer/data/cchdo/`,
+    75 MB.
+- `scripts/residual_axes_followup.py --parts methods pairs nutricline` runs the
+  tests.
+  - Outputs go to `results/residual_followup/`:
+    - `cruise_methods_scores.csv`, `methods_within_cruise.csv`
+    - `pairs.csv`, `pairs_effects.csv`, `pairs_ko_effect.csv`
+    - `tile_profiles_{100,30}km.csv`, `nutricline_drivers.csv`
+    - `summary_*.txt`
+  - It needs the R34 `protocol` part's `cruise_protocol.csv` and `tile_protocol.csv`.
+
+To reproduce, run in this order, from the repository root:
+
+    ~/miniforge3/bin/python transfer/scripts/cruise_methods_table.py
+    ~/miniforge3/bin/python transfer/scripts/cchdo_profiles.py          # about 5 min, downloads
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python transfer/scripts/residual_axes_followup.py --parts protocol methods pairs nutricline
+
+### 1. Master cruise-methods table
+
+**Source.** Compiled from the cruise papers and reports and supplied on 2026-11-19.
+- "?" = not confirmed.
+- "ND" = not described in the source, which is not proof that the step was absent.
+- Volumes refer to DNA samples.
+- The GOMECC4 row comes from the FAIRe workbook.
+
+| Cruise | Year | DNA pre-filter | DNA filter | Volume | Preservation / storage | Beads | DNA extraction / purification | Important differences |
+|---|---|---|---|---|---|---|---|---|
+| BVAL46 | 2011 | None reported | 0.22 µm Sterivex | 2 L | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Lysozyme, proteinase K/SDS; Zymo Genomic DNA Clean & Concentrator | Original protocol |
+| AE1319 | 2013 | None reported | 0.22 µm Sterivex | 2 L | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Same original extraction | Original protocol |
+| NH1418 | 2014 | None reported | 0.22 µm Sterivex | 2 L | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Same original extraction | Original protocol |
+| I09N | 2016 | None reported | 0.22 µm Sterivex | 10 L | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Same original extraction | Underway sampling |
+| P18 | 2016–17 | None reported | 0.22 µm Sterivex | 2 L | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Same original extraction | CTD sampling |
+| I07N | 2018 | None reported | 0.22 µm Sterivex | 2–4 L CTD; 4 L underway | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Same original extraction | Mixed underway/CTD |
+| AMT28 | 2018 | None reported | 0.22 µm Sterivex | 2 L | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Same original extraction | CTD sampling |
+| C13.5/A13.5 | 2020 | None reported for DNA | 0.22 µm Sterivex | 5–10 L | 1.62 mL lysis buffer; −20 °C | No, enzymatic | Same original extraction | Underway; POM sampling separately used 30 µm mesh |
+| P02W | 2022 | 30 µm underway; CTD ? | 0.22 µm Sterivex | Up to 8 L | 1.62 mL lysis buffer; −80 °C | ND | ? | Source-dependent pre-filtration |
+| P02E | 2022 | ? | 0.22 µm Sterivex | 4–8 L | Lysis buffer normally; some DNA/RNA Shield; frozen | ND | ? | 10 paired buffer-comparison samples |
+| HLY2202 | 2022 | ? | 0.22 µm Sterivex | 2–8 L | ? | No, enzymatic extraction | Lysozyme, proteinase K/SDS; Zymo purification | Old extraction method on newer cruise |
+| A16N, leg 1 | 2023 | ND | 0.22 µm Sterivex | ~8 L | Predominantly DNA/RNA Shield; −80 °C | Yes, usual protocol | ? | Paired old/new protocols; underway pump changed |
+| A16N, leg 2 | 2023 | ND | 0.22 µm Sterivex | ? | DNA/RNA Shield or lysis buffer by protocol | Protocol-dependent | ? | Paired old/new protocols |
+| I05 | 2023 | ND | 0.22 µm Sterivex | ~8 L | 1 mL DNA/RNA Shield; −80 °C | Yes | ? | Newer bead/Shield workflow |
+| A13.5 | 2024 | ND | 0.22 µm Sterivex | ~8 L | 1 mL DNA/RNA Shield; −80 °C | Yes | ? | Newer bead/Shield workflow |
+| I08S | 2024 | ND | Sterivex; pore size ? | ~8 L | 1 mL DNA/RNA Shield; −80 °C | Yes | ? | Newer bead/Shield workflow |
+| I09N | 2025 | ND | 0.22 µm Sterivex | ~9 L | 1 mL DNA/RNA Shield; −80 °C | ? | ? | Reoccupation of 2016 line |
+| GOMECC4 (workbook) | 2021 | no pre-filter | 0.22 µm Sterivex-GP PES | ~2 L, Niskin | none; −80 °C | Yes | ZymoBIOMICS 96 MagBead kit, KingFisher | AOML Niskin samples, A/B/C replicates |
+
+**Coded columns** in the CSV, used for the tests:
+- preservation: lysis buffer, Shield, mixed, none or unknown
+- extraction: enzymatic, beads, mixed or unknown
+- pre-filter
+- volume_l, the midpoint of the stated range
+- store_c
+- the leg split dates: P02 at 2022-06-13, A16N at 2023-04-10
+
+For the cruise-level test, A16N is coded Shield and P02 lysis buffer, their usual
+protocols. The paired samples are tested separately in section 3.
+
+### 2. Cruise level: the coded methods against the cruise mean scores
+
+**Per-cruise means** (SD of the tile scores):
+
+| Cruise | F1 | F2 | F3 | Preservation | Extraction | Pre-filter | Volume (L) | Store (°C) | Instrument | Sampled |
+|---|---:|---:|---:|---|---|---|---:|---:|---|---:|
+| I09N | +0.62 | +0.15 | +1.46 | lysis buffer | enzymatic | none reported | 10 | −20 | OBI_2631 | 2016.3 |
+| P18 | +0.63 | −0.74 | +0.17 | lysis buffer | enzymatic | none reported | 2 | −20 | OBI_2631 | 2017.0 |
+| I07N | +0.27 | −0.10 | +0.71 | lysis buffer | enzymatic | none reported | 3.5 | −20 | OBI_2631 | 2018.4 |
+| AMT28 | +0.25 | −0.05 | −0.13 | lysis buffer | enzymatic | none reported | 2 | −20 | OBI_2631 | 2018.8 |
+| C13.5/A13.5 | +0.47 | +0.16 | +0.53 | lysis buffer | enzymatic | none reported | 7.5 | −20 | OBI_2631 | 2020.3 |
+| HLY2202-2022 | +0.78 | +0.18 | −1.01 | unknown | enzymatic | unknown | 5 | ? | OBI_2631 | 2022.7 |
+| GOMECC4 | +0.10 | −0.85 | −0.24 | none | beads | none reported | 2 | −80 | OBI_3310 | 2021.8 |
+| A16N-2023 | +0.23 | +0.55 | −0.69 | Shield | beads | unknown | 8 | −80 | OBI_3310 | 2023.3 |
+| I05-2023 | −1.29 | +0.70 | +0.60 | Shield | beads | unknown | 8 | −80 | OBI_3310 | 2023.6 |
+| A13.5-2024 | −0.22 | −0.10 | −0.69 | Shield | beads | unknown | 8 | −80 | OBI_3310 | 2024.2 |
+| I08S-2024 | −0.16 | −0.49 | −0.40 | Shield | beads | unknown | 8 | −80 | OBI_3310 | 2024.2 |
+| P02-2022 | −0.29 | −0.91 | −0.64 | lysis buffer | unknown | 30 µm (underway) | 8 | −80 | OBI_3310 | 2022.4 |
+| I09N-2025 | −0.78 | −0.38 | −1.08 | Shield | unknown | unknown | 9 | −80 | OBI_3310 | 2025.3 |
+
+**Group means** (number of cruises in brackets):
+
+| Grouping | F1 | F2 | F3 |
+|---|---|---|---|
+| extraction: enzymatic (6) | +0.50 | −0.07 | +0.29 |
+| extraction: beads (5) | −0.27 | −0.04 | −0.28 |
+| extraction: unknown (2: P02, I09N-2025) | −0.53 | −0.65 | −0.86 |
+| preservation: lysis buffer (6, incl. P02) | +0.33 | −0.25 | +0.35 |
+| preservation: Shield (5) | −0.44 | +0.05 | −0.45 |
+| instrument OBI_2631 (6) | +0.50 | −0.07 | +0.29 |
+| instrument OBI_3310 (7) | −0.34 | −0.21 | −0.45 |
+
+**Spearman r with sampling year, inside each extraction group:**
+- enzymatic (6 cruises): F1 +0.09, F2 +0.66, F3 −0.71
+- beads (5 cruises): F1 −0.50, F2 +0.10, F3 −0.10
+
+**Spearman r with typical volume, all 13 cruises:** F1 −0.44, F2 +0.19, F3 −0.16.
+
+**Within-cruise contrasts.** W scores in SD; rotation null as in R34.
+
+| Contrast (tiles) | W1 | W2 | W3 |
+|---|---|---|---|
+| P02E (leg 2) − P02W (leg 1) (36 vs 53) | −0.21 (p 0.52) | −0.22 (p 0.20) | +0.06 (p 0.67) |
+| A16N leg 2 − leg 1 (74 vs 101) | −0.14 (p 0.51) | −0.20 (p 0.70) | +0.19 (p 0.63) |
+| P02W flow-through, 30 µm pre-filtered, − cast (38 vs 15) | −0.42 (p 0.17) | +0.18 (p 0.47) | +0.05 (p 0.74) |
+
+**Reading.**
+- **The axis-1 offset follows the extraction workflow, not the sampling year.**
+  - Among the six enzymatic-extraction cruises, F1 doesn't trend with year (r +0.09).
+  - HLY2202 is the key cruise: sampled in 2022 but extracted the old way, it sits with
+    the old cruises (F1 +0.78).
+  - Extraction (enzymatic vs beads/Shield) and instrument (OBI_2631 vs OBI_3310) are
+    still fully collinear among the 11 cruises where extraction is known. HLY2202
+    doesn't separate them, since it was also sequenced on OBI_2631.
+  - So: extraction/preservation and sequencing platform remain confounded, but year is
+    not the driver.
+- **No leg or pre-filter contrast reaches significance.**
+  - P02W's 30 µm pre-filtered underway samples score +0.18 SD on W2 against the casts
+    (p 0.47). With 15 casts there is little power. There's no sign that the pre-filter
+    removed a particle-associated phototroph signal.
+  - The A16N underway pump change shows no leg offset.
+
+### 3. Paired protocol samples, treated as technical treatments
+
+**Pairs.** From the workbook notes, samples ≤ 10 m only:
+- **A16N.** 18 underway samples are noted "Protocol A". Each has one partner MG sample
+  at the same eventDate, presumably the standard Shield/bead protocol, giving 17
+  pairs.
+  - The notes don't say which protocol "A" is. The methods table calls these "paired
+    old/new protocols", so Protocol A is probably the old lysis-buffer protocol. **To
+    be confirmed.**
+- **P02.** 11 samples are noted "shield", each with 1–2 partners at the same eventDate
+  (lysis buffer), 21 pairs.
+  - **All P02 Shield samples and their partners were sequenced on run 20230419_HWKVFDSX5,
+    and none of them are in `ko_counts_cov50_all.tsv`.** The P02 libraries in the KO
+    table are all from the 2025 run 22YJMLLT4. The P02 test needs those libraries
+    counted: they could be run through our mapping jobs (R32), from the raw reads.
+
+**What the R33/R34 tiles did with them.** 16 A16N pairs are among the modelled samples.
+In 12 of them both samples fall in the same tile, and the tile model averaged their
+CLRs. That mixes the two protocols, so the averaging should change: keep the standard
+protocol sample, or carry protocol as a covariate.
+
+**Method.**
+- Per pair: treated minus partner, on the sample-level domain CLRs, the
+  unclassified-read logit and log10 total KO counts.
+- Also on the R33 axis scores at sample level: the sample's CLR minus its tile's
+  cross-validated prediction (minus the cruise mean, for W), standardised with the tile
+  matrix's KO SDs, projected on the axis loadings, in SD of the tile scores.
+- Wilcoxon signed-rank test.
+- KO-level effect: the mean paired difference per KO, divided by the KO's within-cruise
+  residual SD. It is compared with the axis loadings by cosine, with a null of 999
+  random sign flips of whole pairs.
+
+**A16N: Protocol A minus partner** (16 pairs; 12 for the axis scores, which need both
+samples in a modelled tile):
+
+| Variable | Mean difference | SD | Same sign | Wilcoxon p |
+|---|---:|---:|---:|---:|
+| Archaea CLR | +0.381 | 0.351 | 14/16 | 0.002 |
+| Bacteria CLR | −0.189 | 0.252 | 10/16 | 0.016 |
+| Eukaryota CLR | −0.156 | 0.280 | 12/16 | 0.051 |
+| bacteria vs eukaryota (logit) | −0.034 | 0.406 | 8/16 | 0.86 |
+| unclassified logit | +0.023 | 0.482 | 9/16 | 0.86 |
+| log10 total KO counts | −0.175 | 0.336 | 11/16 | 0.065 |
+| F1 (SD) | +0.241 | 0.519 | 8/12 | 0.15 |
+| F2 (SD) | −0.413 | 0.682 | 11/12 | 0.016 |
+| F3 (SD) | +0.773 | 0.444 | 11/12 | 0.001 |
+| W1 (SD) | +0.237 | 0.647 | 8/12 | 0.30 |
+| W2 (SD) | −0.640 | 0.766 | 10/12 | 0.012 |
+| W3 (SD) | +0.780 | 0.783 | 10/12 | 0.005 |
+
+**KO-level effect.**
+- RMS 0.46 residual SD per KO; 16.0% of KOs have |t| > 3.
+- Cosine with the loadings: F1 +0.09, F2 −0.31, F3 +0.58, F4 +0.19, F5 −0.02,
+  W1 +0.02, W2 −0.42, W3 +0.49, W4 −0.30. The sign-flip p for |cos F1| is 0.74.
+- Most raised in Protocol A: K11779, K09009, K02007, K12234, K12369, K01926.
+- Most lowered: K08364, K16363, K00854, K21572, K02652, K00284.
+
+**Reading.**
+- **The protocol switch is a large technical effect**: about half a residual SD per KO.
+- **It loads on axis 3 and partly on axis 2, not on axis 1.**
+  - Protocol A raises the Archaea share (+0.38 CLR, 14 of 16 pairs).
+  - It scores +0.78 SD on W3, and its KO effect lines up with F3 (cosine 0.58).
+  - Part of the W3 shift could come from its lower KO counts (−0.175 log10). That is
+    only about half the shift expected from the R33 depth slope, so the extraction
+    itself also contributes. The Archaea shift comes from the reads, not from the depth
+    effect.
+  - It lowers W2 (−0.64 SD).
+- **It doesn't reproduce the era offset of axis 1.** Cosine with F1 is 0.09, and
+  bacteria vs eukaryota doesn't move (−0.03).
+  - If Protocol A is the old protocol, the old→new switch in preservation and
+    extraction doesn't explain the axis-1 era offset. The sequencing platform and the
+    library prep, which changed at the same time, become the leading candidates.
+  - If Protocol A is something else, this test says nothing about the era.
+
+**Consequences for the model.**
+- Protocol A samples, and P02 Shield samples once they're counted, should be modelled
+  as a technical treatment: a covariate, or kept out of the tile averages. They aren't
+  replicates.
+- The A16N Protocol A effect is large enough that a model trained on mixed protocols
+  learns some protocol noise. Remaining checks:
+  - drop the Protocol A samples
+  - refit
+  - check whether A16N's W2 / W3 scatter shrinks
+
+### 4. Nutricline and deep chlorophyll maximum (CCHDO profiles)
+
+**Data.** CCHDO bottle files (nitrate) and CTD files (2 dbar, fluorescence) for 11 of
+the 13 modelled cruises. GOMECC4 and HLY2202 have no CCHDO files used here.
+
+| Cruise | Casts | With nitracline | With DCM (source) | With CTD mixed layer | Bottles ≤ 200 m (median) |
+|---|---:|---:|---|---:|---:|
+| AMT28 | 63 | 60 | 62 (CTD) | 62 | 21 |
+| I07N | 126 | 123 | 124 (CTD) | 124 | 5 |
+| I09N | 116 | 113 | 116 (CTD) | 116 | 7 |
+| P18 | 213 | 212 | 188 (CTD) | 212 | 5 |
+| C13.5/A13.5 | 8 | 8 | 8 (CTD) | 8 | 6 |
+| P02-2022, leg 1 | 149 | 116 | 149 (148 CTD, 1 bottle) | 148 | 7 |
+| P02-2022, leg 2 | 127 | 93 | 127 (125 CTD, 2 bottle) | 125 | 7 |
+| A16N-2023, leg 1 | 75 | 75 | 0 (no fluorescence) | 73 | 6 |
+| A16N-2023, leg 2 | 74 | 73 | 0 | 69 | 8 |
+| I05-2023 | 232 | 192 | 232 (231 CTD, 1 bottle) | 231 | 9 |
+| A13.5-2024 | 112 | 112 | 0 (no CTD file) | 0 | 5 |
+| I08S-2024 | 75 | 66 | 75 (CTD) | 74 | 9 |
+| I09N-2025 | 114 | 97 | 114 (CTD) | 114 | 8 |
+
+**Per-cast quantities** (`cchdo_profiles.py`):
+- nitracline: the depth where NO3 first reaches 1 µmol/kg, interpolated between
+  bottles; 0 if the surface is already ≥ 1
+- the depth of the steepest NO3 increase (0–400 m)
+- DCM depth: the fluorescence maximum in 0–300 m, after 2-m binning and a 5-bin
+  running median
+- DCM / surface (0–10 m) fluorescence ratio. Fluorometers aren't cross-calibrated, so
+  only depths and ratios are used.
+- CTD mixed layer: 0.2 °C below the 10 m temperature
+- surface nitrate
+
+**Per-cruise medians:**
+
+| Cruise | Surface NO3 | Nitracline (1 µmol/kg) | Steepest gradient | DCM | DCM ratio | CTD mixed layer |
+|---|---:|---:|---:|---:|---:|---:|
+| A13.5-2024 | 0.0 | 42.5 | 92.0 | — | — | — |
+| A16N-2023 | 0.0 | 44.8 | 84.8 | — | — | 31.0 |
+| AMT28 | 0.0 | 87.9 | 126.7 | 73.0 | 5.7 | 48.0 |
+| C13.5/A13.5 | 0.0 | 89.8 | 124.3 | 97.0 | 3.2 | 35.0 |
+| I05-2023 | 0.1 | 106.1 | 152.4 | 50.0 | 1.4 | 65.0 |
+| I07N | 0.0 | 53.8 | 97.9 | 68.0 | 1.4 | 43.0 |
+| I08S-2024 | 22.5 | 0.0 | 86.9 | 49.0 | 1.4 | 59.0 |
+| I09N | 0.0 | 63.5 | 77.8 | 75.0 | 4.2 | 27.0 |
+| I09N-2025 | 0.0 | 67.5 | 89.2 | 75.0 | 2.8 | 25.0 |
+| P02-2022 | 0.0 | 110.8 | 162.9 | 93.0 | 2.8 | 21.0 |
+| P18 | 6.4 | 0.0 | 99.6 | 64.0 | 1.9 | 35.0 |
+
+**Matching.** Each tile is matched to the nearest cast of its own cruise within 100 km
+and 3 days: 820 of 1,216 tiles, median 0 km and 0.07 days, because most samples were
+taken at stations. A stricter 30 km / 1 day match gives 792 tiles and the same results.
+C13.5 (12 tiles) and I08S (9) contribute few.
+
+**Spearman r with the axes**, all tiles / within cruise (cruises with the pooled sign);
+100 km / 3 d match:
+
+| Profile feature (tiles) | F1 | F2 | W1 | W2 | W3 |
+|---|---|---|---|---|---|
+| nitracline depth, 1 µmol/kg (756) | −0.06 / +0.11 (6/9) | +0.01 / −0.01 (4/9) | +0.09 / +0.10 (6/9) | −0.05 / −0.04 (5/9) | +0.02 / −0.01 (3/9) |
+| nitracline, steepest gradient (756) | −0.17 / −0.00 (3/9) | −0.04 / −0.06 (6/9) | −0.02 / −0.01 (3/9) | −0.09 / −0.09 (6/9) | +0.07 / +0.04 (6/9) |
+| DCM depth (618) | +0.19 / +0.04 (5/7) | −0.15 / +0.08 (4/7) | +0.05 / +0.05 (5/7) | +0.05 / +0.06 (4/7) | −0.01 / −0.01 (4/7) |
+| DCM / surface fluorescence, log (618) | +0.25 / +0.19 (5/7) | −0.12 / +0.13 (5/7) | +0.14 / +0.19 (5/7) | +0.05 / +0.09 (4/7) | −0.04 / −0.06 (4/7) |
+| CTD mixed layer (727) | −0.22 / −0.15 (6/8) | +0.19 / +0.03 (4/8) | −0.14 / −0.15 (6/8) | +0.03 / +0.04 (5/8) | +0.04 / +0.04 (6/8) |
+| nitracline − mixed layer (667) | +0.06 / +0.20 (6/8) | −0.08 / −0.02 (4/8) | +0.18 / +0.19 (6/8) | −0.05 / −0.06 (4/8) | +0.01 / −0.02 (4/8) |
+| surface nitrate, log (746) | −0.29 / −0.24 (5/9) | −0.10 / −0.15 (6/9) | −0.19 / −0.21 (5/9) | −0.10 / −0.12 (5/9) | +0.14 / +0.15 (8/9) |
+
+**W2 from the profile, cross-validated.** Within-cruise ridge, cruise held out, on the
+756 matched tiles:
+
+| Predictors | R2 |
+|---|---:|
+| PISCES chlorophyll | −0.025 |
+| nitracline | −0.010 |
+| chlorophyll + nitracline | −0.036 |
+| chlorophyll + nitracline + CTD mixed layer | −0.036 |
+
+With the 30 km / 1 d match: −0.031, −0.013, −0.042, −0.043.
+
+**Reading.**
+- **The nutricline and DCM don't explain axis 2.** Every profile feature has
+  within-cruise |r| ≤ 0.09 with W2, and adding them gives no cross-validated R2.
+- Together with R34's smooth, roughly 560 km structure, this means the missing driver
+  of the phototroph axis is large-scale but isn't the vertical nutrient structure at
+  the station. Remaining candidates:
+  - the recent chlorophyll history: bloom phase (section 5)
+  - light: cloud and PAR history, mixed-layer light
+  - grazing and viral lysis, which no field resolves
+- **Axis 1 has weak but consistent profile links.** Its bacterial pole sits in
+  stratified, oligotrophic water: a stronger DCM peak (W1 r +0.19), a nitracline well
+  below the mixed layer (+0.19), lower surface nitrate (−0.21) and a shallower mixed
+  layer (−0.15), each in 5–6 of 8–9 cruises. That is ecologically sensible
+  (eukaryotes favoured where nitrate reaches the surface), but small next to its
+  protocol / era offset.
+
+### 5. Chlorophyll history: job for Morrill
+
+**What it does.** `transfer/scripts/extract_chl_history.py`, run by
+`transfer/cluster/chl_history.sbatch` (service partition, Copernicus Marine login):
+- Data: gap-free daily GlobColour L4 chlorophyll at 4 km. It tries multi-year, then
+  interim, then near-real-time, which covers 2011–2025.
+- Per sample: the box mean (±0.125°) for each of the 29 days from day −28 to the
+  sampling day.
+- Summaries:
+  - chl_day0, chl_mean28, chl_max28
+  - log10 slopes over 14 and 28 days, per 10 days: > 0 growing, < 0 decaying
+  - chl_peak_ratio28 = log10(28-day max / day 0); 0 = at the peak, > 0 = after a peak
+  - days since the maximum
+  - CV
+- Resumable.
+- Checked offline on synthetic series:
+  - a growing bloom gives slope14 +0.18
+  - a bloom past its peak gives slope14 −0.53 and peak ratio 0.70
+
+**Run on Morrill:**
+
+    cd /scratch/morrill/users/$USER/biogoship_granite_kegg && git pull
+    sbatch --account=191001-364393 transfer/cluster/chl_history.sbatch
+
+**Bring back:** `transfer/results/chl_history/sample_chl_history.csv` and
+`provenance_chl_history.json`.
+
+### Summary
+1. **Axis-1 offsets follow extraction workflow / platform, not sampling year.**
+   - HLY2202 (2022, old enzymatic extraction, OBI_2631) sits with the old cruises.
+   - Within the enzymatic cruises there is no year trend (r +0.09).
+   - Extraction and platform can't be separated with these cruises.
+   - The A16N Protocol A pairs don't reproduce the axis-1 shift. If Protocol A is the
+     old protocol, that points to sequencing platform / library prep.
+2. **The A16N Protocol A vs standard pairs differ technically, and strongly.**
+   - +0.38 Archaea CLR; +0.78 SD on axis 3; −0.64 SD on axis 2; 16% of KOs at
+     |t| > 3.
+   - These are technical treatments. They should not be averaged as replicates in
+     the tiles.
+   - The P02 Shield pairs can't be tested: their 2023 libraries are not in the KO
+     table.
+3. **Nutricline and DCM don't explain axis 2** (|r| ≤ 0.09; no CV gain). Axis 1 has
+   weak stratification links (r ≈ 0.2).
+4. **The chlorophyll-history job is ready to run on Morrill.**
+
+**Open questions for the Bio-GO-SHIP team:**
+- What is A16N "Protocol A"?
+- Where are the P02 HWKVFDSX5 libraries (Shield pairs)? Their counts are missing from
+  the KO table.
+- Library prep kit per sequencing run.

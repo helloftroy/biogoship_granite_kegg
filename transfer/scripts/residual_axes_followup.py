@@ -19,6 +19,15 @@ Parts (run one or several with --parts):
   region    Temperature x region: the temperature spline fitted per ocean basin.
   spatial   Axis scores along each transect: correlation of score pairs as a function of
             along-track distance (correlogram), and a figure of the scores along track.
+  methods   (R35) The cruise-methods table (transfer/results/protocol/cruise_methods.csv):
+            cruise mean scores by extraction / preservation / pre-filter, and within-cruise
+            contrasts of legs (P02 W/E, A16N 1/2) and of P02 flow-through vs cast.
+  pairs     (R35) The paired protocol comparisons: A16N "Protocol A" samples and P02
+            "shield" samples, each with partner samples taken at the same time and place.
+            Per pair, the sample-level differences in domain CLRs, the R33 axis scores,
+            and all KO CLRs; the KO-level protocol effect is compared with the axis loadings.
+  nutricline (R35) Nutricline and deep-chlorophyll-maximum depth from CCHDO bottle and
+            CTD profiles (transfer/results/nutricline/station_profiles.csv) against the axes.
 
 Inputs: as scripts/residual_modules.py, plus transfer/results/protocol/sample_protocol.csv
 (transfer/scripts/protocol_metadata.py). Outputs: transfer/results/residual_followup/.
@@ -41,7 +50,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 from added_fields_all_kos import cv  # noqa: E402
-from residual_modules import corr, one_driver, split_half, standardise, top_pca  # noqa: E402
+from residual_modules import corr, loco_ridge, one_driver, split_half, standardise, top_pca  # noqa: E402
 from tune_figure_kos import load  # noqa: E402
 
 OUT = REPO / "transfer" / "results" / "residual_followup"
@@ -50,7 +59,7 @@ R33 = REPO / "data" / "results" / "residual_modules"
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--parts", nargs="+", default=["protocol", "depth"], choices=["protocol", "depth", "region", "spatial"])
+    p.add_argument("--parts", nargs="+", default=["protocol", "depth"], choices=["protocol", "depth", "region", "spatial", "methods", "pairs", "nutricline"])
     p.add_argument("--targets", type=Path, default=REPO / "data" / "targets" / "ko_clr.csv")
     p.add_argument("--embeddings-dirs", type=Path, nargs="+",
                    default=[REPO / "data" / "embeddings_sst_l4", REPO / "data" / "faire" / "embeddings_sst_l4"])
@@ -63,7 +72,8 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     ctx = Context(args)
     for part in args.parts:
-        {"protocol": part_protocol, "depth": part_depth, "region": part_region, "spatial": part_spatial}[part](ctx)
+        {"protocol": part_protocol, "depth": part_depth, "region": part_region, "spatial": part_spatial,
+         "methods": part_methods, "pairs": part_pairs, "nutricline": part_nutricline}[part](ctx)
     (args.out_dir / f"summary_{'_'.join(args.parts)}.txt").write_text("\n".join(ctx.log) + "\n")
 
 
@@ -565,6 +575,271 @@ def correlogram_figure(ctx: Context, cg: pd.DataFrame) -> None:
     fig.savefig(out, dpi=300)
     plt.close(fig)
     ctx.say(f"Figure: {out.relative_to(REPO)}")
+
+
+# ---------------------------------------------------------------- methods (R35)
+LEG_SPLIT = {"P02-2022": ("2022-06-13", "P02W (leg 1)", "P02E (leg 2)"), "A16N-2023": ("2023-04-10", "A16N leg 1", "A16N leg 2")}
+
+
+def part_methods(ctx: Context) -> None:
+    say = ctx.say
+    meth = pd.read_csv(REPO / "transfer" / "results" / "protocol" / "cruise_methods.csv")
+    # one coding per cruise for the cruise-level comparison (legs: the majority / standard protocol)
+    per = meth.drop_duplicates("cruise", keep="first").set_index("cruise")
+    per.loc["A16N-2023", "preservation"] = "DNA/RNA Shield"  # predominantly Shield; the Protocol A samples are paired (part pairs)
+    per.loc["P02-2022", "preservation"] = "lysis buffer"  # lysis buffer normally; 11 Shield samples are paired
+    F = ["F1", "F2", "F3"]
+    cm = ctx.scores[F].groupby(ctx.cruises).mean() / ctx.scores[F].std()
+    inst = pd.read_csv(ctx.args.out_dir / "cruise_protocol.csv", index_col=0)[["instrument", "sample_year"]]
+    cr = cm.join(per[["preservation", "extraction", "prefilter", "volume_l", "store_c"]]).join(inst)
+    cr.round(3).to_csv(ctx.args.out_dir / "cruise_methods_scores.csv")
+    say("\n== methods: cruise mean scores (SD) with the coded methods table")
+    say(cr.round(2).sort_values(["extraction", "sample_year"]).to_string())
+    for col in ["extraction", "preservation", "prefilter", "instrument"]:
+        say(f"   by {col}: " + "; ".join(f"{k} ({len(g)}): " + ", ".join(f"{f} {g[f].mean():+.2f}" for f in F) for k, g in cr.groupby(col)))
+    say("   Spearman r with sampling year inside each extraction group (does the era trend survive within a protocol?):")
+    for k, g in cr.groupby("extraction"):
+        if len(g) >= 4:
+            say(f"      {k} ({len(g)} cruises): " + ", ".join(f"{f} {corr(g[f].rank().to_numpy(), g['sample_year'].rank().to_numpy()):+.2f}" for f in F))
+    say("   Spearman r with typical volume filtered (13 cruises): " + ", ".join(
+        f"{f} {corr(cr[f].rank().to_numpy(), cr['volume_l'].rank().to_numpy()):+.2f}" for f in F))
+
+    # within-cruise contrasts: legs, and P02 flow-through (30 um pre-filtered on leg 1) vs cast
+    tp = pd.read_csv(ctx.args.out_dir / "tile_protocol.csv", index_col=0).loc[ctx.unit.index]
+    order = np.argsort(ctx.time.astype("int64").to_numpy(), kind="stable")
+    rows = []
+    say("   Within-cruise contrasts (W scores, SD of all tile scores; rotation p as in R34):")
+    for cruise, (cut, a, b) in LEG_SPLIT.items():
+        m = ctx.cruises == cruise
+        lab = np.where(ctx.time.dt.tz_convert(None) < pd.Timestamp(cut), a, b).astype(object)
+        lab[~m] = None
+        for w in ["W1", "W2", "W3"]:
+            s = ctx.scores[w].to_numpy() / ctx.scores[w].std()
+            e, p, _ = rotation_test(s, lab, ctx.cruises, m, order, ctx.rng, ctx.args.rotations)
+            d = s[m & (lab == b)].mean() - s[m & (lab == a)].mean()
+            rows.append({"contrast": f"{b} - {a}", "component": w, "n_a": int((m & (lab == a)).sum()), "n_b": int((m & (lab == b)).sum()),
+                         "difference_sd": d, "eta2": e, "p_rotation": p})
+            say(f"      {b} - {a} ({rows[-1]['n_b']} vs {rows[-1]['n_a']} tiles), {w}: {d:+.2f} SD, eta2 {e:.3f}, p {p:.3f}")
+    m = (ctx.cruises == "P02-2022") & (ctx.time.dt.tz_convert(None) < pd.Timestamp("2022-06-13")).to_numpy()
+    lab = tp["collection"].to_numpy(dtype=object).copy()
+    lab[~m] = None
+    keep = m & pd.notna(lab)
+    for w in ["W1", "W2", "W3"]:
+        s = ctx.scores[w].to_numpy() / ctx.scores[w].std()
+        e, p, _ = rotation_test(s, lab, ctx.cruises, keep, order, ctx.rng, ctx.args.rotations)
+        d = s[keep & (lab == "flow-through")].mean() - s[keep & (lab == "cast")].mean()
+        rows.append({"contrast": "P02W flow-through (30 um pre-filter) - cast", "component": w, "n_a": int((keep & (lab == "cast")).sum()),
+                     "n_b": int((keep & (lab == "flow-through")).sum()), "difference_sd": d, "eta2": e, "p_rotation": p})
+        say(f"      P02W flow-through (30 um pre-filtered) - cast ({rows[-1]['n_b']} vs {rows[-1]['n_a']} tiles), {w}: {d:+.2f} SD, "
+            f"eta2 {e:.3f}, p {p:.3f}")
+    pd.DataFrame(rows).round(4).to_csv(ctx.args.out_dir / "methods_within_cruise.csv", index=False)
+
+
+# ---------------------------------------------------------------- pairs (R35)
+def find_pairs(workbook: Path) -> pd.DataFrame:
+    """Treated sample + its partners (same cruise, same eventDate, <= 10 m, other MG samples)."""
+    import warnings
+
+    warnings.filterwarnings("ignore")
+    sm = pd.read_excel(workbook, sheet_name="sampleMetadata", header=2)
+    sm = sm[sm["samp_name"].astype(str).str.endswith("_MG")]
+    sm["depth"] = pd.to_numeric(sm["minimumDepthInMeters"], errors="coerce")
+    sm = sm[sm["depth"] <= 10]
+    notes = sm["samp_collect_notes"].astype(str)
+    treated = {"A16N-2023": ("Protocol A", notes.str.contains("Protocol A")),
+               "P02-2022": ("DNA/RNA Shield", notes.str.strip().str.lower().eq("shield"))}
+    rows = []
+    for cruise, (label, flag) in treated.items():
+        for _, t in sm[flag & (sm["short_name"] == cruise)].iterrows():
+            partners = sm[(sm["short_name"] == cruise) & (sm["eventDate"] == t["eventDate"]) & (sm["samp_name"] != t["samp_name"])]
+            for _, q in partners.iterrows():
+                rows.append({"cruise": cruise, "treatment": label, "treated": t["samp_name"], "partner": q["samp_name"],
+                             "event": t["eventDate"], "partners": len(partners), "treated_note": t["samp_collect_notes"],
+                             "partner_note": q["samp_collect_notes"]})
+    return pd.DataFrame(rows)
+
+
+def part_pairs(ctx: Context) -> None:
+    from scipy.stats import wilcoxon
+
+    say = ctx.say
+    pairs = find_pairs(REPO / "FAIRe-NOAA_uci-ess-biogoship.xlsx")
+    clr = pd.read_csv(ctx.args.targets, index_col="sample_key")
+    kos = list(clr.columns)
+    ks = pd.read_csv(REPO / "data" / "targets" / "ko_samples.csv").set_index("sample_key")
+    unc = pd.read_csv(REPO / "data" / "targets" / "taxa" / "unclassified_targets.csv").set_index("sample_key")
+    dom = pd.read_csv(REPO / "data" / "targets" / "taxa" / "taxa_domain_clr.csv").set_index("sample_key")
+    tile_of = ctx.rows.set_index("sample_id")["tile_key"]
+    pos = {k: i for i, k in enumerate(ctx.unit.index)}
+    have = pairs["treated"].isin(clr.index) & pairs["partner"].isin(clr.index)
+    say(f"\n== pairs: {len(pairs)} treated-partner pairs found ({pairs.groupby('cruise').size().to_dict()}); "
+        f"{int(have.sum())} with both samples among the modelled KO samples")
+    pairs = pairs[have].copy()
+    pairs["same_tile"] = [tile_of.get(a) == tile_of.get(b) and tile_of.get(a) is not None for a, b in zip(pairs["treated"], pairs["partner"])]
+    say(f"   both samples in the same modelled tile: {int(pairs['same_tile'].sum())} of {len(pairs)} (the R33 tiles averaged them)")
+
+    # sample-level axis scores (as replicate_check): residual vs the tile prediction, minus the cruise mean residual
+    cm = pd.DataFrame(ctx.res).groupby(ctx.cruises).transform("mean").to_numpy()
+    mu_w, sd_w = ctx.within.mean(0), np.where(ctx.within.std(0) > 0, ctx.within.std(0), 1)
+    mu_f, sd_f = ctx.res.mean(0), np.where(ctx.res.std(0) > 0, ctx.res.std(0), 1)
+    comps = ["F1", "F2", "F3", "W1", "W2", "W3"]
+    unit_w = {c: ctx.loadings[c].to_numpy() / np.linalg.norm(ctx.loadings[c].to_numpy()) for c in comps}
+    tile_sd = {c: (standardise(ctx.within if c[0] == "W" else ctx.res) @ unit_w[c]).std() for c in comps}
+
+    def sample_scores(sample):
+        t = tile_of.get(sample)
+        if t is None or t not in pos:
+            return {c: np.nan for c in comps}
+        i = pos[t]
+        y = clr.loc[sample].to_numpy()
+        out = {}
+        for c in comps:
+            z = (y - ctx.pred[i] - cm[i] - mu_w) / sd_w if c[0] == "W" else (y - ctx.pred[i] - mu_f) / sd_f
+            out[c] = z @ unit_w[c] / tile_sd[c]
+        return out
+
+    feats = {}
+    for s in set(pairs["treated"]) | set(pairs["partner"]):
+        feats[s] = {"Bacteria CLR": dom.loc[s, "Bacteria"] if s in dom.index else np.nan,
+                    "Eukaryota CLR": dom.loc[s, "Eukaryota"] if s in dom.index else np.nan,
+                    "Archaea CLR": dom.loc[s, "Archaea"] if s in dom.index else np.nan,
+                    "bacteria vs eukaryota": unc.loc[s, "bacteria_vs_eukaryota"] if s in unc.index else np.nan,
+                    "unclassified logit": unc.loc[s, "unclassified_logit"] if s in unc.index else np.nan,
+                    "log10 total KO counts": np.log10(ks.loc[s, "total"]) if s in ks.index else np.nan,
+                    **sample_scores(s)}
+    feats = pd.DataFrame(feats).T
+    for c in feats.columns:
+        pairs[f"d {c}"] = feats.loc[pairs["treated"], c].to_numpy() - feats.loc[pairs["partner"], c].to_numpy()
+
+    # replicate baseline: partner vs partner at the same event (P02 triples)
+    reps = []
+    for (cruise, ev), g in pairs.groupby(["cruise", "event"]):
+        p = list(g["partner"])
+        if len(p) >= 2:
+            reps.append({"cruise": cruise, "a": p[0], "b": p[1]})
+    reps = pd.DataFrame(reps)
+
+    rows = []
+    for cruise, g in pairs.groupby("cruise"):
+        # one difference per treated sample: treated minus the mean of its partners
+        per = g.groupby("treated")[[c for c in g if c.startswith("d ")]].mean()
+        rb = reps[reps["cruise"] == cruise] if len(reps) else reps
+        say(f"   {cruise}: {g['treatment'].iloc[0]} minus partner, {len(per)} treated samples "
+            f"({len(g)} pairs; partner-partner baseline from {len(rb)} events)")
+        for c in feats.columns:
+            d = per[f"d {c}"].dropna()
+            if len(d) < 4:
+                continue
+            p = wilcoxon(d).pvalue if (d != 0).any() else np.nan
+            base = (feats.loc[rb["a"], c].to_numpy() - feats.loc[rb["b"], c].to_numpy()) if len(rb) else np.array([])
+            base_sd = np.nanstd(base, ddof=1) / np.sqrt(2) * np.sqrt(2) if len(base) >= 3 else np.nan
+            rows.append({"cruise": cruise, "treatment": g["treatment"].iloc[0], "variable": c, "n": len(d), "mean_diff": d.mean(),
+                         "sd_diff": d.std(ddof=1), "same_sign": f"{int((np.sign(d) == np.sign(d.mean())).sum())}/{len(d)}",
+                         "wilcoxon_p": p, "replicate_sd_diff": base_sd, "replicate_n": len(base)})
+            say(f"      {c:24s} mean {d.mean():+.3f} (SD {d.std(ddof=1):.3f}; {rows[-1]['same_sign']} same sign; Wilcoxon p {p:.3f})"
+                + (f"; partner-partner SD of difference {base_sd:.3f} (n {len(base)})" if np.isfinite(base_sd) else ""))
+    pd.DataFrame(rows).round(4).to_csv(ctx.args.out_dir / "pairs_effects.csv", index=False)
+    pairs.round(4).to_csv(ctx.args.out_dir / "pairs.csv", index=False)
+
+    # KO-level protocol effect vs the axis loadings
+    sd_ko = ctx.within.std(0)
+    say("   KO-level effect (mean treated - partner difference per KO / the KO's within-cruise residual SD): "
+        "cosine with the R33 loadings; and its own strength")
+    eff_rows = []
+    for cruise, g in pairs.groupby("cruise"):
+        diff = clr.loc[g["treated"]].to_numpy() - clr.loc[g["partner"]].to_numpy()
+        per = pd.DataFrame(diff).groupby(g["treated"].to_numpy()).mean().to_numpy()
+        eff = per.mean(0) / sd_ko
+        t = per.mean(0) / (per.std(0, ddof=1) / np.sqrt(len(per)))
+        cos = {c: float(eff @ ctx.loadings[c].to_numpy() / np.linalg.norm(eff) / np.linalg.norm(ctx.loadings[c].to_numpy()))
+               for c in ["F1", "F2", "F3", "F4", "F5", "W1", "W2", "W3", "W4"]}
+        # null for the cosine: random sign flips of whole pairs
+        null = []
+        for _ in range(999):
+            sg = ctx.rng.choice([-1, 1], len(per))[:, None]
+            e0 = (per * sg).mean(0) / sd_ko
+            null.append(abs(e0 @ ctx.loadings["F1"].to_numpy()) / np.linalg.norm(e0) / np.linalg.norm(ctx.loadings["F1"].to_numpy()))
+        p_f1 = (1 + (np.array(null) >= abs(cos["F1"])).sum()) / 1000
+        frac = (np.abs(t) > 3).mean()
+        eff_rows.append({"cruise": cruise, "treated": len(per), "rms_effect_sd": float(np.sqrt((eff ** 2).mean())),
+                         "share_kos_abs_t_gt_3": frac, **{f"cos {c}": v for c, v in cos.items()}, "p_cos_F1_signflip": p_f1})
+        top = pd.Series(eff, index=[k.replace("count.ko.", "") for k in kos]).sort_values()
+        say(f"      {cruise}: RMS effect {eff_rows[-1]['rms_effect_sd']:.2f} SD per KO; KOs with |t| > 3: {frac:.1%}; cosine "
+            + ", ".join(f"{c} {v:+.2f}" for c, v in cos.items()) + f"; p(|cos F1|, sign flips) {p_f1:.3f}")
+        say(f"         most up in the treated samples: {', '.join(top.index[-6:][::-1])}; most down: {', '.join(top.index[:6])}")
+    pd.DataFrame(eff_rows).round(4).to_csv(ctx.args.out_dir / "pairs_ko_effect.csv", index=False)
+
+
+PROFILE = {"nitracline depth (1 umol/kg, m)": "nitracline_1um_m", "nitracline, steepest gradient (m)": "nitracline_grad_m",
+           "DCM depth (m)": "dcm_m", "DCM / surface fluorescence (log)": "log_dcm_ratio", "CTD mixed layer (m)": "mld_ctd_m",
+           "nitracline - mixed layer (m)": "nitracline_minus_mld", "surface nitrate (log)": "log_no3_surface"}  # fmt: skip
+
+
+def match_casts(ctx: Context, casts: pd.DataFrame, max_km: float, max_days: float) -> pd.DataFrame:
+    """Per tile: the nearest cast of its own cruise within max_km and max_days."""
+    casts = casts.assign(t=pd.to_datetime(casts["time"], utc=True, errors="coerce"))
+    out = []
+    for i, (c, la, lo, t) in enumerate(zip(ctx.cruises, ctx.lat, ctx.lon, ctx.time)):
+        g = casts[casts["section"] == c]
+        if g.empty or pd.isna(t):
+            out.append({})
+            continue
+        d = haversine(la, lo, g["lat"].to_numpy(), g["lon"].to_numpy())
+        dt = np.abs((g["t"] - t).dt.total_seconds().to_numpy()) / 86400
+        ok = (d <= max_km) & (dt <= max_days)
+        if not ok.any():
+            out.append({})
+            continue
+        k = np.flatnonzero(ok)[np.argmin(d[ok])]
+        out.append({**g.iloc[k][list(PROFILE.values())].to_dict(), "cast_km": d[k], "cast_days": dt[k]})
+    return pd.DataFrame(out, index=ctx.unit.index)
+
+
+def part_nutricline(ctx: Context) -> None:
+    say = ctx.say
+    casts = pd.read_csv(REPO / "transfer" / "results" / "nutricline" / "station_profiles.csv")
+    casts["log_dcm_ratio"] = np.log10(casts["dcm_ratio"].clip(lower=0.1))
+    casts["nitracline_minus_mld"] = casts["nitracline_1um_m"] - casts["mld_ctd_m"]
+    casts["log_no3_surface"] = np.log10(casts["no3_surface"].clip(lower=0.01))
+    fields = pd.read_csv(REPO / "data" / "model_fields" / "sample_model_fields.csv").set_index("sample_id")
+    chl = np.log10(ctx.tile_values(fields["pisces_chl"].clip(lower=0.001)).to_numpy())
+    comps = ["F1", "F2", "W1", "W2", "W3"]
+    rows = []
+    for max_km, max_days in ((100, 3), (30, 1)):
+        m = match_casts(ctx, casts, max_km, max_days)
+        n = m["cast_km"].notna()
+        say(f"\n== nutricline: tiles matched to a cast of their cruise within {max_km} km and {max_days} d: {int(n.sum())} of {len(n)} "
+            f"(median {m['cast_km'].median():.0f} km, {m['cast_days'].median():.2f} d); per cruise: "
+            + ", ".join(f"{c} {k}" for c, k in pd.Series(ctx.cruises[n.to_numpy()]).value_counts().items()))
+        m.round(3).assign(cruise=ctx.cruises).to_csv(ctx.args.out_dir / f"tile_profiles_{max_km}km.csv")
+        for label, col in PROFILE.items():
+            x = m[col].to_numpy(float)
+            parts = []
+            for comp in comps:
+                d = one_driver(label, ctx.scores[comp].to_numpy(), x, ctx.cruises)
+                if d:
+                    rows.append({**d, "component": comp, "match": f"{max_km} km / {max_days} d"})
+                    parts.append(f"{comp} {d['all_r']:+.2f}/{d['within_r']:+.2f} ({d['cruises_same_sign']}/{d['cruises_tested']})")
+            if parts:
+                say(f"   {label:34s} n {int(np.isfinite(x).sum()):4d}  " + "  ".join(parts))
+        # does the profile add to W2 beyond surface chlorophyll? within-cruise ridge, cruise held out, same tiles
+        keep = np.isfinite(m["nitracline_1um_m"].to_numpy(float)) & np.isfinite(chl)
+        if keep.sum() > 100:
+            s = ctx.scores["W2"].to_numpy()[keep]
+            cr = ctx.cruises[keep]
+
+            def r2(cols):
+                x = np.column_stack(cols)[keep]
+                x = x - pd.DataFrame(x).groupby(cr).transform("mean").to_numpy()
+                return loco_ridge(x, s, cr)
+
+            nit = m["nitracline_1um_m"].to_numpy(float)
+            mld = m["mld_ctd_m"].to_numpy(float)
+            say(f"   W2, within-cruise ridge R2 (cruise held out, {int(keep.sum())} tiles): chlorophyll {r2([chl]):+.3f}; "
+                f"nitracline {r2([nit]):+.3f}; both {r2([chl, nit]):+.3f}; nitracline + CTD mixed layer + chlorophyll "
+                f"{r2([chl, nit, np.where(np.isnan(mld), np.nanmedian(mld), mld)]):+.3f}")
+    pd.DataFrame(rows).round(4).to_csv(ctx.args.out_dir / "nutricline_drivers.csv", index=False)
+
 
 
 if __name__ == "__main__":

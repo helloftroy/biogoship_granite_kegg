@@ -4008,3 +4008,41 @@ are back), against W2 and the other axes:
   - mean PAR over 14 and 28 days along the track
   - mixed-layer light = PAR × (1 − e^(−Kd·MLD)) / (Kd·MLD), with Kd(PAR) from KD490
     (Morel et al. 2007)
+
+### R42 addendum: how much variance is the sequencing platform? (2026-11-20)
+
+**Question.** Does axis 1's 17–19% mean that this much of the KO variance is platform?
+
+**No.**
+- The 17–19% is axis 1's share of the *standardised residual* variance, with every KO
+  weighted equally.
+- Only axis 1's *cruise-level* part follows platform. Its within-cruise part (W1) is
+  the same in every workflow (R36).
+
+**Direct estimate.**
+- Real model: 1,215 tiles, 3,933 KOs, baseline 32 PCs + temperature spline, cruise
+  held out.
+- Statistic: the share of variance explained by the two platform group means:
+  - NovaSeq 6000: I09N, P18, I07N, AMT28, C13.5/A13.5, HLY2202
+  - NovaSeq X: the other 7 cruises
+- Computed inline, not saved as a script.
+
+| Quantity | Value |
+|---|---:|
+| residual share of KO CLR variance | 83.8% |
+| platform, share of the observed KO CLR variance | 4.5% |
+| platform, share of the residual variance | 4.5%, = **3.8% of the total** |
+| platform, share of the standardised residual (KOs weighted equally) | 5.8% |
+| all 13 cruise offsets, share of the residual | 20.1% (16.9% of the total) |
+| per KO, platform share of the residual: median / 90th percentile / max | 2.8% / 15.6% / 44.1% |
+
+**Reading.**
+- Platform accounts for about **4% of KO variance overall** (3.8% of the total, 4.5% of
+  the residual). That is roughly a fifth of all cruise-to-cruise offsets.
+- It is concentrated: for a tenth of the KOs it is more than 15% of their residual,
+  and for one KO 44%.
+- It is an upper bound for the platform itself. The two platform groups are also two
+  sets of years and regions, so part of it may be real between-cruise difference.
+- It is part of the unexplained variance, not of the model's predictions. Under cruise
+  hold-out the model can't learn a platform offset, so the offset stays in the
+  residual. A platform covariate is the way to take it out.

@@ -4664,3 +4664,61 @@ CLR axis-1 score, each centred within cruise, by platform, at ≥ 50% coverage a
    - No same-DNA control at cov0.
    - Re-run with the remaining cov0 libraries if more arrive (e.g. BVAL46, AE1319 NovaSeq, the second
      HLY2202 flowcell).
+
+## R48. Toward domain-split targets: denominators checked; cov0 dropped (2026-11-20)
+
+**cov0 dropped.**
+- R47 answered what cov0 could answer: the 50% filter amplifies the platform gap but does not create it.
+  On the larger cruise (I09N) the gap is small at both coverages.
+- The remaining question, library complexity, is in the reads and needs duplicate rates, not a different
+  counting threshold.
+- The coverage threshold rescales all libraries rather than forming its own variance slice, so it is not
+  a predictability bucket.
+- `data/targets/cov0_stash/` (46 MB) and `ko_counts_cov0_all.tsv.gz` are kept in case.
+
+**How much of the platform problem the GE transform fixes (R46 numbers).**
+- It removes the axis-1 signature of the HiSeq − NovaSeq effect (cosine with F1 0.63 → 0.08). The
+  within-cruise axis-1 gap is not significant at cov50 (+0.05 SD, p 0.81, R47 baseline).
+- Excess platform variance above the same-DNA rerun floor (RMS² − 0.211²) drops from 0.128 to 0.073 SD²,
+  about 43% less. The rest is mostly a uniform per-genome offset.
+- The era contrast keeps part of its axis-1 shape (cosine 0.60 → 0.47).
+- So: the CLR-driven artefact is fixed; about half of the platform offset is not.
+
+**Denominator checks** (cov50 counts, 3,066 non-blank libraries; Spearman).
+- Domain classes come from the sampled reference genes (`ko_gc.csv`): eukaryote share of a KO's genes
+  = Eukaryota / (Eukaryota + Bacteria + Archaea). Over the 3,933 targets:
+
+  | Cut | Prokaryote-specific | Eukaryote-specific | Shared |
+  |---|---:|---:|---:|
+  | 5% / 95% | 1,762 | 420 | 1,751 |
+  | 10% / 90% | 2,143 | 485 | 1,305 |
+  | 2% / 98% | 1,358 | 335 | 2,240 |
+
+  In the full table (18,836 KOs) at 5% / 95%: 5,534 prokaryote-specific and 8,818 eukaryote-specific.
+- **Prokaryote-type ribosomal proteins** (56 KOs in the full table), pooled: ρ 0.987 with Bacteria domain
+  reads. A good prokaryotic denominator.
+- **Eukaryote-type cytosolic ribosomal proteins** (77 KOs), pooled:
+  - median 3,579 reads per library; 634 libraries < 1,000; 1,762 < 5,000;
+  - ρ 0.541 with Eukaryota reads; as shares of KO reads vs the eukaryotic read fraction, ρ 0.056;
+  - log(eukaryotic RP / prokaryotic RP) vs log(Eukaryota / prokaryote reads): ρ 0.047.
+  - Not usable as a denominator. A likely reason: the eukaryotic references are largely transcript
+    assemblies, so intron-rich, multi-copy ribosomal-protein genes map poorly from DNA. Untested.
+- **All eukaryote-specific KOs** (8,818), pooled:
+  - ρ 0.961 with Eukaryota reads;
+  - log(eukaryote-specific / prokaryote-specific KO reads) vs the domain read ratio: ρ 0.890;
+  - median 44,788 reads per library (1% 311, 5% 4,621, 10% 7,840); < 1,000: 52 libraries;
+    < 5,000: 172; < 10,000: 413.
+
+**Proposed targets (not built yet).**
+- **A. Prokaryote-specific KOs:** log copies per prokaryote genome equivalent (pooled prokaryote
+  ribosomal proteins).
+- **B. Eukaryote-specific KOs:** within-eukaryote composition, i.e. a log-ratio against the pooled
+  eukaryote-specific KO reads (or their geometric mean).
+  - This is not "per eukaryotic genome", which ploidy, genome size and ribosomal-protein copy number make
+    fuzzy.
+  - Libraries with < 5,000 eukaryote-specific reads are dropped from B rather than imputed.
+- **C. Eukaryotic amount:** one target per sample, log(eukaryote-specific / prokaryote-specific KO reads).
+  Filter size and early processing would act here (Tara test, R46 note).
+- **Shared KOs:** whole-community model only, or dropped from A/B.
+- **Next:** build A/B/C targets and re-run the baseline model, residual PCA and variance budget per part.
+  That shows which predictability buckets remain once the CLR artefact is gone.

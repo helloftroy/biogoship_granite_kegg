@@ -4722,3 +4722,79 @@ CLR axis-1 score, each centred within cruise, by platform, at ≥ 50% coverage a
 - **Shared KOs:** whole-community model only, or dropped from A/B.
 - **Next:** build A/B/C targets and re-run the baseline model, residual PCA and variance budget per part.
   That shows which predictability buckets remain once the CLR artefact is gone.
+
+## R49. Plastid / organellar leak into the prokaryote genome-equivalent denominator (2026-11-20)
+
+**Question.**
+- Prokaryote-type ribosomal proteins also occur in plastids and mitochondria: plastid-encoded copies (red
+  plastids nearly all, green plastids fewer), and nucleus-encoded organellar copies that annotate to the
+  bacterial-type KOs.
+- Plastids are high-copy, so in eukaryote-rich samples the R46 "prokaryote genome equivalents" may be
+  inflated.
+- Cyanobacteria carry the same genes but are genuine prokaryotes.
+
+**Method.** Script: `scripts/plastid_marker_check.py`. Outputs: `data/results/plastid_markers/`
+(`markers.csv`, `library_denominators.csv`, `deciles.csv`, `summary.txt`) and
+`figures/output/plastid_marker_check.png`.
+1. **Literature split of the 54 markers.** Plastid-encoded in at least one major algal lineage (union of
+   green and red plastid genomes): L1–L6, L11, L7/L12, L13, L14, L16, L18–L24, L27, L29, L31–L36, S2–S20
+   (45 KOs). Rarely or never plastid-encoded: L9, L10, L15, L17, L25, L28, L30, S1, S21 (9 KOs).
+2. **Empirical split.** From the phylum-level per-taxon KO counts (`data/targets/taxa/ko_by_taxon`,
+   1,356 libraries):
+   - per marker KO, the share of its reads assigned to eukaryotic taxa and to Cyanobacteriota, over all
+     libraries and over the eukaryote-rich quartile (domain eukaryote fraction ≥ 0.058);
+   - "clean" = eukaryote-assigned share below 2% in that quartile.
+3. **Divergence on all libraries.** cov50 table: 3,005 non-blank libraries with > 100k KO reads.
+   - Per subset, the log denominator is the mean of log(count + 0.5) over its KOs.
+   - Differences between subsets are tested against the eukaryote fraction and the Cyanobacteriota read
+     share (Spearman, overall and within cruise), and summarised by eukaryote-fraction decile.
+4. **Truth check.** Against the log mean of the same 54 markers' reads assigned to Bacteria + Archaea only,
+   for the 1,337 libraries with per-taxon counts.
+
+**Per-marker eukaryote-assigned share** (eukaryote-rich quartile; full table in `markers.csv`):
+- Range 0.6% (S21) to 27.1% (L6).
+- Median 4.3% for the 9 non-plastid KOs; 9.1% for the 45 plastid-encodable KOs.
+- Highest: L6 0.271, L20 0.221, L2 0.181, S14 0.180, L14 0.177, S12 0.175.
+- Lowest: S21 0.006, L25 0.015, L29 0.029, L30 0.031, S1 0.035, L32 0.037.
+- Only 2 KOs (S21, L25) fall below 2%.
+- Cyanobacteriota share of marker reads (all libraries): 0.1–19% per KO.
+
+**Divergence** (log difference between denominators; top − bottom eukaryote-fraction decile):
+
+| Comparison | ρ with eukaryote fraction | Within cruise | ρ with cyano share | Within cruise | Top − bottom decile |
+|---|---:|---:|---:|---:|---:|
+| Plastid-encodable − non-plastid (literature) | +0.240 | +0.242 | +0.302 | +0.325 | +0.052 (+5%) |
+| Eukaryote-carried − clean (empirical, 52 vs 2 KOs) | −0.073 | +0.029 | +0.211 | +0.171 | −0.078 (−8%) |
+| All 54 − non-plastid 9 | +0.240 | +0.242 | +0.302 | +0.325 | +0.044 (+4%) |
+| All 54 − prokaryote-assigned (n 1,337) | +0.552 | +0.419 | +0.742 | +0.685 | +0.201 (+22%) |
+| Clean 2 − prokaryote-assigned | +0.228 | +0.199 | +0.247 | +0.157 | +0.276 (+32%) |
+| Non-plastid 9 − prokaryote-assigned | +0.294 | +0.238 | +0.450 | +0.417 | +0.159 (+17%) |
+
+The full decile table is in `deciles.csv`. For all 54 vs prokaryote-assigned, the inflation rises to
++0.09 to +0.13 log by deciles 2–6 (eukaryote fraction about 0.017–0.036) and reaches +0.20 in the top decile
+(median eukaryote fraction 0.27).
+
+Figure: `figures/output/plastid_marker_check.png`. Left: plastid-encodable − non-plastid log denominator vs
+eukaryote fraction. Right: all 54 markers − prokaryote-assigned reads only. Each panel has binned means.
+
+**Conclusions**
+1. **The leak is real.** In eukaryote-rich libraries the 54-marker genome equivalents are inflated by
+   about 22% (top decile), and by about 10–13% already at modest eukaryote fractions (2–4%).
+   - The inflation tracks eukaryote fraction (ρ 0.55; 0.42 within cruise).
+   - It tracks the cyanobacterial share even more closely (ρ 0.74). Eukaryotic phytoplankton and
+     cyanobacteria co-vary, so eukaryote-assigned marker reads rise with both.
+   - Uncorrected, this would push eukaryote-rich samples' prokaryotic KOs down, along the axis-1
+     (bacteria vs eukaryotes) direction.
+2. **A literature split does not fix it.**
+   - The 9 non-plastid KOs still carry eukaryotic reads (median 4.3%), because nucleus-encoded
+     organellar (mostly mitochondrial) ribosomal proteins annotate to the same KOs.
+   - The non-plastid subset still inflates by 17%, against 22% for all 54.
+   - Only 2 KOs are clean, too few for a stable denominator (+32% noise-driven bias).
+3. **Fix: count only prokaryote-assigned reads of the markers**, using the reference taxonomy, so
+   eukaryotic plastid, mitochondrial and nuclear copies drop out by construction.
+   - Cyanobacterial reads stay in, correctly: they are prokaryotes. Plastid reads mis-binned to
+     Cyanobacteriota in the reference cannot be detected this way.
+   - This needs per-taxon KO counts for every library. Local per-taxon counts cover 1,356 of about 3,000
+     libraries (phylum level).
+   - For the rest, only `level_1_domain_ko_counts.tsv` per library is needed from the Drive outputs (cov50
+     run). `scripts/merge_ko_counts.py --stash` can pull exactly those from zips. No re-mapping is needed.

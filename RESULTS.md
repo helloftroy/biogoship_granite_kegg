@@ -4046,3 +4046,81 @@ are back), against W2 and the other axes:
 - It is part of the unexplained variance, not of the model's predictions. Under cruise
   hold-out the model can't learn a platform offset, so the offset stays in the
   residual. A platform covariate is the way to take it out.
+
+## R43. Variance budget (first draft) and residual scree plot (2026-11-20)
+
+**Script** `transfer/scripts/variance_budget.py`.
+- Table: `transfer/results/variance_budget/budget.csv`.
+- Figures: `transfer/figures/variance_budget.png` and `transfer/figures/residual_scree.png`.
+  Arial, no titles.
+
+**Data.** Real model: Protocol A excluded, 1,215 tiles × 3,933 KOs, baseline 32 PCs +
+temperature spline, cruise held out.
+
+**Partition.** Each step works on what the previous ones left, summing squares over
+tiles and KOs:
+1. Explained by the model: total − the cross-validated residual.
+2. **Platform**: the two group means of the residual, NovaSeq 6000 cruises vs NovaSeq X
+   cruises.
+3. **Other cruise offsets**: cruise means minus the platform means.
+4. **Sequencing depth**: the within-cruise residual regressed on a spline of log10 total
+   KO counts. 8 knots, cubic, basis centred per cruise, in-sample OLS per KO.
+5. **W1**, then 6. **W2**: regression on the R36 within-cruise axis scores.
+7. **Replicate noise**:
+   - σ² per KO = mean (a − b)² / 2 over 305 same-tile sample pairs from 133 tiles:
+     GOMECC4 A/B/C, C13.5 v1/v2 and co-located samples.
+   - Scaled by Σ 1/k over the tiles, where k is the number of samples averaged in the
+     tile.
+   - Capped at what is left.
+8. The rest.
+
+**Two scalings.** Raw CLR units, where high-variance KOs weigh more, and every KO
+standardised.
+
+| Component | Raw | KOs standardised | Status |
+|---|---:|---:|---|
+| Explained by the satellite model (CV) | 16.2% | 11.4% | model |
+| Sequencing platform, NovaSeq 6000 vs X (upper bound) | 3.8% | 5.1% | technical, known |
+| Other cruise offsets | 13.1% | 14.5% | **unknown**: region, year, other batch |
+| Sequencing depth | 2.3% | 3.5% | technical, known |
+| Axis 1 within cruise (bacteria vs eukaryotes) | 7.4% | 10.6% | biology; weak links to stratification and bloom phase |
+| Axis 2 within cruise (phototrophs) | 3.6% | 5.9% | biology; **driver unknown** |
+| Replicate noise (unpredictable floor) | 27.0% | 26.0% | noise floor |
+| Remaining within cruise | 26.6% | 23.1% | **unknown** |
+
+**Scree** (`residual_scree.png`): share of standardised residual variance per component,
+for the full (F) and within-cruise (W) residual PCA of R36, against the permutation-null
+95th percentile.
+- Filled markers have split-half congruence ≥ 0.75: F1, F2, W1, W2. W3 (0.65) is just
+  under.
+- The curve flattens after component 3 to 5. Every component is far above the null
+  (about 0.2%), which is why the null was too weak a criterion (R33).
+
+**Reading.**
+- **A large unpredictable floor.**
+  - Two samples of the same water differ by enough to account for about 27% of all KO
+    variance. That covers separate filters, extractions and libraries, plus patchiness
+    below a tile.
+  - So no predictor can push the cross-validated KO R2 much past about 0.7 overall.
+  - The model currently explains 16%. Known technical factors (platform and depth) take
+    about 6% more.
+- **Known biology without a driver:** about 11%. Axis 1 within cruise is 7.4%, axis 2
+  3.6%.
+- **Unknown:** about 40%.
+  - 13% is cruise offsets beyond platform: region, year, or a batch not yet found. Under
+    cruise hold-out this part can't be learned at all.
+  - 27% is within-cruise variation that is neither noise nor a reproducible shared
+    axis: KO-specific or small-scale structure.
+- **Caveats.**
+  - The platform share is an upper bound, because platform is confounded with years and
+    regions.
+  - The noise floor may be slightly overestimated. Replicate libraries also differ in
+    depth (overlap with step 4), and C13.5 v2 has a small Bacteria shift (R36).
+  - W1 and W2 come from a PCA of standardised residuals, so their raw-unit shares are
+    smaller than the R33 percentages.
+- **What changes this draft.**
+  - Water-mass and light history may move part of "remaining" and of axis 2 into a
+    known driver.
+  - The GC check may tighten the platform attribution.
+  - A platform covariate and a depth covariate in the model would move their slices
+    into "explained".

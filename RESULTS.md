@@ -2217,6 +2217,10 @@ in `drivers.csv`.
      filter size or extraction.
    - Within cruise it falls with in-situ temperature (r −0.33, 4 of 5 cruises),
      although temperature is in the model: the temperature spline misses something.
+   - **Correction (R34):** that −0.33 used only the 526 tiles of the 5 older cruises
+     with manifest temperature. On all 1,216 tiles (the model's own temperature) the
+     within-cruise r is −0.03, and the sign splits by sequencing era: negative in 4 of
+     the 5 older cruises, positive (+0.03 to +0.30) in all 8 newer ones.
 3. **Axis 2 (F2 / W2; 10%; congruence 0.77 / 0.83): phototroph share.**
    - The + pole is picocyanobacterial genes (metB, queD, K10206, cobK, desC, rpoS) and
      the photosynthesis and porphyrin pathways, together with Cryptophyta.
@@ -2265,3 +2269,372 @@ in `drivers.csv`.
   axis 2.
 - Refit with log total counts as a covariate to remove axis 3.
 - When the external sets are re-mapped (R32), project their residuals on these axes.
+
+## R34. The residual axes, followed up: protocol, sequencing depth, temperature × region, spatial scale (2026-11-19)
+
+**Question.** Follow-ups to R33:
+- Do protocol differences explain axis 1 (bacteria vs eukaryotes) or axis 3
+  (sequencing depth)? Candidates: filter, volume, extraction, sequencing run.
+- Does adding sequencing depth as a covariate remove axis 3?
+- Does the temperature effect differ by region?
+- Is axis 2 (phototrophs) small-scale and stochastic, or smooth over hundreds of km?
+  If smooth, a large-scale driver is missing.
+
+**Scripts and outputs.** All new files for this section are in `transfer/`:
+- `transfer/scripts/protocol_metadata.py` builds the protocol table, written to
+  `transfer/results/protocol/`:
+  - `sample_protocol.csv`: one row per modelled sample
+  - `cruise_coverage.csv`: per cruise, the share of samples with each field and its
+    values
+- `transfer/scripts/residual_axes_followup.py --parts protocol depth region spatial`
+  runs the tests, written to `transfer/results/residual_followup/`. Per part:
+  - protocol: `tile_protocol.csv`, `cruise_protocol.csv`, `cruise_level_tests.csv`,
+    `within_cruise_labels.csv`, `within_cruise_numeric.csv`
+  - depth: `depth_refit_components.csv`, `depth_refit_ko_r2.csv`
+  - region: `region_interaction.csv`
+  - spatial: `correlogram.csv`, `correlogram_fit.csv`, `replicates.csv`
+  - all parts: the `summary_<parts>.txt` console logs
+- Figures: `transfer/figures/w2_along_track.png` and
+  `transfer/figures/residual_axes_correlogram.png`.
+
+To reproduce, run from the repository root:
+
+    ~/miniforge3/bin/python transfer/scripts/protocol_metadata.py
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python transfer/scripts/residual_axes_followup.py --parts protocol depth region spatial
+
+- Same software as R33. Seed 0.
+- The script reads the R33 outputs (`data/results/residual_modules/scores.csv`,
+  `loadings.csv.gz`), so run `scripts/residual_modules.py` first.
+- It recomputes the R33 baseline and caches it in `residuals.npz`.
+- Run time is about 2 minutes on a laptop.
+
+### 1. What protocol metadata exist
+
+**Source.** The FAIRe workbook `FAIRe-NOAA_uci-ess-biogoship.xlsx`:
+- `sampleMetadata`
+- `experimentRunMetadata`, rows with assay `MetaG_LibPrep_Illumina`
+
+**Linking libraries to samples.** Each library is linked to its FAIRe `samp_name` by
+`build_ko_targets.library_samples`, the link the KO targets use. 2,058 libraries
+link to the 2,007 modelled samples.
+
+**Coverage**, per sample (`cruise_coverage.csv`):
+
+| Field | Recorded for | Values |
+|---|---|---|
+| Sequencing run (`seq_run_id`: date, flowcell, PE150) | all 16 cruises | 10 flowcells. Cruises share flowcells: 23LT2GLT4 (sequenced 2026) holds A13.5-2024, GOMECC4, I05-2023 and 53 A16N-2023 samples; 22YJMLLT4 (2025) holds I08S, I09N-2025, P02; HMMFVDSXX (2019) holds AMT28, P18, AE1319, BVAL46, NH1418. |
+| Instrument | all | OBI_2131 / OBI_2631 for the 2011–2020 cruises, OBI_3310 for the 2021–2025 cruises. Fully collinear with era. |
+| Input read count | all | median 1.0e7 – 4.1e7 per cruise |
+| Collection method | 14 of 16 cruises | underway / inline vs CTD / Bio-cast. Five cruises have ≥ 5 tiles of each. |
+| Volume filtered | A13.5-2024, A16N-2023, GOMECC4, HLY2202, I05-2023 | about 8 L Sterivex underway; GOMECC4 about 2 L from Niskin bottles. The workbook says "L" for values of 830–10,000, which must be mL. |
+| Storage solution | A13.5-2024, A16N-2023, I05-2023 (lysis buffer), GOMECC4 (none) | — |
+| Extraction plate and well | A13.5-2024, A16N-2023, GOMECC4, I05-2023 | 2–5 plates per cruise |
+| Size fraction, filter, extraction kit, DNA yield | GOMECC4 only | 0.22 µm Sterivex-GP PES, no pre-filter; ZymoBIOMICS 96 MagBead kit (KingFisher protocol); yield median 295 ng |
+
+**Not recorded for the 9 older cruises:** filter pore size, pre-filter, volume,
+storage, extraction kit, extraction date. For them, the cruise is the only protocol
+label. Answering whether the protocol differs between the 2011–2020 and 2021–2025
+cruises needs Bio-GO-SHIP: pre-filter and extraction kit in particular. The older
+cruises' protocol is in their methods papers; it isn't in the workbook.
+
+**Derived per tile** (mean over the tile's samples; mode for labels):
+- storage time = sequencing date − sampling date. The run date "20189999" is taken as
+  2018-07-01.
+- log10 input reads
+- log10 KO yield = total KO counts per input read pair. This is the share of reads
+  that map to annotated references at ≥ 50% coverage.
+
+### 2. Protocol against the axes
+
+**a) Cruise level.**
+- Per-cruise mean score, in SDs of the tile scores (`cruise_protocol.csv`):
+
+| Cruise | Tiles | Flowcell | Sequenced | Sampled | Storage (y) | Lysis buffer | Instrument | log KO yield | log input reads | F1 | F2 | F3 |
+|---|---:|---|---:|---:|---:|---|---|---:|---:|---:|---:|---:|
+| A13.5-2024 | 93 | 23LT2GLT4 | 2026.26 | 2024.15 | 2.11 | yes | OBI_3310 | −0.61 | 7.33 | −0.22 | −0.10 | −0.69 |
+| A16N-2023 | 175 | 22NCJYLT4 | 2025.26 | 2023.26 | 2.02 | yes | OBI_3310 | −0.65 | 7.06 | +0.23 | +0.55 | −0.69 |
+| AMT28 | 46 | HMMFVDSXX | 2019.57 | 2018.78 | 0.80 | not recorded | OBI_2631 | −0.41 | 7.24 | +0.25 | −0.05 | −0.13 |
+| C13.5/A13.5 | 216 | HKNJLDRXX | 2020.69 | 2020.27 | 0.42 | not recorded | OBI_2631 | −0.62 | 7.01 | +0.47 | +0.16 | +0.53 |
+| GOMECC4 | 53 | 23LT2GLT4 | 2026.26 | 2021.76 | 4.50 | none | OBI_3310 | −0.55 | 7.21 | +0.10 | −0.85 | −0.24 |
+| HLY2202-2022 | 32 | HFJLFDSX7 | 2023.59 | 2022.70 | 0.89 | not recorded | OBI_2631 | −0.69 | 7.37 | +0.78 | +0.18 | −1.01 |
+| I05-2023 | 141 | 23LT2GLT4 | 2026.26 | 2023.64 | 2.62 | yes | OBI_3310 | −0.90 | 7.10 | −1.29 | +0.70 | +0.60 |
+| I07N | 146 | H357JDSXY | 2020.21 | 2018.36 | 1.86 | not recorded | OBI_2631 | −0.59 | 7.03 | +0.27 | −0.10 | +0.71 |
+| I08S-2024 | 23 | 22YJMLLT4 | 2025.58 | 2024.18 | 1.40 | not recorded | OBI_3310 | −0.58 | 7.61 | −0.16 | −0.49 | −0.40 |
+| I09N | 54 | HHGJFDSXX | 2019.21 | 2016.31 | 2.90 | not recorded | OBI_2631 | −0.74 | 6.88 | +0.62 | +0.15 | +1.46 |
+| I09N-2025 | 84 | 22YJMLLT4 | 2025.58 | 2025.27 | 0.31 | not recorded | OBI_3310 | −0.50 | 7.61 | −0.78 | −0.38 | −1.08 |
+| P02-2022 | 89 | 22YJMLLT4 | 2025.58 | 2022.42 | 3.16 | not recorded | OBI_3310 | −0.40 | 7.62 | −0.29 | −0.91 | −0.64 |
+| P18 | 64 | HMMFVDSXX | 2019.57 | 2016.96 | 2.61 | not recorded | OBI_2631 | −0.45 | 7.18 | +0.63 | −0.74 | +0.17 |
+
+- Spearman r across the 13 cruise means:
+
+| Cruise median | F1 | F2 | F3 |
+|---|---:|---:|---:|
+| sampling year | −0.71 | +0.05 | −0.72 |
+| sequencing year | −0.78 | −0.15 | −0.45 |
+| storage time | −0.14 | −0.30 | +0.31 |
+| log KO yield | −0.16 | −0.82 | −0.24 |
+| log input reads | −0.45 | −0.52 | −0.73 |
+| flowcell grouping, eta2 over cruises (permutation p, 9,999) | 0.68 (0.36) | 0.49 (0.70) | 0.84 (0.08) |
+
+- Mean by instrument:
+  - OBI_2631 (6 cruises): F1 +0.50, F2 −0.07, F3 +0.29
+  - OBI_3310 (7 cruises): F1 −0.34, F2 −0.21, F3 −0.45
+
+**b) Within cruise, labels.**
+- Statistic: the pooled within-cruise eta2 of the W score, by label.
+- Null: the labels are rotated along the sampling order inside each cruise, 999 times.
+  Contiguous blocks stay together, so a label that only marks a stretch of the track
+  isn't mistaken for batch.
+
+| Label (cruises, tiles) | W1 eta2 (p) | W2 eta2 (p) | W3 eta2 (p) |
+|---|---|---|---|
+| collection, flow-through vs cast (A13.5-2024, A16N-2023, I05-2023, I07N, P02-2022; 644) | 0.016 (0.12) | 0.011 (0.29) | 0.020 (0.012) |
+| sequencing flowcell (A16N-2023 only; 175) | 0.007 (0.58) | 0.041 (0.14) | 0.060 (0.13) |
+| extraction plate (A13.5-2024, A16N-2023, GOMECC4, I05-2023; 462) | 0.030 (0.91) | 0.095 (0.21) | 0.103 (0.13) |
+
+- Per-cruise plate eta2 for W3: A13.5 0.06, A16N 0.07, GOMECC4 0.47, I05 0.09.
+- GOMECC4's A/B/C replicates are spread across plates, and W3 is mostly within-tile
+  noise (section 5). Its 0.47 is from 53 tiles and isn't significant pooled.
+
+**c) Within cruise, numbers.** Spearman r, all tiles / within cruise; in brackets, the
+number of cruises with the pooled sign.
+
+| Variable (tiles, cruises) | F1 | F2 | F3 | W1 | W2 | W3 |
+|---|---|---|---|---|---|---|
+| volume filtered (494, 5) | −0.48 / +0.03 (2/5) | +0.33 / −0.08 (2/5) | +0.40 / −0.12 (4/5) | −0.02 / −0.02 (3/5) | −0.02 / −0.06 (2/5) | +0.00 / −0.02 (2/5) |
+| log input reads (1,216, 13) | −0.35 / −0.22 (12/13) | −0.33 / −0.20 (11/13) | −0.55 / −0.36 (11/13) | −0.16 / −0.24 (12/13) | −0.06 / −0.10 (9/13) | −0.23 / −0.40 (11/13) |
+| log KO yield (1,216, 13) | +0.18 / +0.15 (10/13) | −0.27 / −0.04 (8/13) | −0.38 / −0.33 (12/13) | +0.11 / +0.14 (11/13) | −0.01 / −0.01 (6/13) | −0.27 / −0.34 (11/13) |
+| storage time (1,216, 13) | −0.11 / −0.00 (6/13) | −0.07 / +0.03 (5/13) | +0.00 / +0.10 (6/13) | +0.01 / −0.01 (6/13) | +0.02 / +0.01 (5/13) | −0.00 / +0.06 (4/13) |
+
+**Reading.**
+- **Axis 1, bacteria vs eukaryotes.**
+  - Its cruise offsets follow era: sampling year r −0.71, sequencing year −0.78, and
+    OBI_2631 vs OBI_3310 +0.50 vs −0.34. The newer cruises are more eukaryote-rich in
+    the residuals.
+  - Year, instrument and sequencing run can't be separated: they change together.
+  - Not explained by:
+    - flowcell (cruises sharing one are no more alike: p 0.36)
+    - storage time (−0.14)
+    - volume (within cruise +0.03)
+    - collection method (eta2 0.016)
+    - extraction plate (0.030, p 0.91)
+  - So it is either a protocol change between eras that the workbook doesn't record (a
+    pre-filter, the extraction kit, or library prep), or a real change. Its within-cruise
+    part (W1) has no protocol correlate. Within cruise, a deeper library tilts slightly
+    to eukaryotes (input reads r −0.24, 12 of 13 cruises).
+- **Axis 3, sequencing depth.** Confirmed technical. It falls with input reads
+  (within r −0.40) and with KO yield (−0.34). It is mostly sample-to-sample noise
+  (section 5).
+- **Axis 2, phototrophs.** No protocol label explains it within cruise:
+  - collection 0.011
+  - plate 0.095, p 0.21
+  - volume −0.06
+
+  Its cruise offsets follow KO yield (r −0.82 across cruises): cruises whose reads map
+  less to the references sit higher on axis 2. That is a reference-coverage effect at
+  the cruise level, and it should be checked when the external sets are mapped.
+
+### 3. Axis 3: sequencing depth as a covariate
+
+**Change.** The R33 baseline plus log10 total KO counts, as its own spline (8 knots,
+cubic), with one cruise held out (`added_fields_all_kos.cv` with the variable).
+
+**Prediction.**
+- Median KO R2: 0.103 → 0.145. The median per-KO gain is +0.007.
+- 40% of KOs gain more than 0.02; 17% lose more than 0.02.
+- Residual share of KO CLR variance: 83.7% → 82.2%.
+
+**Residual PCA after the refit.** The F3 / W3 depth axis is gone: no component has
+|r| > 0.16 with log total counts. The two robust axes stay unchanged.
+
+| After refit | Share | Split-half | Best match in R33 (cosine) | Cosine with old F3 / W3 | r with log total, all / within |
+|---|---:|---:|---|---:|---|
+| F1' | 20.7% | 0.93 | F1 (+1.00) | −0.03 | +0.04 / +0.07 |
+| F2' | 10.2% | 0.82 | F2 (+0.94) | −0.32 | −0.02 / +0.06 |
+| F3' | 5.4% | 0.52 | F4 (+0.87) | −0.31 | +0.14 / −0.14 |
+| F4' | 5.4% | 0.54 | F5 (+0.76) | −0.42 | +0.03 / −0.09 |
+| F5' | 3.6% | 0.38 | F7 (−0.62) | +0.51 | −0.12 / +0.07 |
+| F6' | 3.1% | 0.30 | F6 (+0.98) | +0.04 | +0.16 / +0.12 |
+| W1' | 18.2% | 0.95 | W1 (+1.00) | −0.02 | +0.05 / +0.05 |
+| W2' | 10.1% | 0.86 | W2 (+1.00) | −0.07 | +0.05 / +0.06 |
+| W3' | 5.0% | 0.65 | W4 (+0.86) | −0.47 | −0.02 / −0.06 |
+| W4' | 4.5% | 0.71 | W3 (+0.67) | +0.67 | −0.00 / −0.01 |
+| W5' | 2.6% | 0.42 | W6 (+0.98) | +0.05 | +0.10 / +0.15 |
+| W6' | 2.2% | 0.32 | W8 (+0.75) | −0.24 | +0.04 / +0.04 |
+
+**Remainder.** W4' keeps part of the old W3 pattern (cosine 0.67) without the depth
+correlation. This is the ribosome / oxidative-phosphorylation vs repair / motility
+contrast, independent of depth.
+
+**Recommendation.**
+- Use log total counts as a nuisance covariate in the models and the maps. For a map,
+  predict at a fixed reference depth, such as the median.
+- The cause is the CLR pseudocount 0.5 / total. Rarefying, or a depth-matched
+  pseudocount, would remove it at the source.
+
+### 4. Temperature × region
+
+**Change.**
+- The temperature spline columns are multiplied by each region's indicator and added
+  to the R33 baseline, cruise held out.
+- A region with no training cruise falls back to the shared curve.
+- The interaction columns are scaled by shrink = 1, 0.3 or 0.1, which is a 1×, 11× or
+  100× stronger ridge penalty on them.
+
+**Regions:**
+- basin:
+  - Atlantic: A13.5-2024, A16N-2023, AMT28, C13.5/A13.5, GOMECC4
+  - Indian: I05-2023, I07N, I08S-2024, I09N, I09N-2025
+  - Pacific: P02-2022, P18
+  - Arctic: HLY2202-2022
+- latitude band: |lat| < 20, 20–35, > 35
+- sequencing era: OBI_2131/2631 vs OBI_3310. Added because of the sign split below.
+
+| Interaction | Shrink | Median KO R2 (baseline 0.103) | KOs gaining > 0.02 | KOs losing > 0.02 |
+|---|---:|---:|---:|---:|
+| ocean basin | 1 | 0.041 | 16% | 69% |
+| ocean basin | 0.3 | 0.049 | 16% | 65% |
+| ocean basin | 0.1 | 0.079 | 19% | 50% |
+| latitude band | 1 | 0.065 | 13% | 58% |
+| latitude band | 0.3 | 0.082 | 14% | 46% |
+| latitude band | 0.1 | 0.093 | 13% | 28% |
+| sequencing era | 1 | 0.113 | 36% | 43% |
+| sequencing era | 0.3 | 0.113 | 36% | 42% |
+| sequencing era | 0.1 | 0.126 | 41% | 30% |
+
+**Within regions.** Basin, shrink 1: Atlantic −0.045, Indian −0.081, Pacific −0.078,
+Arctic +0.018. Shrink 0.1: Pacific +0.008 is the only region that gains.
+
+**Reading.**
+- Separate temperature curves per region don't carry over to a held-out cruise. They
+  fit that region's other cruises, and every basin has only 1–5 cruises. One shared
+  curve transfers best.
+- A curve per sequencing era gives a small gain at the strongest shrinkage (median KO
+  R2 0.126). Era is a batch, not a region.
+- **R33 correction.** The within-cruise W1–temperature r of −0.33 came from 526 tiles
+  of 5 older cruises:
+  - On all 1,216 tiles it is −0.03 (4 of 13 cruises with that sign).
+  - Per cruise, the older cruises are negative (AMT28 −0.34, C13.5 −0.45, I07N −0.27,
+    P18 −0.13), except I09N (+0.44).
+  - All 8 newer cruises are positive (+0.03 to +0.30).
+
+  Whatever W1 tracks along temperature differs by era, which again points to a
+  protocol difference between eras rather than a regional temperature response.
+
+### 5. Axis 2 along the transects: spatial scale
+
+**Method.**
+- Positions are sample positions, averaged per tile. Tiles' nearest neighbour in the
+  same cruise: median 44 km (quartiles 22–63 km).
+- Correlogram:
+  - pairs of tiles in the same cruise
+  - the score is centred per cruise
+  - r = Σ xᵢxⱼ / √(Σxᵢ² Σxⱼ²) per distance bin, pooled over cruises, with ≥ 30 pairs
+    per bin
+- Comparators:
+  - in-situ temperature, PISCES chlorophyll and GLORYS mixed layer (smooth fields)
+  - the median correlogram of 500 random single-KO within-cruise residuals
+- Replicate check: the 145 tiles holding two or more samples. GOMECC4 contributes 52,
+  as A/B/C replicates; the rest are co-located samples, median distance 0 km.
+  - Each sample's residual = its CLR − the tile prediction − the cruise mean residual.
+  - It is standardised with the tile matrix's KO SDs and projected on the
+    component's loadings.
+  - Statistic: the correlation between the two samples of a tile.
+
+**Correlation of pairs by distance (km):**
+
+| Series | 0–15 | 15–40 | 40–75 | 75–150 | 150–300 | 300–600 | 600–1200 | 1200–2400 | 2400–5000 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| W1 (bacteria vs eukaryotes) | 0.57 | 0.42 | 0.44 | 0.30 | 0.19 | 0.08 | −0.02 | −0.02 | −0.04 |
+| **W2 (phototrophs)** | **0.55** | **0.50** | **0.49** | **0.39** | **0.32** | **0.25** | **0.15** | −0.02 | −0.09 |
+| W3 (sequencing depth) | 0.35 | 0.29 | 0.30 | 0.19 | 0.10 | 0.06 | −0.00 | −0.05 | −0.03 |
+| single-KO residuals (median of 500) | 0.38 | 0.34 | 0.32 | 0.25 | 0.18 | 0.11 | 0.03 | −0.03 | −0.06 |
+| in-situ temperature | 1.00 | 0.99 | 0.99 | 0.97 | 0.95 | 0.90 | 0.73 | 0.34 | −0.34 |
+| log PISCES chlorophyll | 1.00 | 0.97 | 0.96 | 0.92 | 0.83 | 0.63 | 0.25 | −0.16 | −0.23 |
+| log GLORYS mixed layer | 0.93 | 0.89 | 0.84 | 0.74 | 0.65 | 0.47 | 0.16 | −0.10 | −0.21 |
+| pairs | 102 | 394 | 811 | 1,542 | 2,898 | 5,975 | 11,502 | 16,583 | 23,937 |
+
+**Exponential fit** r(d) = c·exp(−d/L), weighted by pairs:
+- W1: c 0.53, L 201 km
+- W2: c 0.51, L 557 km
+- W3: c 0.34, L 206 km
+- temperature: c 1.30, L 1,029 km
+- chlorophyll: c 1.25, L 480 km
+- mixed layer: c 1.03, L 442 km
+
+The smooth fields fit poorly (c > 1): their correlograms are flat and then fall,
+rather than exponential. For them, read the table, not the fit.
+
+**Two samples in one tile:**
+
+| Component | r between the two samples | Sample-to-sample variance, as a share of the tile-score variance |
+|---|---:|---:|
+| W1 | +0.83 | 18% |
+| W2 | +0.72 | 26% |
+| W3 | +0.55 | 45% |
+
+**Reading.** The variance of W2 splits into three parts:
+- **About 25–30% is sample-to-sample.** Two samples of the same water at the same
+  place agree at r 0.72. This part is measurement noise or patchiness below a tile;
+  no predictor can reach it.
+- **About 20% changes between neighbouring samples**, from r 0.72 at 0 km to about
+  0.5 at 15–75 km. That is small-scale or day-to-day variation.
+- **About half is smooth over hundreds of km.** r stays at 0.39 at 75–150 km, 0.32 at
+  150–300 km, 0.25 at 300–600 km and 0.15 at 600–1,200 km; the fitted decorrelation
+  length is about 560 km. That is the longest of the three axes and the slowest-decaying
+  residual series. It is about the scale of model chlorophyll (r 0.63 at 300–600 km)
+  and mixed layer (0.47).
+- The along-track plots (`w2_along_track.png`) show the same picture: long runs of
+  one sign over thousands of km on top of point-to-point scatter. Examples:
+  A13.5-2024 is positive from 2,000 to 7,000 km, then negative; A16N-2023, I07N and
+  I09N-2025 have similar runs.
+
+W1 and W3 behave differently:
+- W1 decays over about 200 km and has high replicate agreement (0.83). It is
+  measurable, but patchy at the mesoscale.
+- W3 is the least structured: replicate r 0.55 and correlation 0.35 even for the
+  closest pairs. That fits a technical, per-library effect.
+
+**Conclusion for axis 2.** It isn't mainly stochastic: a large-scale driver is
+missing, one that none of the tested surface or model fields captures.
+- Within cruise, chlorophyll, primary production, mixed layer, nitrate and iron all
+  have |r| ≤ 0.13 with W2 (R33).
+- The next tests are the nutricline / deep chlorophyll maximum depth and the recent
+  chlorophyll trend.
+- The predictability limit: about a quarter of W2 variance (the replicate noise) is
+  beyond any predictor.
+
+**Chlorophyll trend over the previous 2–4 weeks.** We don't have it yet.
+- The R27 history fields cover SST change over 14 days, the 30-day maximum mixed
+  layer, wind over 14 days, the sea-level gradient and 30-day EKE. None is a
+  chlorophyll trend.
+- PISCES chlorophyll is a single day field, on 637 tiles.
+- Options:
+  - The PISCES daily analysis, 28 days before each sample. The same Copernicus Marine
+    service as R25, on Morrill with the stored credentials. It covers the
+    forecast-period tiles only.
+  - A gap-free satellite L4 chlorophyll product (GlobColour / OC-CCI daily), for all
+    tiles.
+- Summarise each as the log-chlorophyll slope over 14 and 28 days, and the 28-day
+  maximum relative to the day itself.
+
+### Summary
+1. **Protocol.**
+   - Axis 1's cruise offsets follow era: year, instrument and sequencing run, which
+     change together. Flowcell, storage time, volume, collection method and
+     extraction plate don't explain it.
+   - The pre-filter and kit of the older cruises aren't in the workbook. They have to
+     come from Bio-GO-SHIP.
+   - No protocol variable explains the within-cruise axes.
+2. **Sequencing depth.** As a covariate it removes axis 3 completely and raises the
+   median KO R2 from 0.103 to 0.145. Use it as a nuisance covariate.
+3. **Temperature × region.** Doesn't help under cruise hold-out at any shrinkage.
+   R33's W1–temperature link was an artefact of the 5-cruise subset; its sign differs
+   by era.
+4. **Axis 2 is spatially smooth**: decorrelation length about 560 km, half its
+   variance on scales of hundreds of km. A large-scale driver is missing. About a
+   quarter is replicate-level noise, the predictability floor.
+5. **Next:**
+   - the nutricline / deep chlorophyll maximum depth (CCHDO CTD profiles, BGC-Argo),
+     and the 14- and 28-day chlorophyll trend, against W2
+   - from Bio-GO-SHIP: the older cruises' pre-filter, volume and kit, against axis 1

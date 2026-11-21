@@ -5015,3 +5015,112 @@ target's own residual):
   - Features: time since shelf, trajectory-mean and trend of SST and chlorophyll, mixed-layer light
     (MLD × KD490), origin region.
   - Tested against the R36 residual axes, the budget's "remaining" slice and the R51 targets (C, A).
+
+## R53. Water-mass history as predictors: mostly null; 30-day mixed-layer depth helps the eukaryote amount (C) (2026-11-21)
+
+**Script** `scripts/water_mass_test.py` → `data/results/water_mass/{features_sample,features_tile,added_value,axis_correlations}.csv`,
+`summary.txt`; figure `figures/output/water_mass_test.png`.
+
+**Features.**
+- Computed per sample from `along_track_daily.csv` (R52), then averaged per tile.
+- The 109 stuck tracks are truncated at the first missing day (valid days median 61, min 3).
+- Tiles with every feature: 99.9%.
+- The features:
+  - Days since shelf (sea floor < 200 m; 61 = never). The 10th percentile is 25; the median is 61.
+  - SST: change over 30 days, SD over 60 days.
+  - Chlorophyll: 60-day mean log10, 30-day change, past peak above day 0.
+  - MLD: 30-day mean log10, 30-day change.
+  - Mixed-layer mean light fraction (1 − e^(−K·MLD)) / (K·MLD), K = KD490: at day 0 and as a 30-day mean.
+  - 60-day displacement (median 376 km, 10–90%: 119–929 km) and the change in latitude from the track
+    origin.
+  - A control: displacement shuffled within cruise.
+
+**Test 1: added value** (R43 tiles, cruise held out, baseline = 32 Granite PCs + temperature spline; each
+feature added as a spline; gain in percentage points of explained variance, raw; KOs standardised in
+brackets for the KO targets):
+
+| Feature | Current CLR (all 3,933 KOs) | C eukaryote / prokaryote | A prokaryote KOs per GE |
+|---|---:|---:|---:|
+| Baseline (explained) | 15.95 (11.11) | 52.52 | 10.47 (2.55) |
+| Days since shelf | −1.17 (−1.05) | −1.71 | −1.29 (−1.33) |
+| SST change, 30 d | −0.75 (−0.62) | −1.39 | −0.71 (−1.02) |
+| SST SD, 60 d | −0.84 (−0.76) | −1.30 | −0.69 (−0.78) |
+| Chlorophyll mean, 60 d | −2.18 (−2.78) | −2.36 | −2.43 (−2.27) |
+| Chlorophyll change, 30 d | +0.07 (+0.08) | −0.20 | −0.13 (−0.10) |
+| Past chlorophyll peak | +0.04 (+0.05) | −0.14 | −0.18 (−0.25) |
+| **MLD mean, 30 d** | −0.73 (−0.12) | **+6.04** | −2.00 (−0.94) |
+| MLD change, 30 d | −0.74 (−0.68) | +0.57 | −0.94 (−0.71) |
+| Mixed-layer light, day 0 | −2.46 (−2.19) | −6.68 | −0.95 (−0.82) |
+| **Mixed-layer light, 30 d** | −0.10 (−0.62) | **+5.22** | −1.28 (−1.10) |
+| Displacement, 60 d | −0.29 (−0.17) | −1.04 | −0.14 (−0.24) |
+| Latitude of origin shift | −0.38 (−0.18) | −1.60 | −0.36 (−0.42) |
+| Control (shuffled) | +0.05 (+0.05) | −0.38 | −0.30 (−0.35) |
+| All features | −2.48 (−2.19) | −0.05 | −3.02 (−2.71) |
+| Granite PCs only + all features (vs Granite alone: 17.24 / 54.94 / 10.98) | −2.05 (−2.26) | +0.13 | −2.38 (−2.69) |
+
+**MLD on C, checked further.**
+- **The history matters:** with day-0 MLD (GLORYS mlotst at sampling) C scores 52.26% (−0.26). The 30-day
+  mean gives 58.56%. Spearman between the two at tile level is 0.66.
+- **Combinations:** Granite + 30-day MLD 57.06% (Granite alone 54.94%); OLCI + SST + 30-day MLD **60.30%**
+  (alone 56.20%), the best C model so far.
+- **Correlations:** 30-day MLD vs C ρ +0.23 (all tiles); vs in-situ temperature ρ −0.48.
+- **Per held-out cruise** (relative MSE reduction, baseline → + 30-day MLD; 9 of 13 improve):
+
+  | Cruise | Tiles | Reduction |
+  |---|---:|---:|
+  | I05-2023 | 141 | 37.0% |
+  | GOMECC4 | 53 | 17.7% |
+  | HLY2202-2022 | 32 | 14.2% |
+  | P18 | 64 | 14.0% |
+  | AMT28 | 46 | 13.8% |
+  | I07N | 146 | 6.9% |
+  | C13.5/A13.5 | 216 | 4.7% |
+  | P02-2022 | 89 | 4.6% |
+  | I08S-2024 | 23 | 0.4% |
+  | I09N-2025 | 84 | −4.4% |
+  | A16N-2023 | 174 | −4.7% |
+  | I09N | 54 | −4.8% |
+  | A13.5-2024 | 93 | −5.1% |
+
+**Test 2: residual axes** (Spearman within cruise, tiles; the shuffled control reaches |ρ| ≤ 0.055):
+
+| Feature | Axis 1 (W1) | Axis 2 (W2) | C residual |
+|---|---:|---:|---:|
+| Days since shelf | +0.024 | −0.014 | −0.006 |
+| SST change, 30 d | +0.102 (p 3e-4) | −0.057 | −0.032 |
+| SST SD, 60 d | +0.103 (p 3e-4) | −0.086 (p 0.003) | −0.076 (p 0.008) |
+| Chlorophyll mean, 60 d | −0.015 | −0.063 | −0.070 |
+| Chlorophyll change, 30 d | −0.122 (p 2e-5) | −0.006 | +0.072 |
+| Past chlorophyll peak | +0.072 | −0.002 | −0.055 |
+| MLD mean, 30 d | −0.092 (p 0.001) | −0.028 | +0.067 |
+| MLD change, 30 d | −0.033 | +0.040 | −0.013 |
+| Mixed-layer light, day 0 | +0.069 | +0.000 | +0.018 |
+| Mixed-layer light, 30 d | +0.095 (p 9e-4) | +0.073 | −0.047 |
+| Displacement, 60 d | −0.124 (p 1e-5) | +0.020 | +0.051 |
+| Latitude of origin shift | −0.041 | +0.095 (p 9e-4) | −0.021 |
+| Control (shuffled) | +0.024 | +0.016 | −0.055 |
+
+**Reading.**
+1. **Water-mass history does not explain the KO residuals.**
+   - No feature adds to the current CLR or to A. The best gain, +0.07 points for chlorophyll change, is the
+     size of the shuffled control (+0.05).
+   - Most features cost 0.3–2.5 points: an extra spline overfits under cruise hold-out.
+   - Within cruise, every link to axis 1 or axis 2 is |ρ| ≤ 0.12, i.e. ≤ 1.5% of variance:
+     - Axis 1 is slightly higher in water that warmed, varied more in SST, lost chlorophyll and travelled
+       less.
+     - Axis 2 is slightly higher in water from the pole side.
+   - Axis 2's driver is not water-mass origin either. The "remaining within cruise" slice stays unknown.
+2. **The exception is the eukaryotic amount (C).**
+   - The 30-day mean mixed-layer depth adds 6 points (52.5 → 58.6%), and the 30-day mixed-layer light adds 5.
+   - It is the history: today's MLD adds nothing.
+   - The gain holds for 9 of 13 held-out cruises, largest for I05-2023 (37% lower error), GOMECC4, HLY2202,
+     P18 and AMT28.
+   - Deeper recent mixing goes with more eukaryotes relative to prokaryotes at fixed temperature. That is
+     consistent with mixing favouring larger eukaryotic phytoplankton.
+   - Best C model: OLCI + SST + 30-day MLD, 60.3%.
+3. **Caveats.**
+   - MLD is a GLORYS ocean-model field, not a satellite observation. It is still available anywhere without
+     a ship.
+   - Mixed-layer light at day 0 hurts (−6.7): KD490 × MLD at a single day is noisy at the extremes.
+4. **For the two-stage model (R51):** use the improved C predictor (OLCI + SST + 30-day MLD) as the covariate
+   for the whole-community and shared-KO models.

@@ -4987,3 +4987,31 @@ target's own residual):
 - the two-stage model with the best C predictor (OLCI + SST or Granite + SST);
 - splitting C's residual by platform (7.8%) and by filter size (Tara);
 - whether the A / Dp cruise offsets are the per-genome platform offset of R46.
+
+## R52. Water-mass fields step returned: along_track_daily.csv checked (2026-11-21)
+
+`transfer/results/water_mass/along_track_daily.csv` (29 MB, not committed; from the `STEPS=fields` re-run of
+`transfer/cluster/water_mass.sbatch`). Long format: sample_id, day (0 … −60), lat, lon, variable, value.
+- **Complete:** 2,014 samples × 61 days × 5 variables (sst, chl, kd490, mld, sea-floor depth) = 614,270 rows.
+  The interpolation fix worked: every sample has all 61 days (the first run had only day 0).
+- **Missing values: 2.3%.** They grow backward in time (day −10: 9 samples per variable; day −60: about 95).
+  At day 0 only chl / kd490 are missing, for 2 samples.
+- **The missing days are tracks stuck at the coast.** 109 samples have days with every variable missing.
+  On those days the particle moves a median 0.001° per day, against 0.145° on valid days. 85% of the runs
+  are contiguous and 73% reach day −60. They are mostly coastal: OA_GOM 69, GS_HLY 21, I9N 14, GS_A16 9,
+  GS_I09 8, GS_P02 7.
+  - `stuck_at_end` in trajectories.csv flags none of them, because the particle is dropped or frozen
+    off-grid rather than at the end.
+  - Rule for the test: use the history only up to the first missing day, and flag the sample.
+- **Sanity check at day 0:** OSTIA SST against in-situ temperature, original cruises r 0.996 (n 673, median
+  |diff| 0.20 °C); FAIRe r 0.908 (n 1,153, median |diff| 0.20 °C).
+- **First look at features:**
+  - Shelf water (sea floor < 200 m) is crossed within 60 days by 289 of 2,014 samples; 120 sit on the shelf
+    at day 0. For the 289, days since last on shelf: median 11 (IQR 0–28).
+  - SST day 0 − day −30: median +0.30 °C (IQR −0.41 to +0.95).
+  - log10 chlorophyll, day 0 over the mean of the previous 30 days: median −0.023 (IQR −0.091 to +0.041).
+    So most water parcels see little bloom-scale change over a month.
+- **Next:** `transfer/scripts/water_mass_test.py`.
+  - Features: time since shelf, trajectory-mean and trend of SST and chlorophyll, mixed-layer light
+    (MLD × KD490), origin region.
+  - Tested against the R36 residual axes, the budget's "remaining" slice and the R51 targets (C, A).

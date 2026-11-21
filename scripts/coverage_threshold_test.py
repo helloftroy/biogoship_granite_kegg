@@ -32,6 +32,11 @@ figures/output/coverage_threshold_gap.png.
 Usage:
     OMP_NUM_THREADS=4 ~/miniforge3/bin/python3 scripts/coverage_threshold_test.py
     OMP_NUM_THREADS=4 ~/miniforge3/bin/python3 scripts/coverage_threshold_test.py --tables cov50=ko_counts_cov50_all.tsv cov0=ko_counts_cov0_all.tsv.gz
+    # like-for-like (R47b): both tables summed over the level-1 (domain) files, as the cov0 table is
+    OMP_NUM_THREADS=4 ~/miniforge3/bin/python3 scripts/coverage_threshold_test.py --tag level1 \
+        --tables cov50=data/targets/ko_counts_cov50_level1.tsv cov0=ko_counts_cov0_all.tsv.gz
+--tag T writes to data/results/coverage_threshold_T/, figures/output/coverage_threshold_gap_T.png and caches
+the rarefied tables under data/results/marker_norm/<label>_T/.
 """
 
 from __future__ import annotations
@@ -56,7 +61,11 @@ METRICS = ["clr_sd", "undetected", "shannon", "f1_clr", "f1_ge", "map_rate"]
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--tables", nargs="+", default=None, help="label=path pairs")
+    p.add_argument("--tag", default="", help="suffix for output folder, figure and caches")
     args = p.parse_args()
+    global OUT
+    sfx = f"_{args.tag}" if args.tag else ""
+    OUT = OUT.with_name(OUT.name + sfx)
     tables = dict(t.split("=", 1) for t in args.tables) if args.tables else {"cov50": "ko_counts_cov50_all.tsv", "cov0": "ko_counts_cov0_all.tsv.gz"}
     tables = {k: (Path(v) if Path(v).is_absolute() else REPO / v) for k, v in tables.items()}
     missing = [k for k, v in tables.items() if not v.exists()]
@@ -94,7 +103,7 @@ def main() -> None:
 
     frames = []
     for label, path in tables.items():
-        lp = rarefied_logp(path, set(lib.index), kos, REPO / "data" / "results" / "marker_norm" / label / "rarefied_logp.npz")
+        lp = rarefied_logp(path, set(lib.index), kos, REPO / "data" / "results" / "marker_norm" / (label + sfx) / "rarefied_logp.npz")
         x = lp.to_numpy().astype(float)
         floor = np.log(0.5 / N)
         clr = x - x.mean(1, keepdims=True)
@@ -176,11 +185,11 @@ def main() -> None:
         mx = ch[ch["cruise"].isin(MIXED) & ch["surface"]]
         say("\n   per-library change cov0 - cov50 (mixed cruises, surface; mean by platform)")
         say(mx.groupby("platform")[[c for c in METRICS if c in mx]].mean().round(4).to_string())
-        figure(met)
+        figure(met, sfx)
     (OUT / "summary.txt").write_text("\n".join(log) + "\n")
 
 
-def figure(met):
+def figure(met, sfx=""):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -209,7 +218,7 @@ def figure(met):
         ax.set_ylabel(lab + ",\ncentred within cruise", fontsize=7)
     axes[0].legend(frameon=False, fontsize=6.5, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2, handletextpad=0.2)
     fig.tight_layout()
-    fig.savefig(FIG / "coverage_threshold_gap.png", dpi=300)
+    fig.savefig(FIG / f"coverage_threshold_gap{sfx}.png", dpi=300)
     plt.close(fig)
 
 

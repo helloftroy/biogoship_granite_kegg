@@ -4798,3 +4798,62 @@ eukaryote fraction. Right: all 54 markers − prokaryote-assigned reads only. Ea
      libraries (phylum level).
    - For the rest, only `level_1_domain_ko_counts.tsv` per library is needed from the Drive outputs (cov50
      run). `scripts/merge_ko_counts.py --stash` can pull exactly those from zips. No re-mapping is needed.
+
+## R50. cov50 per-taxon KO counts for all libraries; level-1 vs level-2 sums; R47 rerun like-for-like (2026-11-20)
+
+**Data.**
+- 38 Google Drive zips (`coverage_50-20261120T235254Z-1-001…038.zip`, 42 GB) held all 3,098 cov50 library
+  folders, each with KO / OG / Pfam counts per taxon at all seven levels (domain to species). No
+  `level_*_abundance.tsv` files (domain read counts are already in `data/targets/taxa/domain_counts.tsv`).
+- `scripts/merge_ko_counts.py` (now with `--stash-levels`, parallel `--jobs`, and `--level`) copied each
+  library's `level_1_domain_ko_counts` and `level_2_phylum_division_ko_counts` gzipped to
+  `data/targets/taxa/ko_by_taxon/<library>/`: 4,817 new files; the 1,379 level-2 files already there were
+  kept. All 3,098 libraries now have both levels (folder 1.7 GB, gitignored). OG, Pfam and levels 3–7 were
+  not kept; the zips were deleted.
+- Command: `python scripts/merge_ko_counts.py coverage_50-*.zip --stash data/targets/taxa/ko_by_taxon --stash-levels 1 2 --out <table>`.
+
+**Which level the official table sums.**
+- `ko_counts_cov50_all.tsv` = sum over taxa of the **level-2 (phylum)** file: rebuilt for all 3,081
+  libraries, max absolute difference 0.0003 (printing), same 18,836 KOs.
+- The **level-1 (domain)** file holds more counts: per library level-1 / level-2 median 1.082 (5–95%
+  1.02–1.17, max 1.44; 3,081 libraries). The extra rows are a taxon "Unclassified" (genes with no
+  taxonomy) plus genes with a domain but no phylum. It also has 237 extra KOs (6e-7 of reads).
+- The 17 libraries not in the official table have zero level-2 KO counts (blanks, mocks, empty runs:
+  EXTRBLANKBGSP8, ZYMOMOCKBGSP5/9, 9 GOMECC, 4 GSI05, 2 GS-A16N).
+- The merge script now defaults to `--level 2` (reproduces the official table); a library without that
+  level falls back to the nearest and is flagged. The R47 text "lowest level present" no longer applies.
+- `data/targets/ko_counts_cov50_level1.tsv` (3,098 × 19,073, gitignored): the cov50 table at level 1.
+
+**Consequence for R47.** The cov0 table was built from level-1 files (only those were stashed), so R47
+compared cov0 at level 1 with cov50 at level 2. On the 175 cov0 libraries: cov0 / cov50 KO reads median
+1.948 like-for-like (range 1.25–78.3) instead of 2.19 (level-1 / level-2 at cov50 here: 1.094); KOs detected
+median 7,350 (cov50 level 1) vs 7,063 (level 2) vs 14,617 (cov0). Still no cell with fewer counts at cov0.
+
+**R47 rerun, both tables at level 1** (`scripts/coverage_threshold_test.py --tag level1 --tables
+cov50=data/targets/ko_counts_cov50_level1.tsv cov0=ko_counts_cov0_all.tsv.gz`; 158 libraries; HiSeq 4000 −
+NovaSeq 6000, I09N-2016 and NH1418-2014, surface):
+
+| Metric | cov50 L1 gap (raw) | SD units | p | cov0 gap (raw) | SD units | p | Left at cov0 | R47 (L2 vs L1) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Profile spread (SD of CLR) | +0.1998 | +1.69 | 0.002 | +0.0899 | +1.64 | 0.012 | 97% | 98% |
+| Undetected KOs | +0.0781 | +1.95 | 0.006 | +0.0140 | +1.91 | 0.008 | 98% | 96% |
+| Shannon | −0.0770 | −1.65 | 0.0005 | −0.0408 | −1.32 | 0.019 | 80% | 79% |
+| Axis-1 score, CLR | +31.48 | +1.57 | 0.004 | +14.32 | +1.12 | 0.058 | 71% | 74% |
+| Axis-1 score, genome equivalents | −10.67 | −0.47 | 0.31 | −4.96 | −0.29 | 0.56 | 62% | 65% |
+
+Per cruise, cov50 level 1: I09N spread +0.065, undetected +0.012, F1 +11.1; NH1418 spread +0.469,
+undetected +0.210, F1 +72.2. Mapped reads / pair gap −0.255 (−1.62 SD, p 0.003).
+
+Per-library change cov50 L1 → cov0 (mixed cruises, surface; mean):
+
+| Platform | Spread | Undetected | Shannon | F1 (CLR) | F1 (GE) |
+|---|---:|---:|---:|---:|---:|
+| HiSeq 4000 | −0.410 | −0.127 | +0.085 | −60.7 | −0.15 |
+| NovaSeq 6000 | −0.336 | −0.081 | +0.052 | −48.1 | −2.42 |
+
+Outputs: `data/results/coverage_threshold_level1/`, `figures/output/coverage_threshold_gap_level1.png`
+(same three panels as R47). **R47's conclusions stand unchanged** (filter amplifies, does not create, the
+gap; within 1–4 percentage points).
+
+**Next.** The prokaryote-assigned marker denominator (R49 fix) can now be built for every library from the
+level-2 files (`Bacteria;*` + `Archaea;*` rows, consistent with the official table).

@@ -4857,3 +4857,133 @@ gap; within 1–4 percentage points).
 
 **Next.** The prokaryote-assigned marker denominator (R49 fix) can now be built for every library from the
 level-2 files (`Bacteria;*` + `Archaea;*` rows, consistent with the official table).
+
+## R51. Domain-split targets A / B / C / D: which satellite input predicts each, variance budgets, two-stage model (2026-11-20)
+
+**Targets** (`scripts/domain_split_targets.py` → `data/targets/domain_split/`, gitignored). The same 1,990
+samples and 2,018 cov50 libraries as `ko_clr.csv` (rebuilt CLR matches it to 5e-6). Each of the 3,933 model
+KOs is split per library into reads assigned to Bacteria + Archaea and to Eukaryota (phylum-level per-taxon
+files, R50). Proportions are per library, averaged per sample, with pseudocount 0.5 / sample total.
+- Classes (5% / 95% eukaryote share of reference genes, R48): 1,759 prokaryote-specific, 420
+  eukaryote-specific, 1,700 shared, plus 54 ribosomal-protein markers (the denominator, not targets).
+- **A** prokaryote-specific KOs (1,759): log copies per prokaryote genome equivalent. The denominator is
+  the mean log of the 54 markers' **prokaryote-assigned** reads (the R49 fix). Prokaryote-assigned share
+  of marker reads: median 0.878 over samples. All-54 minus prokaryote-assigned log denominator: median
+  0.127 (ρ 0.10 with the KO-based eukaryote fraction).
+- **B** eukaryote-specific KOs (420): log share of pooled eukaryote-specific reads (all 8,823 such KOs in
+  the full table). 84 samples with < 5,000 pooled eukaryote-specific reads dropped (1,906 left).
+- **C** one column: log(pooled eukaryote-specific / pooled prokaryote-specific reads; 8,823 / 5,544 KOs).
+- **D** shared KOs (1,700): the current whole-community CLR, unchanged.
+- **Dp / De**: the shared KOs' prokaryote-assigned part per prokaryote genome equivalent (1,561 KOs with
+  ≥ 90% prevalence) and eukaryote-assigned part within eukaryotes (312 KOs; 1,906 samples).
+- **The shared KOs are almost all prokaryotic reads.** Over the 3,933 model KOs 97.2% of reads are
+  prokaryote-assigned, 2.7% eukaryote, 0.1% other. Per shared KO, prokaryote-assigned share median 0.978
+  (IQR 0.933–0.990); 1,372 are > 90% prokaryotic, 7 are < 10%.
+
+**Models** (`scripts/domain_split_models.py` → `data/results/domain_split/`; figures
+`figures/output/domain_split_skill.png`, `domain_split_budget.png`). R43 tiles (1,215; 1,169 for B / De),
+one cruise held out, ridge with per-KO GCV alpha. Feature sets: in-situ temperature spline (not a
+satellite input), satellite SST spline, 16 OLCI band means (splines), OLCI + SST, 32 Granite PCs, and the
+baseline (32 Granite PCs + temperature spline). Each new target is paired with the current CLR on the same
+KOs and samples.
+
+Variance explained, cruise held out (raw units, pooled over tiles and KOs; KOs standardised in brackets):
+
+| Target | Temperature (in situ) | Satellite SST | OLCI bands | OLCI + SST | Granite PCs | Baseline |
+|---|---:|---:|---:|---:|---:|---:|
+| Current CLR, all 3,933 KOs | 11.6 (3.4) | 12.2 (4.7) | −2.1 (−1.3) | 12.4 (7.0) | **17.2 (12.7)** | 16.0 (11.1) |
+| A prokaryote-specific per GE | 6.6 (1.8) | 6.2 (0.9) | −9.6 (−9.7) | 4.5 (−2.1) | **11.0 (3.5)** | 10.5 (2.5) |
+|   same KOs, current CLR | 8.7 (1.3) | 8.3 (2.1) | −7.5 (−3.7) | 7.5 (4.3) | **13.7 (10.7)** | 13.1 (9.3) |
+| B eukaryote-specific within eukaryotes | 7.7 (3.0) | 8.7 (4.5) | 0.2 (−1.4) | 9.4 (4.9) | **10.9 (6.4)** | 8.7 (3.8) |
+|   same KOs, current CLR | 27.7 (25.2) | 30.0 (27.8) | 10.0 (8.5) | **31.3 (28.7)** | 30.6 (28.2) | 28.2 (25.5) |
+| **C eukaryote / prokaryote amount** | 48.5 | 50.7 | 29.5 | **56.2** | 54.9 | 52.5 |
+| D shared, whole-community CLR | 4.8 (0.8) | 5.4 (2.2) | −4.0 (−1.3) | 6.1 (4.9) | **12.9 (11.3)** | 11.4 (9.8) |
+| Dp shared, prokaryote part per GE | 6.6 (3.0) | 5.8 (1.8) | −10.8 (−10.0) | 5.4 (−1.2) | **13.8 (4.9)** | 13.2 (3.9) |
+|   same KOs, current CLR | 5.0 (0.6) | 5.0 (1.8) | −5.4 (−1.5) | 5.2 (4.6) | **12.7 (11.3)** | 11.6 (9.9) |
+| De shared, eukaryote part within eukaryotes | 22.7 (13.5) | 23.2 (14.5) | 8.1 (3.9) | **23.8 (15.0)** | 23.7 (15.3) | 23.3 (14.3) |
+|   same KOs, current CLR | 8.6 (0.6) | 10.7 (3.4) | 3.8 (5.0) | 14.1 (10.2) | **18.2 (15.6)** | 16.0 (14.4) |
+
+Best feature set per KO (share of KOs; "none" = no set above R² 0.05):
+
+| Target | Granite PCs | Baseline | Temperature | Satellite SST | OLCI + SST | OLCI | None |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Current CLR, all | 30% | 17% | 8% | 6% | 7% | 4% | 28% |
+| A | 12% | 17% | 13% | 6% | 3% | 2% | 48% |
+| B | 17% | 10% | 7% | 9% | 9% | 1% | 49% |
+| B KOs, current CLR | 22% | 3% | 11% | 22% | 36% | 0% | 5% |
+| D | 34% | 17% | 8% | 4% | 4% | 4% | 30% |
+| Dp | 16% | 19% | 12% | 7% | 3% | 1% | 43% |
+| De | 14% | 10% | 15% | 11% | 15% | 1% | 34% |
+
+C as a covariate (spline added to the baseline). "Observed" is an oracle, since C is not seen from space;
+"predicted" is the out-of-fold baseline prediction of C, a legitimate two-stage model:
+
+| Target | Baseline | + C predicted | + C observed (oracle) |
+|---|---:|---:|---:|
+| Current CLR, all 3,933 KOs | 16.0 (11.1) | **19.4 (14.5)** | 26.1 (22.5) |
+| A | 10.5 (2.5) | 9.1 (0.7) | 10.8 (3.0) |
+| D shared CLR | 11.4 (9.8) | 12.7 (12.2) | 16.5 (19.3) |
+| Dp | 13.2 (3.9) | 12.7 (3.3) | 14.0 (4.4) |
+
+Variance budget, baseline model (raw %, sequential as R43; within-cruise PCs from a standardised PCA of each
+target's own residual):
+
+| Target | Explained | Platform | Cruise offsets | Depth | Within PC1 | Within PC2 | Replicate noise | Remaining |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Current CLR, all | 16.2 | 3.8 | 13.1 | 2.3 | 7.5 | 3.7 | 27.0 | 26.4 |
+| A | 10.8 | 2.9 | 16.9 | 4.9 | 5.2 | 3.0 | 25.9 | 30.4 |
+| A KOs, current CLR | 13.4 | 3.1 | 15.7 | 2.5 | 4.9 | 3.8 | 24.6 | 31.9 |
+| B | 8.9 | 3.0 | 9.8 | 1.6 | 6.0 | 4.2 | 57.6 | 8.8 |
+| B KOs, current CLR | 28.6 | 6.3 | 7.1 | 1.3 | 23.5 | 1.5 | 29.8 | 1.9 |
+| C | 52.9 | 7.8 | 3.8 | 0.9 | – | – | 6.5 | 28.0 |
+| D | 11.6 | 3.2 | 14.2 | 2.4 | 6.5 | 5.6 | 27.0 | 29.6 |
+| Dp | 13.5 | 2.6 | 15.6 | 5.2 | 5.1 | 3.5 | 23.5 | 31.1 |
+| De | 23.5 | 1.9 | 8.3 | 2.3 | 11.5 | 3.1 | 45.1 | 4.3 |
+
+(The current-CLR row reproduces R43: 16.2 / 3.8 / 13.1 / 2.3 / 7.5 / 3.7 / 27.0.)
+
+**Reading.**
+1. **The largest predictable bucket is the eukaryote : prokaryote amount (C): 53–56% explained**, with low
+   replicate noise (6.5%) and small cruise offsets (3.8%). Its residual has a platform part (7.8%).
+2. **Most of what the current CLR predicts in eukaryote-specific KOs is C.**
+   - Under the CLR those 420 KOs score 28–31%. As composition within eukaryotes (B) they drop to 9–11%.
+   - B is mostly replicate noise (58%): which eukaryotic genes are present, given how many eukaryotes, is
+     barely reproducible between filters of the same water at these read depths.
+   - B is the worst part, as expected.
+3. **Prokaryotic gene content per genome (A, Dp) is only weakly predictable.**
+   - Raw 10–14%. Standardised 2.5–4% against 9–11% under the CLR.
+   - So much of the per-KO CLR skill on prokaryotic KOs was also the shared eukaryote-amount signal leaking
+     in through the CLR denominator.
+   - A and Dp carry more sequencing depth (4.9–5.2% against 2.5%) and larger cruise offsets (16–17%).
+     Genome-equivalent normalisation exposes the per-cruise offsets that the CLR partly absorbed.
+4. **Shared KOs.** They are 98% prokaryotic reads, so as a whole-community target (D) they behave like
+   prokaryotic KOs (11–13%). Their eukaryotic part within eukaryotes (De) scores 23–24%, against 16–18% for
+   the same KOs under the CLR, but with 45% replicate noise.
+5. **Which input predicts best.**
+   - **Granite PCs alone are best or tied on every target except C and the within-eukaryote targets.** There
+     raw OLCI + SST is level or slightly ahead (C 56.2 vs 54.9; De 23.8 vs 23.7; B KOs under the CLR 31.3 vs
+     30.6).
+   - The eukaryote-side signal is essentially a temperature / SST signal. Satellite SST alone gives C 50.7%
+     and B-CLR 30.0%, and the OLCI bands add a little on top.
+   - **OLCI bands alone fail on prokaryotic targets** (−10% on A / Dp): they overfit without SST.
+   - Adding in-situ temperature to the Granite PCs (the baseline) is slightly worse than the PCs alone
+     everywhere (all KOs 16.0 vs 17.2). The temperature spline overfits under cruise hold-out.
+   - Per KO the skill is spread: on the full set Granite wins 30% of KOs, baseline 17%, temperature / SST /
+     raw satellite 21% together, none 28%.
+6. **The two-stage model raises the headline.** Predicting C first and feeding the prediction to the KO
+   model: all 3,933 KOs **16.0% → 19.4%** raw (11.1 → 14.5% standardised), D 11.4 → 12.7%. The oracle with
+   observed C gives 26.1%.
+   - C is a strong, low-noise, one-dimensional signal that ridge on 40 features does not recover KO by KO.
+   - On A and Dp, C adds nothing (9.1 / 12.7%), consistent with genome-equivalent targets having C removed.
+
+**So the predictability buckets are:**
+- eukaryote amount (C, about 55%);
+- the whole-community CLR on top of C (two-stage, +3.4 points);
+- per-genome prokaryotic content (weak, about 11% raw, dominated by cruise offsets, noise and an unknown
+  within-cruise rest);
+- within-eukaryote composition (weak, noise-dominated).
+
+**Next options:**
+- the two-stage model with the best C predictor (OLCI + SST or Granite + SST);
+- splitting C's residual by platform (7.8%) and by filter size (Tara);
+- whether the A / Dp cruise offsets are the per-genome platform offset of R46.

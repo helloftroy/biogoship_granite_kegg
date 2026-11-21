@@ -5124,3 +5124,112 @@ brackets for the KO targets):
    - Mixed-layer light at day 0 hurts (−6.7): KD490 × MLD at a single day is noisy at the extremes.
 4. **For the two-stage model (R51):** use the improved C predictor (OLCI + SST + 30-day MLD) as the covariate
    for the whole-community and shared-KO models.
+
+## R54. Two-stage model done properly; technical variance out of the denominator; R51's 19.4% retracted (2026-11-21)
+
+**Framing (decided 2026-11-21).**
+- **Story:** environment selects who is there, and who is there determines which genes are present. In
+  model terms: satellite (+ mixing history) → community structure (domain balance, C) → gene content
+  (A, B, D).
+- **Reporting:**
+  - Technical variance (platform, sequencing depth) is removed from the denominator, not added as model
+    covariates. Fit on training folds only, subtract from the targets, and report the share of the
+    remaining, biological variance that the satellite explains.
+  - A scree-style plot of what makes up 100% of the variance comes later, followed by headline numbers in
+    that form.
+
+**Script** `scripts/two_stage_models.py --parts spline forms headline` →
+`data/results/two_stage/{scores.csv, stage1_C.csv, summary.txt, stage2_forms.csv, plugin_headline.csv}`;
+figure `figures/output/two_stage.png`.
+- **Stage 1** predicts C from one of: `base` (32 Granite PCs + temperature spline), `sat` (16 OLCI band
+  means + satellite SST, splines) or `sat_mld` (sat + 30-day mean MLD along the back-trajectory, R53).
+- **Stage 2:** 32 Granite PCs (or + temperature spline) + a C term.
+- Everything is held out by cruise, ridge with per-target GCV alpha, on the R43 tiles.
+- **Technical mode:** per fold, on training tiles only, OLS per target on platform (NovaSeq 6000 vs X cruise
+  groups) + a cubic spline (8 knots) of log10 KO reads. The fitted part is subtracted from training and
+  test targets (test with the training coefficients), and the model is fitted and scored on the adjusted
+  targets.
+
+**1. Stage-1 accuracy for C** (outer, cruise held out): base 52.52%, sat 56.20%, sat_mld 60.30%.
+
+**2. R51's two-stage gain was not real.**
+- R51 used, for the training tiles, C predictions from leave-one-cruise-out models over all cruises,
+  including the held-out cruise. Reproduced: 19.44%.
+- **Nested properly** (training-tile C from inner leave-one-cruise-out within the training cruises), with C
+  as a spline in stage 2:
+
+  | Stage 2 | C from base | C from sat | C from sat_mld | No C |
+  |---|---:|---:|---:|---:|
+  | All KOs, baseline (+temp) | 16.42 | 14.94 | 11.63 | 15.95 |
+  | All KOs, Granite PCs | 16.74 | 16.06 | 14.32 | 17.24 |
+  | D, Granite PCs | 12.74 | 11.60 | 9.72 | 12.88 |
+  | A, Granite PCs | 10.81 | 9.39 | 8.07 | 10.98 |
+
+  A better stage-1 predictor makes stage 2 worse.
+- **Placebo** (R51 scheme, all KOs): with the held-out cruise's C scrambled inside stage 1, skill drops to
+  0.44%; with it set to a constant, 1.64%. The stage-2 spline extrapolates badly when the training-tile C
+  values are distributed differently from the test-tile values.
+- **Conclusion:** the R51 two-stage figure (16.0 → 19.4%) is retracted. The R51 reading on C, A, B and D
+  stands.
+
+**3. A robust stage-2 form: plug-in, linear.** Stage 2 is fitted on the observed C of the training tiles,
+which is known there (a measurement, not a prediction). The held-out cruise gets its stage-1 prediction,
+from a model fitted on the training cruises only. No inner loop and no test-cruise information.
+
+| Target | Stage 1 | Nested, linear | Plug-in, spline | Plug-in, linear |
+|---|---|---:|---:|---:|
+| All KOs, stage 2 baseline | base | 15.80 | 15.29 | 15.86 |
+| All KOs, stage 2 Granite | base | 16.74 | 15.16 | 16.39 |
+| All KOs, stage 2 baseline | sat_mld | 14.85 | 17.30 | 17.72 |
+| All KOs, stage 2 Granite | sat_mld | 16.08 | 17.22 | **18.27** |
+| D, stage 2 baseline | base | 11.13 | 10.72 | 11.20 |
+| D, stage 2 Granite | base | 12.75 | 10.67 | 12.06 |
+| D, stage 2 baseline | sat_mld | 10.70 | 12.12 | 12.47 |
+| D, stage 2 Granite | sat_mld | 11.89 | 12.24 | **13.40** |
+| A, stage 2 baseline | base | 10.54 | 10.24 | 10.42 |
+| A, stage 2 Granite | base | 10.66 | 9.66 | 10.71 |
+| A, stage 2 baseline | sat_mld | 10.53 | 10.30 | 10.91 |
+| A, stage 2 Granite | sat_mld | 10.40 | 9.92 | **11.16** |
+
+**4. Headline** (stage 2 = Granite PCs + linear C; stage 1 = OLCI + SST + 30-day MLD; raw units, KOs
+standardised in brackets):
+
+| Target | Baseline (Granite + temp) | Granite PCs | Two-stage | Baseline, tech removed | Granite, tech removed | Two-stage, tech removed | Adjusted denominator / total |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| All KOs (current CLR) | 15.95 (11.11) | 17.24 (12.66) | **18.27 (13.74)** | 17.79 (13.84) | 18.44 (14.71) | **19.15 (15.93)** | 1.018 |
+| C eukaryote / prokaryote | 52.52 | 54.94 | 60.30 (stage-1 model itself) | 55.94 | 55.25 | 55.38 | 0.978 |
+| D shared CLR | 11.38 (9.81) | 12.88 (11.30) | 13.40 (12.15) | 13.43 (12.56) | 14.65 (13.54) | 15.26 (14.77) | 1.033 |
+| A prokaryote-specific per GE | 10.47 (2.55) | 10.98 (3.49) | 11.16 (4.03) | 13.44 (5.68) | 13.78 (6.76) | 14.01 (7.21) | 0.987 |
+| Dp shared prokaryote part per GE | 13.23 (3.91) | 13.77 (4.89) | 13.92 (5.62) | 16.21 (6.86) | 16.69 (7.99) | 16.92 (8.46) | 0.993 |
+| B eukaryote-specific within eukaryotes | 8.74 (3.76) | 10.94 (6.45) | 11.55 (6.77) | 9.13 (3.93) | 11.05 (6.39) | 11.46 (6.63) | 1.013 |
+| De shared eukaryote part within eukaryotes | 23.34 (14.32) | 23.68 (15.32) | 24.38 (15.78) | 21.09 (13.32) | 21.05 (14.00) | 21.23 (14.11) | 1.014 |
+
+**Reading.**
+1. **The two-stage gain is real but modest.**
+   - All KOs: 17.24 → 18.27% (+1.0 point over Granite PCs alone, +2.3 over the R43 baseline).
+   - D +0.5, A +0.2, Dp +0.2, B +0.6, De +0.7.
+   - It works only in the plug-in linear form with the best stage-1 C (OLCI + SST + 30-day MLD).
+   - Story check: the domain balance carries some information the Granite features alone do not. But most
+     of what the satellite says about gene content already goes through the same channel; C is largely a
+     re-expression of it.
+2. **Granite PCs alone beat the R43 baseline everywhere.** The in-situ temperature spline overfits under
+   cruise hold-out. Stage 2 should be Granite only, which is also cleaner for the story (no ship
+   measurement).
+3. **Technical variance out, fold-wise:**
+   - All KOs: two-stage 19.15%, Granite 18.44%, baseline 17.79%. A gains most (+2.9), C barely moves.
+   - **The adjusted denominator does not shrink** (all KOs 1.018 × the original total). Platform is
+     cruise-level (NovaSeq 6000 vs X groups), so for a held-out cruise the platform offset is extrapolated
+     from other cruises. Subtracting it adds about as much variance as it removes.
+   - The gains in this mode come from cleaner training targets, not from a smaller denominator.
+   - The in-sample R43 budget puts the technical share at 6.1% (platform 3.8 + depth 2.3). Dividing by
+     that instead (explained / 0.939): baseline 16.99%, Granite 18.36%, two-stage 19.46%.
+   - Relative to the reproducible variance (1 − replicate noise 0.270): 21.8 / 23.6 / 25.0%.
+   - Relative to the reproducible, non-technical variance (1 − 0.270 − 0.061 = 0.669): 23.8 / 25.8 /
+     **27.3%**.
+4. **Caveat on C and MLD.** With technical variance removed, the stage-1 model OLCI + SST + 30-day MLD drops
+   from 60.3 to 55.4%, while the baseline rises 52.5 → 55.9%. Part of the 30-day MLD gain on C (R53)
+   coincides with the platform grouping, since the NovaSeq X cruises are 2023–2025 and include I05-2023,
+   the biggest MLD gainer. To check: the MLD gain on C within platform groups only.
+5. **For the scree / 100% figure:** use the in-sample budget partition (R43 style) per target. The headline
+   is then explained / (total − technical) and explained / (total − technical − replicate noise),
+   reported side by side with the fold-wise number.

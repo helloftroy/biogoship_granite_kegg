@@ -5233,3 +5233,33 @@ standardised in brackets):
 5. **For the scree / 100% figure:** use the in-sample budget partition (R43 style) per target. The headline
    is then explained / (total − technical) and explained / (total − technical − replicate noise),
    reported side by side with the fold-wise number.
+
+## R55. External read download: status after job 88813; the filter-size test has to use EMO BON, not Tara (2026-11-22)
+
+**Job 88813** (`cluster/download_reads.sbatch`, all three sets, 3 in parallel) hit the 48 h limit on
+2026-11-21. The script is resumable; resubmit the same command.
+- ENA errors throughout: curl 52 (empty reply), curl 18 (transfer closed part-way), 403 throttling. One
+  full-size file failed MD5 and restarted (ERR12071056_1).
+- One file given up on in that run: ERR11733532_2 (Tara); the next submission retries it.
+
+| Set | Files verified (.ok) | Files total | On disk (incl. partial) | Set size |
+|---|---:|---:|---:|---:|
+| Tara Pacific | 43 | 168 | 593 GB | 1.74 TB |
+| JGI (Flinkstrom) | 5 | 180 | 78 GB | 0.53 TB |
+| EMO BON | 0 | 262 | 23 GB | 1.19 TB |
+| All | 48 (`download_reads_done.txt`) | 610 | about 0.69 TB | 3.46 TB |
+
+About 0.7 TB in 48 h, roughly 14 GB/h, so the remaining 2.8 TB needs about 4 more 48 h jobs at this rate.
+
+**The filter-size test cannot use Tara Pacific.** All 387 Tara Pacific samples in `samples.csv` (84 runs)
+are the 0.2–3 µm fraction. **EMO BON has both:**
+- 131 runs: 0.2–3 µm 66, 3–200 µm 63, unknown 2;
+- **33 site-dates with both fractions**, a paired design for "does the filter size shift the eukaryote
+  fraction (C)?" (R46 / R54 note).
+- Median 130 M reads per run, against 267 M for Tara.
+
+**Priority:** EMO BON first for the filter-size test; Tara and JGI for the external transfer tests.
+
+**Option:** only the first N read pairs of each run (for example 20 M pairs, about 7–15% of the bytes) would
+cut the download time about tenfold. Profiles are rarefied to 250,000 KO reads anyway. Files would then be
+size-checked only, with no MD5 check. Not implemented; the user decides.

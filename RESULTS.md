@@ -5423,3 +5423,45 @@ Parts sum to 99.86–100.00%; the shortfall is the overall mean bias of the held
   variance, the eukaryotic targets are as predictable as the rest (B 25.1%, De 35.7%).
 - **C is the only target where explained is the largest part** (43.6% of total).
 - **The largest unexplained biological part for the KO targets is within-cruise** (36–40%), not cruise offsets (12–14%).
+
+## R57. Metadata status per cruise, and the open questions for the Bio-GO-SHIP team (2026-11-23)
+
+Script: `scripts/metadata_status.py`. Outputs in `data/results/metadata_status/`:
+- `cruise_metadata_status.csv` (one row per cruise)
+- `faire_fill_rate.csv` (share of samples with each FAIRe field filled)
+- `biogoship_metadata_check.xlsx`, to send to the team, with two sheets:
+  - **Questions**: the six asks below, with an answer column.
+  - **Cruise methods**: our values. Yellow = unknown ("?"), orange = our two sources disagree. Columns for
+    "All correct?" and corrections.
+
+The table replaces the stale sequencer column of `transfer/results/protocol/cruise_methods.csv`, which still says
+"NovaSeq X? (unverified)". All three 2023–2025 flowcells are NovaSeq X, confirmed by original FASTQ headers (R40, R41).
+
+**Clarifications recorded.**
+- **The `seq_run_id` field** comes from the FAIRe workbook (`FAIRe-NOAA_uci-ess-biogoship.xlsx`, sheet
+  `experimentRunMetadata`). It is `date_flowcell_MetaG_PE150`.
+- **NovaSeq 6000 flowcells** (…DSXX / DSXY / DRXX / DSX5 / DSX7): ENA `instrument_model` for 906 runs. HLY2202 comes from
+  the publication plus the flowcell format.
+- **NovaSeq X flowcells** (…LT4, e.g. 22YJMLLT4): instrument IDs LH00626, LH00316 and LH00162 in the original headers.
+- **"NovaSeq X" is Illumina's product name, not a placeholder.** NovaSeq X / X Plus were released in 2023 and use
+  XLEAP-SBS chemistry.
+
+**New conflict found.** For A16N-2023, I05-2023 and A13.5-2024, the methods table (2026-11-19) says 1 mL DNA/RNA Shield,
+while the FAIRe workbook's `samp_store_sol` says "lysis buffer".
+
+**What is missing, and why it matters for this project:**
+
+| # | Ask | Cruises | Why |
+|---:|---|---|---|
+| 1 | Library prep kit, input DNA, PCR cycles, size selection | all 2023–2025 (NovaSeq X) runs | prep is confounded with the sequencer change; PCR cycles drive GC bias |
+| 2 | Extraction kit and lysis | P02-2022, A16N, I05, A13.5, I08S, I09N-2025 | bead beating changes eukaryote / Gram-positive capture |
+| 3 | Preservation: Shield or lysis buffer; HLY2202 buffer and storage | A16N, I05, A13.5, HLY2202 | candidate cause of the older vs newer cruise shift |
+| 4 | Pre-filtration; I08S pore size | HLY2202, P02 (CTD), A16N, I05, A13.5, I08S, I09N-2025 | changes the eukaryote : prokaryote ratio (C) directly |
+| 5 | Same DNA on NovaSeq 6000 and X, or the raw HWKVFDSX5 files (P02 pairs, 58 libraries) | P02-2022 | the only direct test of the sequencer effect |
+| 6 | Per-sample volume, extraction plate, DNA yield | 2016–2022 cruises, P02, I08S, I09N-2025 | within-cruise batch tests (lower priority) |
+
+**Per-sample FAIRe fill** (share of samples):
+- Volume: A13.5, A16N, GOMECC4, HLY2202 and I05 only.
+- Extraction plate: A13.5, A16N, GOMECC4 and I05.
+- DNA yield: GOMECC4 only.
+- Collection method: every cruise but GOMECC4 and HLY2202.

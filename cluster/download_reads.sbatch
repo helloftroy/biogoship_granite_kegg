@@ -28,6 +28,10 @@
 #   # one set only, or more parallel downloads:
 #   sbatch --account=191001-364393 --export=ALL,SETS=tara_pacific,PARALLEL=2 cluster/download_reads.sbatch
 #   # if https keeps failing: --export=ALL,PROTO=ftp
+#   # only the first 20 M read pairs per run (Bio-GO-SHIP libraries: median 14 M pairs,
+#   # 10-90% 5.7-41 M), about 0.63 TB instead of 3.5 TB; already complete files are cut
+#   # locally and the originals moved to fastq_full/:
+#   sbatch --account=191001-364393 --export=ALL,SETS=emo_bon,SUBSAMPLE_PAIRS=20000000 cluster/download_reads.sbatch
 # Progress: grep -c . logs/download_reads_done.txt; failures in logs/download_reads_failed.txt
 
 set -euo pipefail
@@ -37,6 +41,7 @@ SETS="${SETS//,/ }"
 PARALLEL="${PARALLEL:-3}"
 PROTO="${PROTO:-https}"  # or ftp, if ENA keeps cutting https transfers
 MAX_STALLS="${MAX_STALLS:-8}"
+SUBSAMPLE_PAIRS="${SUBSAMPLE_PAIRS:-0}"  # >0: only the first N read pairs per run (see fetch_sub)
 OMDB="${OMDB:-0}"  # 1 = also fetch OMDB v2.0 NR95 (not needed now: the Bio-GO-SHIP reference is in cluster/download_reference.sbatch)
 DONE_LOG="${REPO_ROOT}/logs/download_reads_done.txt"
 FAIL_LOG="${REPO_ROOT}/logs/download_reads_failed.txt"
@@ -110,8 +115,75 @@ fetch() {
   echo -e "${url}\t${dest}" >> "${FAIL_LOG}"
   return 0
 }
-export -f fetch
-export DONE_LOG FAIL_LOG MAX_STALLS
+# SUBSAMPLE_PAIRS=N: keep only the first N reads of each file (N pairs per run). The
+# stream is cut after 4N lines and re-compressed, so ENA's MD5 cannot apply. Checks
+# instead: exactly 4N lines, or, for a file with fewer reads, the whole stream ended
+# cleanly (curl exit 0 and gzip exit 0, so the gzip CRC and length passed). A file
+# that is already complete on disk is cut locally and the full file moved to
+# fastq_full/; a .part from an earlier full download is used if it is long enough.
+# Done files get <file>.ok plus <file>.sub (holds N), so the mapping job sees them.
+cut_stream() {  # stdin: fastq.gz bytes; $1 lines wanted, $2 output, $3 count file
+  local zip="gzip -1"
+  command -v pigz > /dev/null && zip="pigz -1 -p 2"
+  gzip -dc 2> /dev/null | awk -v n="$1" -v cf="$3" '{print} NR>=n{exit} END{print NR > cf}' | ${zip} > "$2"
+  local st=("${PIPESTATUS[@]}")
+  echo "${st[0]}" > "$3.gz"  # gzip exit: 0 only if the stream ended with a valid CRC
+}
+fetch_sub() {
+  local url="$1" md5="$2" size="$3" dest="$4"
+  local lines=$((SUBSAMPLE_PAIRS * 4)) tmp="${dest}.subtmp" cnt="${dest}.subcount"
+  [ -f "${dest}.ok" ] && [ -f "${dest}.sub" ] && [ "$(cat "${dest}.sub")" = "${SUBSAMPLE_PAIRS}" ] && return 0
+  mkdir -p "$(dirname "${dest}")"
+  local src="" full_ok=0
+  if [ -f "${dest}.ok" ] && [ ! -f "${dest}.sub" ]; then
+    local fulldir="$(dirname "$(dirname "${dest}")")/fastq_full"
+    mkdir -p "${fulldir}"
+    mv "${dest}" "${fulldir}/" && mv "${dest}.ok" "${fulldir}/"
+    src="${fulldir}/$(basename "${dest}")"; full_ok=1
+  elif [ -f "${dest}.part" ]; then
+    src="${dest}.part"
+  fi
+  if [ -n "${src}" ]; then
+    rm -f "${cnt}"
+    cut_stream "${lines}" "${tmp}" "${cnt}" < "${src}"
+    local got="$(cat "${cnt}" 2> /dev/null || echo 0)"
+    # a complete file with fewer reads than N passes whole (its MD5 was checked)
+    if [ "${got}" -eq "${lines}" ] || { [ "${full_ok}" = 1 ] && [ $((got % 4)) -eq 0 ] && [ "${got}" -gt 0 ] && [ "$(cat "${cnt}.gz")" = 0 ]; }; then
+      mv "${tmp}" "${dest}" && echo "${SUBSAMPLE_PAIRS}" > "${dest}.sub" && touch "${dest}.ok"
+      rm -f "${cnt}" "${cnt}.gz" "${dest}.part" "${dest}.part.err"
+      echo "${dest}" >> "${DONE_LOG}"
+      return 0
+    fi
+    rm -f "${tmp}" "${dest}.part" "${dest}.part.err"
+  fi
+  local tries=0 rc
+  while [ "${tries}" -lt "${MAX_STALLS}" ]; do
+    rm -f "${cnt}" "${tmp}"
+    curl -fsS -L --connect-timeout 60 --speed-limit 50000 --speed-time 600 "${url}" 2> "${tmp}.err" \
+      | cut_stream "${lines}" "${tmp}" "${cnt}"
+    rc=("${PIPESTATUS[@]}")
+    local got="$(cat "${cnt}" 2> /dev/null || echo 0)"
+    # cut at 4N lines: curl and gzip are stopped by the closed pipe, which is expected
+    if [ "${got}" -eq "${lines}" ] || { [ "${got}" -gt 0 ] && [ $((got % 4)) -eq 0 ] && [ "${rc[0]}" -eq 0 ] && [ "$(cat "${cnt}.gz")" = 0 ]; }; then
+      mv "${tmp}" "${dest}" && echo "${SUBSAMPLE_PAIRS}" > "${dest}.sub" && touch "${dest}.ok"
+      rm -f "${cnt}" "${cnt}.gz" "${tmp}.err"
+      echo "${dest}" >> "${DONE_LOG}"
+      return 0
+    fi
+    tries=$((tries + 1))
+    if grep -q "error: 403" "${tmp}.err" 2> /dev/null; then
+      echo "403 (throttled?), waiting $((300 * tries)) s: ${url}" >&2; sleep $((300 * tries))
+    else
+      echo "incomplete (${got} of ${lines} lines; curl exit ${rc[0]}: $(tr '\n' ' ' < "${tmp}.err")), waiting $((60 * tries)) s: ${url}" >&2
+      sleep $((60 * tries))
+    fi
+  done
+  rm -f "${tmp}" "${cnt}" "${cnt}.gz" "${tmp}.err"
+  echo -e "${url}\t${dest}" >> "${FAIL_LOG}"
+  return 0
+}
+export -f fetch fetch_sub cut_stream
+export DONE_LOG FAIL_LOG MAX_STALLS SUBSAMPLE_PAIRS
 
 # The reference first (small, and needed before any mapping)
 if [ "${OMDB}" = "1" ]; then
@@ -134,7 +206,9 @@ if [ "${OMDB}" = "1" ]; then
 fi
 
 # Reads, in the order of SETS; PARALLEL files at a time
-xargs -a "${LIST}" -P "${PARALLEL}" -L 1 bash -c 'fetch "$0" "$1" "$2" "$3"'
+FETCH=fetch
+[ "${SUBSAMPLE_PAIRS}" -gt 0 ] && FETCH=fetch_sub && echo "Subsample mode: first ${SUBSAMPLE_PAIRS} read pairs per run"
+xargs -a "${LIST}" -P "${PARALLEL}" -L 1 bash -c "${FETCH}"' "$0" "$1" "$2" "$3"'
 
 n_ok=$(wc -l < "${DONE_LOG}"); n_fail=$(wc -l < "${FAIL_LOG}"); n_all=$(wc -l < "${LIST}")
 echo "Files verified so far: ${n_ok} (this list: ${n_all}); failed this run: ${n_fail}"

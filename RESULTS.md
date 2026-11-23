@@ -5263,3 +5263,26 @@ are the 0.2–3 µm fraction. **EMO BON has both:**
 **Option:** only the first N read pairs of each run (for example 20 M pairs, about 7–15% of the bytes) would
 cut the download time about tenfold. Profiles are rarefied to 250,000 KO reads anyway. Files would then be
 size-checked only, with no MD5 check. Not implemented; the user decides.
+
+**R55 addendum: subsample mode (2026-11-22).** `cluster/download_reads.sbatch` takes `SUBSAMPLE_PAIRS=N`:
+- Each file is streamed, cut after the first 4N lines (N reads, so N pairs per run) and re-compressed.
+- Checks replace the ENA MD5, which cannot apply to a cut file: exactly 4N lines; for a run with fewer reads, the whole
+  stream must end cleanly (curl exit 0 and gzip exit 0, so gzip's CRC and length pass).
+- Files already complete on disk are cut locally and the full originals moved to `reads/fastq_full/`; earlier `.part` files
+  are reused if long enough. Done files get `.ok` plus `.sub` (holds N), so `map_reads.sbatch --list` sees them.
+- Tested locally on synthetic FASTQ (cut, short-whole, local-cut and truncated-stream cases).
+
+Choice of N = 20 M pairs:
+- Bio-GO-SHIP libraries (`library_metadata.csv` total_reads, 3,174 libraries): 10% 5.7 M, median 14.4 M, 90% 40.6 M read pairs.
+  20 M is inside the training range, so external runs are also depth-matched, which matters for the coverage-50 threshold (R47).
+- Bytes needed at 20 M pairs (from runs.csv read_count and fastq_bytes):
+
+| Set | Runs | Full | First 20 M pairs | Runs with < 20 M pairs |
+|---|---:|---:|---:|---:|
+| EMO BON | 131 | 1.19 TB | 0.180 TB | 0 |
+| Tara Pacific | 84 | 1.74 TB | 0.122 TB | 0 |
+| JGI | 90 | 0.53 TB | 0.325 TB | 15 |
+| Total | 305 | 3.46 TB | 0.627 TB | 15 |
+
+- Caveat: the first reads of a file come from the first flowcell tiles; quality there can be slightly lower, but trimming
+  handles it and taxon/KO composition does not depend on tile.

@@ -5465,3 +5465,28 @@ while the FAIRe workbook's `samp_store_sol` says "lysis buffer".
 - Extraction plate: A13.5, A16N, GOMECC4 and I05.
 - DNA yield: GOMECC4 only.
 - Collection method: every cruise but GOMECC4 and HLY2202.
+
+**R57 update (2026-11-23): asks 1 and 5 dropped.**
+- Dropped: the 2023–2025 library prep (ask 1) and same DNA on both sequencers (ask 5). The platform term already captures
+  that prediction shift.
+- The paper will state that the shift can't be attributed to the sequencer rather than the library prep or workflow
+  change that came with it.
+- The sheet now has four asks: extraction (2022–2025), the preservation conflict, pre-filtration, and per-sample records.
+- What is tested vs still open on the non-biological side: see the chat summary of 2026-11-23, recorded here:
+  - **Tested, no effect on the residual axes:**
+    - library prep (Nextera vs DNA Flex, HLY2202)
+    - preservation + bead beating within Protocol B
+    - same-DNA re-sequencing
+    - flowcell
+    - storage time
+    - volume
+    - collection method (underway vs CTD)
+    - extraction plate (the 4 cruises that record it)
+    - sampling year within a workflow
+    - gene GC content (R44)
+  - **Removed:** platform and sequencing depth (R54, R56). Protocol A samples were excluded (R41).
+  - **Open:**
+    - pre-filtration (unknown for 7 cruises; acts on C directly)
+    - extraction/preservation differences *within* the NovaSeq X era (GOMECC4: no preservative, 2 L Niskin, MagBead)
+    - extraction plate and lane for the 2016–2022 cruises (not recorded)
+    - JGI's HiSeq 2500 and EMO BON's filter fractions, for the external tests

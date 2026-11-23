@@ -78,13 +78,9 @@ def main() -> None:
     workbook(t)
 
 
+# Library prep (2023-2025) and same-DNA-on-both-sequencers asks dropped 2026-11-23: the sequencer term already
+# captures that shift; the paper notes that prep and sequencer cannot be separated.
 QUESTIONS = [
-    ("Library prep, 2023-2025 runs",
-     "For the three NovaSeq X runs (22NCJYLT4, A16N-2023; 23LT2GLT4, A16N-2023 / A13.5-2024 / I05-2023 / GOMECC4; "
-     "22YJMLLT4, P02-2022 / I08S-2024 / I09N-2025): which library prep kit, how much input DNA, how many PCR cycles, "
-     "and was there size selection?",
-     "The 2016-2020 cruises all used Nextera-style tagmentation. Every 2023-2025 cruise is also on a new sequencer, so "
-     "a prep change and the sequencer change can't be told apart without this."),
     ("Extraction, 2022-2025 cruises",
      "Which extraction kit and lysis (bead beating or enzymatic) was used for P02-2022, A16N-2023, I05-2023, "
      "A13.5-2024, I08S-2024 and I09N-2025? Was it the same protocol for all of them?",
@@ -99,10 +95,6 @@ QUESTIONS = [
      "I05-2023, A13.5-2024, I08S-2024 or I09N-2025? And what was the Sterivex pore size on I08S-2024?",
      "Pre-filtration removes larger eukaryotes and directly changes the eukaryote : prokaryote balance, which is "
      "the variable the satellite predicts best."),
-    ("Same DNA on both sequencers",
-     "Has any DNA extract been sequenced on both a NovaSeq 6000 and a NovaSeq X? If not, could the raw files of the "
-     "2023 NovaSeq 6000 run HWKVFDSX5 (P02-2022 DNA/RNA Shield pairs, 58 libraries) be shared?",
-     "This is the one direct test of whether the sequencer itself shifts the profiles."),
     ("Per-sample records (lower priority)",
      "Are volume filtered, extraction plate / well and DNA yield recorded per sample for the cruises where the "
      "FAIRe workbook leaves them empty (see the sheet)?",

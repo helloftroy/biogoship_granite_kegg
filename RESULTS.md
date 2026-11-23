@@ -5490,3 +5490,24 @@ while the FAIRe workbook's `samp_store_sol` says "lysis buffer".
     - extraction/preservation differences *within* the NovaSeq X era (GOMECC4: no preservative, 2 L Niskin, MagBead)
     - extraction plate and lane for the 2016–2022 cruises (not recorded)
     - JGI's HiSeq 2500 and EMO BON's filter fractions, for the external tests
+
+**R57 note (2026-11-23): what "replicate noise" in the R51/R56 budgets is.**
+- **Formula.** σ² = mean over pairs of (difference between two samples in the same satellite tile)² / 2, per KO. The
+  budget term is Σ_tiles σ² / k_tile, where k is the number of samples per tile.
+- **What it measures.** The target is the tile mean, and 1,082 of 1,215 tiles have only one sample. So the term is
+  essentially the single-sample scatter, as a share of the total variance across tiles. It is not the noise of averaged
+  replicates.
+- **The pairs** (C target tiles): 1,416 samples; 133 tiles hold ≥ 2 (84 with 2, 42 with 3, 7 with 5–6); 305 pairs.
+  - 90% of pairs are the same place and time (< 0.5 km, < 1 h). The median depth difference is 0, but 25% differ by
+    ≥ 4 m (maximum 7 m).
+  - Pairs by cruise: GOMECC4 222 (A/B/C replicates), I07N 27, C13.5 22, A13.5 12, HLY2202 7, A16N 4, I05 4, P02 3,
+    P18 2, I09N-2025 2.
+- **So it mixes field-replicate differences** (filter, extraction, library, sequencing, read sampling) with a little
+  small-scale and depth biology.
+- **Not driven by GOMECC4 alone.** Single-sample replicate variance as a share of total tile variance:
+
+| Target | From GOMECC4 pairs | From the other cruises' pairs |
+|---|---:|---:|
+| clr_all | 27.3% (222 pairs) | 33.0% (83) |
+| C | 6.5% (222) | 8.1% (83) |
+| B | 63.8% (204) | 55.6% (80) |

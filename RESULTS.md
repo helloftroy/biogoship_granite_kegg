@@ -5286,3 +5286,140 @@ Choice of N = 20 M pairs:
 
 - Caveat: the first reads of a file come from the first flowcell tiles; quality there can be slightly lower, but trimming
   handles it and taxon/KO composition does not depend on tile.
+
+## R56. Within-platform check of the MLD gain on C; the 100% variance partition (2026-11-22)
+
+Script: `scripts/mld_platform_partition.py` (`--parts mld halves partition figure`). Outputs: `data/results/mld_platform/`
+(`mld_check.csv`, `mld_per_cruise.csv`, `mld_random_halves.csv`, `partition.csv`, `summary_*.txt`);
+`figures/output/variance_partition.png`. All models: R43 tiles, one cruise held out, ridge with per-target GCV alpha.
+Platform groups as R43: NovaSeq 6000 = 6 cruises, 558 tiles; other = 7 cruises, 657 tiles.
+
+### 1. Is the 30-day MLD gain on C a platform proxy?
+
+Question: R54 found that removing technical variance lowers C (raw_sat + MLD30) from 60.3 to 55.4%. Does MLD30
+stand in for the platform difference?
+
+**a/b. Variance of C explained (%), cruise held out, scored on each group's tiles:**
+
+| Training | Model | All tiles | NovaSeq 6000 cruises | Other cruises |
+|---|---|---:|---:|---:|
+| Pooled | raw_sat | 56.20 | 45.79 | 53.27 |
+| Pooled | raw_sat + MLD30 | 60.30 | 49.44 | 58.44 |
+| Pooled | raw_sat + platform | 61.58 | 55.24 | 57.45 |
+| Pooled | raw_sat + MLD30 + platform | 64.95 | 57.00 | 62.40 |
+| Within platform group | raw_sat | 61.04 | 53.36 | 57.56 |
+| Within platform group | raw_sat + MLD30 | 61.57 | 51.85 | 59.33 |
+
+MLD30 gain (percentage points):
+
+| Comparison | All | NovaSeq 6000 | Other |
+|---|---:|---:|---:|
+| Pooled, raw_sat → + MLD30 | +4.10 | +3.65 | +5.17 |
+| Pooled, with platform covariate | +3.37 | +1.77 | +4.95 |
+| Within-platform training | +0.53 | −1.51 | +1.77 |
+
+**Control: random cruise splits.** Within-group training on random 6 / 7 cruise splits (20 splits, seed 0) instead of the
+platform split:
+
+| Statistic | MLD30 gain |
+|---|---|
+| Median | +0.77 pp |
+| 10–90% | −1.59 to +8.50 pp |
+| Splits with gain > 0 | 13 of 20 |
+| Platform split | +0.53 pp, typical of the random splits |
+
+So the small within-platform gain comes from halving the number of training cruises, not from MLD30 acting as a platform
+proxy. MLD30 is a between-cruise feature: 58.7% of its tile variance lies between cruises.
+
+**c. MLD30 by platform group** (log10 m):
+
+| Group | Mean | SD |
+|---|---:|---:|
+| NovaSeq 6000 | 1.321 | 0.191 |
+| Other | 1.399 | 0.273 |
+
+- Point-biserial r −0.161.
+- Platform group explains 2.6% of MLD30 variance.
+
+**d. Within-cruise Spearman of MLD30** (both centred per cruise):
+
+| Tiles | With raw_sat C residual | With C itself |
+|---|---|---|
+| All | +0.029 (p 0.31) | +0.149 (p 1.8e-7) |
+| NovaSeq 6000 | −0.162 (p 1.2e-4) | −0.060 (p 0.16) |
+| Other | +0.173 (p 8.7e-6) | +0.297 (p 6.9e-15) |
+
+**e. Per cruise, mean squared error of C** (raw_sat → + MLD30, pooled training; bias b = observed − predicted):
+
+| Cruise | NovaSeq 6000 | Tiles | MLD30 | Mean C | b raw_sat | b + MLD30 | MSE raw_sat | MSE + MLD30 | Change, pooled | Change, within-platform |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| I05-2023 | no | 141 | 1.793 | −1.784 | 0.599 | 0.142 | 1.143 | 0.757 | −33.8% | −12.6% |
+| GOMECC4 | no | 53 | 1.187 | −4.002 | −0.008 | −0.098 | 0.321 | 0.280 | −12.9% | −7.7% |
+| P02-2022 | no | 89 | 1.151 | −3.349 | 0.237 | 0.291 | 0.531 | 0.536 | +1.0% | −1.6% |
+| A16N-2023 | no | 174 | 1.386 | −3.113 | 0.139 | 0.248 | 0.559 | 0.568 | +1.6% | −5.1% |
+| I09N-2025 | no | 84 | 1.266 | −3.486 | 0.475 | 0.522 | 0.526 | 0.540 | +2.7% | +3.9% |
+| A13.5-2024 | no | 93 | 1.281 | −3.105 | 0.098 | 0.191 | 0.572 | 0.629 | +10.0% | +0.9% |
+| I08S-2024 | no | 23 | 1.492 | −2.232 | 0.106 | 0.218 | 0.202 | 0.255 | +26.2% | +47.7% |
+| HLY2202-2022 | yes | 32 | 1.067 | −1.331 | −0.572 | −0.348 | 2.505 | 2.155 | −14.0% | −6.2% |
+| C13.5/A13.5 | yes | 216 | 1.415 | −4.025 | −0.350 | −0.346 | 0.359 | 0.317 | −11.6% | −4.8% |
+| P18 | yes | 64 | 1.278 | −3.177 | −0.121 | −0.085 | 0.569 | 0.507 | −10.9% | −10.5% |
+| I07N | yes | 146 | 1.307 | −3.811 | −0.072 | −0.034 | 0.219 | 0.195 | −10.7% | −4.4% |
+| AMT28 | yes | 46 | 1.419 | −3.644 | −0.443 | −0.444 | 0.529 | 0.515 | −2.6% | −0.8% |
+| I09N | yes | 54 | 1.100 | −4.406 | −0.543 | −0.670 | 0.472 | 0.651 | +37.8% | +72.6% |
+
+- MLD30 lowers error in 5 of 6 NovaSeq 6000 cruises (both schemes).
+- It lowers error in 2 of 7 other cruises (pooled) and 4 of 7 (within-platform).
+- Every NovaSeq 6000 cruise has a negative raw_sat bias (−0.07 to −0.57): C is lower on that platform than the satellite
+  predicts. The platform covariate alone adds +5.38 pp, and the within-platform raw_sat score (61.0%) is higher than all
+  20 random splits (maximum 59.2%).
+
+**Conclusion.**
+- The MLD30 gain is not a platform proxy:
+  - MLD30 barely differs between platforms;
+  - the gain survives a platform covariate (+3.37 pp);
+  - it helps 5 of 6 cruises on one platform;
+  - the platform-split loss matches random cruise splits.
+- The gain is a between-cruise effect. It is carried most by I05-2023, the deepest-mixing cruise (MLD30 1.79, highest C).
+  Its error drop (tiles × MSE change, −54.4) is 83% of the pooled total (−65.6).
+- Separately, C carries a real platform offset (NovaSeq 6000 lower). That is why technical removal lowers C (R54).
+
+### 2. The 100% variance partition
+
+Each target's total tile variance is split into five parts:
+- **Technical:** in-sample OLS on platform + cubic spline (8 knots) of log10 KO reads, all tiles.
+- **Explained:** cruise held out, on the technically adjusted targets.
+  - KO targets: the R54 plug-in linear two-stage (32 Granite PCs + standardised C; observed C in training, C predicted from
+    raw_sat + MLD30 for the test cruise).
+  - C: raw_sat + MLD30.
+- **Cruise offsets:** per-cruise means of the held-out residual.
+- **Replicate noise:** within-tile replicate variance / replicates per tile (R51 budget), capped at what is left.
+- **Within-cruise:** the rest.
+
+Parts sum to 99.86–100.00%; the shortfall is the overall mean bias of the held-out predictions.
+
+| Target | Technical | Explained | Cruise offsets | Replicate noise | Within-cruise | Explained / non-technical | Explained / reproducible non-technical | Strict fold-wise / non-technical (R54) | Granite alone / non-technical |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| All KOs (CLR) | 9.09 | 15.46 | 12.32 | 27.04 | 35.99 | **17.01** | **24.21** | 19.15 | 16.96 |
+| C | 15.95 | 43.55 | 7.32 | 6.49 | 26.68 | **51.81** | **56.15** | — (plain 60.30) | — |
+| D | 7.82 | 12.35 | 12.35 | 27.00 | 40.37 | 13.40 | 18.95 | 15.26 | 13.28 |
+| A | 11.69 | 11.25 | 13.86 | 25.92 | 37.14 | 12.74 | 18.04 | 14.01 | 12.78 |
+| Dp | 11.27 | 13.83 | 12.85 | 23.47 | 38.45 | 15.59 | 21.20 | 16.92 | 15.63 |
+| B | 6.99 | 8.87 | 9.29 | 57.60 | 17.17 | 9.54 | 25.06 | 11.46 | 9.56 |
+| De | 8.56 | 16.55 | 10.70 | 45.06 | 19.02 | 18.10 | 35.67 | 21.24 | 18.44 |
+
+**Notes.**
+- **Supersedes R54's quick 6.1% technical share and its 19.46% / 27.3%.** Those took platform + depth from the
+  *residual* budget, so they only counted technical variance the model had not already absorbed. Fitted on the targets
+  themselves, the technical share for all KOs is 9.09%. The corrected headlines are 17.0% of non-technical and 24.2% of
+  reproducible non-technical variance.
+- **Two technical-removal numbers.**
+  - In-sample removal (this table) is the conservative one: removing platform on all tiles also takes out whatever part
+    of the cruise-level platform contrast the satellite could predict (platform is confounded with year and region).
+  - The strict fold-wise number (R54) is higher for every target (19.15% for all KOs).
+- **In-sample, the two-stage model adds ≈ 0 over Granite alone** (17.01 vs 16.96 for all KOs; 12.74 vs 12.78 for A).
+  R54's +0.7 pp gain (fold-wise) does not survive in-sample technical removal. With the platform offset of C taken out
+  of the targets, the C term has little left to add.
+- **Replicate noise is the largest single part for B (57.6%) and De (45.1%).** Against reproducible non-technical
+  variance, the eukaryotic targets are as predictable as the rest (B 25.1%, De 35.7%).
+- **C is the only target where explained is the largest part** (43.6% of total).
+- **The largest unexplained biological part for the KO targets is within-cruise** (36–40%), not cruise offsets (12–14%).

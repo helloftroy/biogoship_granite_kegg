@@ -126,7 +126,14 @@ def main() -> None:
                              "time & place, raw satellite (ko_heatmap_inputs)")  # fmt: skip
     parser.add_argument("--cmap", choices=list(INPUT_CMAPS), default="multihue",
                         help="Colour scale of the inputs heatmap (0 to 1); not multihue adds the name to the file name.")
+    parser.add_argument("--main", action="store_true",
+                        help="the R59 main model: read data/results/main_model/ (Granite PCs, technical variance removed), "
+                             "label the column 'Granite PCs', right column = Granite PCs + temperature from the same run, "
+                             "no footnote; writes ko_heatmap_main")  # fmt: skip
     args = parser.parse_args()
+    global RESULTS
+    if args.main:
+        RESULTS = ROOT / "data" / "results" / "main_model"
     plt.rcParams.update({
         "font.family": ["Arial", "DejaVu Sans"], "font.size": 7, "pdf.fonttype": 42, "svg.fonttype": "none",
         "mathtext.fontset": "custom", "mathtext.rm": "Arial", "mathtext.bf": "Arial:bold",
@@ -142,6 +149,8 @@ def main() -> None:
     added = pd.read_csv(ADDED)
     added = added[(added["tiles"] == added["tiles"].max()) & ~added["variable"].str.startswith("CONTROL")]
     ko["best"] = added.drop_duplicates("ko").set_index("ko")["baseline"]  # 32 PCs + temperature spline (R28 baseline)
+    if args.main:  # same run, same adjusted targets
+        ko["best"] = scores[(scores["feature_set"] == "pca32_temp") & (scores["learner"] == "ridge")].set_index("ko")["r2_pooled"]
     blocks = [
         (f"Granite clearly better (R² > {MIN_R2:g})", ko[ko["category"] == "granite"].nlargest(N_GRANITE, "granite"), "granite"),
         ("Both high, about equal", ko[ko["category"] == "same"].assign(m=lambda d: d[["granite", "temp"]].mean(axis=1))
@@ -176,7 +185,7 @@ def main() -> None:
     if args.columns == "difference":
         X_CELLS, CELL = [3.98, 4.50, 5.17], 0.50  # Granite, temperature, difference
         columns = [("granite", R2_CMAP, "{:.2f}"), ("temp", R2_CMAP, "{:.2f}"), ("diff", DIFF_CMAP, "{:+.2f}")]
-        headers = ["Granite\nembedding", "In-situ\ntemperature", "Difference\n(G − T)"]
+        headers = ["Granite\nPCs" if args.main else "Granite\nembedding", "In-situ\ntemperature", "Difference\n(G − T)"]
     else:
         X_CELLS, CELL = [3.98, 4.50, 5.02, 5.54], 0.50
         columns = [(f"r2_{f}", INPUT_CMAPS[args.cmap], "{:.2f}") for f, _, _ in INPUTS]
@@ -186,7 +195,7 @@ def main() -> None:
     gap, sub = 2.4, 2.2  # gap before a block; extra rows for the field block's own column headers
     total = n_rows + gap * len(rows) + sub * any(k == "field" for _, k, _ in rows)
     row_h, head = 0.155, 0.55
-    foot = 1.6 if args.columns == "inputs" else 1.3
+    foot = 0.7 if args.main else 1.6 if args.columns == "inputs" else 1.3
     fig_h = total * row_h + head + foot
     fig = plt.figure(figsize=(W, fig_h))
     ax = fig.add_axes([0, foot / fig_h, 1, (total * row_h) / fig_h])
@@ -231,7 +240,8 @@ def main() -> None:
     for x, text in zip(X_CELLS, headers):
         ax.text(x + CELL / 2, 0.3, text, ha="center", va="bottom", fontsize=6.8, color=INK)
     ax.text(X_CELLS[0] + CELL if args.columns == "difference" else X_CELLS[0] + 2 * CELL, -1.7, "Pooled R², cruise held out", ha="center", va="bottom", fontsize=6.5, color=MUTED)
-    ax.text(X_TAXON, 0.3, "Best model so far:\n32 PCs + temperature", ha="left", va="bottom", fontsize=6.8, color=INK)
+    ax.text(X_TAXON, 0.3, "Granite PCs\n+ temperature" if args.main else "Best model so far:\n32 PCs + temperature", ha="left",
+            va="bottom", fontsize=6.8, color=INK)  # fmt: skip
 
     key_y, key_h = (foot - 0.42) / fig_h, 0.09 / fig_h
     key_axes = [fig.add_axes([X_CELLS[0] / W, key_y, 0.85 / W, key_h])]
@@ -257,7 +267,7 @@ def main() -> None:
     compared = ("the embedding alone (ridge) with temperature alone (spline)." if args.columns == "difference" else
                 "the embedding alone (ridge), temperature alone (spline), time & place\n(latitude, longitude, day of year; ridge) "
                 "and the raw satellite values (16 OLCI band means + SST mean of the tile, rank-normalised; spline).")  # fmt: skip
-    fig.text(X_GROUP / W, 0.10 / fig_h,
+    fig.text(X_GROUP / W, 0.10 / fig_h, "" if args.main else
              "Best model so far: ridge regression on 32 principal components of the OSTIA-filled Granite embedding + in-situ "
              "temperature\n(median pooled R² 0.34 on the 20-KO benchmark and 0.12 over all 3,921 KOs, cruise held out; "
              "RESULTS.md R12, R17, R28).\nThe heatmap compares " + compared
@@ -266,6 +276,8 @@ def main() -> None:
                 "32 PCs + temperature + that field. Chance (random input): 0 KOs." if args.columns == "inputs" else ""),
              ha="left", va="bottom", fontsize=6.3, color=MUTED, linespacing=1.25)  # fmt: skip
     name = "ko_heatmap" if args.columns == "difference" else "ko_heatmap_inputs"
+    if args.main:
+        name += "_main"
     if args.columns == "inputs" and args.cmap != "multihue":
         name += f"_{args.cmap}"
     OUT.mkdir(parents=True, exist_ok=True)

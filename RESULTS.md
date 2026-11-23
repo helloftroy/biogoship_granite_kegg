@@ -5558,3 +5558,123 @@ figure is relabelled.
 **Unit of modelling.** The model already uses the tile as the unit, and has since R17: `tune_figure_kos.load` averages
 all samples sharing a tile (same Granite input) into one target row (1,416 samples → 1,215 tiles; 133 tiles hold ≥ 2
 samples). The budget term already scales with 1/k per tile.
+
+## R59. Main model for the paper: Granite PCs alone; C as its own result; within-tile variability by k (2026-11-23)
+
+**Decision (user).** The chained / two-stage models (R51, R54, R56) are dropped as the headline: more complex and
+not clearly better. The main model is **32 Granite PCs, ridge, one cruise held out**. It uses no ship data. C is
+reported as a separate result. "Environment selects who is there" becomes two parallel findings: C (domain balance)
+is highly predictable, while gene content within domains is weakly predictable.
+
+**Setup** (`scripts/main_model.py`, outputs in `data/results/main_model/`)
+- Tiles: R43 set, 1,215 (1,169 for B and De). Samples sharing a tile are averaged.
+- Technical removal: in-sample, as in R56. Per target column, OLS on platform + spline of log10 KO reads, fitted on all
+  tiles and removed. Models are fitted and scored on the adjusted targets.
+- Ridge penalty three ways: GCV per column (as before), leave-cruise-out (inner, training cruises only) per column
+  (`cv`), and leave-cruise-out with one penalty per target set (`cv_shared`).
+
+**Explained, % of non-technical variance (pooled, cruise held out)**
+
+| Target | Granite GCV | Granite cv | Granite cv_shared | Granite + temp GCV | Granite + temp cv | Granite + temp cv_shared | Temp alone |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| All KOs (CLR) | 16.96 | **17.60** | 17.45 | 15.90 | 17.51 | 17.61 | 10.37 |
+| D | 13.28 | **13.96** | 13.83 | 11.53 | 13.71 | 14.03 | 4.27 |
+| A | 12.78 | **13.71** | 13.33 | 12.03 | 13.93 | 13.46 | 6.99 |
+| Dp | 15.63 | **16.36** | 15.83 | 14.72 | 16.34 | 15.97 | 7.44 |
+| B | 9.56 | **10.32** | 9.77 | 7.12 | 10.07 | 9.96 | 5.94 |
+| De | 18.44 | **18.86** | 18.79 | 17.89 | 18.96 | 18.77 | 17.40 |
+
+- **Leave-cruise-out penalty is a small free gain:** +0.4 to +0.9 pp over GCV for every target (All KOs +0.64).
+  Median log10 alpha rises from 2.0 (GCV) to 2.25–2.75. The median per-column calibration slope (observed on
+  predicted) moves toward 1 (All KOs 0.755 → 0.796, cv_shared 0.813; A 0.609 → 0.680; B 0.585 → 0.660), so R38's over-dispersion
+  is partly a penalty-choice effect. Pooled slopes were already 0.94–0.99.
+- Main KO model: Granite PCs, per-column leave-cruise-out penalty (`cv`).
+- **Granite alone vs Granite + temperature:** with GCV, Granite alone wins clearly (16.96 vs 15.90; the
+  temperature spline got tiny penalties, log10 alpha −0.75 to −1). With the leave-cruise-out penalty the two are
+  equal within 0.3 pp (17.60 vs 17.51 / 17.61). Temperature adds nothing once the penalty is tuned properly, so the
+  ship-free model is the main one.
+- Per-KO median R² (All KOs): cv 0.1157, cv_shared 0.1275, GCV 0.1200, Granite + temp (cv) 0.1111, temperature alone
+  0.0089. Per-column penalties overfit for low-variance KOs: they win on the pooled (variance-weighted) number and
+  lose on the per-KO median. The difference is ≤ 1.2 pp either way.
+
+**C (log euk / prok), % of non-technical variance, cruise held out**
+
+| Model | GCV | cv |
+|---|---:|---:|
+| OLCI + SST (raw_sat) | 50.91 | 50.32 |
+| OLCI + SST + 30-day MLD | 50.54 | 50.63 |
+| Granite PCs | 53.88 | 53.80 |
+| Granite PCs + temperature | 54.79 | 55.30 |
+
+- **The 30-day MLD gain does not survive full technical removal.** Which technical term is removed matters (cv
+  penalty):
+
+| C adjusted for | OLCI + SST | + 30-day MLD | gain (pp) | Granite PCs | Granite + temp |
+|---|---:|---:|---:|---:|---:|
+| nothing (raw C) | 55.72 | 60.44 | +4.72 | 53.95 | 54.82 |
+| platform only | 54.37 | 55.84 | +1.47 | 53.66 | 54.61 |
+| read depth only | 53.86 | 56.57 | +2.71 | 52.15 | 53.67 |
+| platform + depth | 50.32 | 50.63 | +0.31 | 53.80 | 55.30 |
+
+  - MLD30 correlates with log10 KO reads (r −0.27 across tiles; −0.09 within cruises) and with platform (r −0.16).
+  - Read depth is not predictable from the satellite (held-out R² −0.11 to −0.12 for OLCI + SST, + MLD and Granite),
+    so treating it as technical is justified.
+  - Consistent with R56: within-platform MLD gain on raw C was only +0.53 pp.
+  - Conclusion: with technical variance removed, **Granite PCs predict C better than OLCI + SST + MLD30** (53.8% vs
+    50.6%). The R53/R56 MLD signal on C was largely shared with platform and depth.
+- C figure built with OLCI + SST + 30-day MLD as specified (`figures/output/c_prediction.png`): a observed vs
+  held-out predicted (R² 0.51, 1,215 tiles), b per-cruise R² for the three inputs (* = NovaSeq 6000 cruise), c C
+  against latitude (41-tile running means). Per-cruise R² (`c_per_cruise.csv`):
+
+| Cruise | OLCI + SST | + MLD30 | Granite PCs |
+|---|---:|---:|---:|
+| I07N | −0.697 | −0.551 | −1.075 (drawn at −1) |
+| P02-2022 | −0.226 | −0.118 | −0.040 |
+| I09N-2025 | 0.004 | −0.051 | 0.251 |
+| GOMECC4 | 0.387 | 0.398 | 0.460 |
+| I09N | 0.484 | 0.446 | 0.820 |
+| C13.5/A13.5 | 0.493 | 0.489 | 0.475 |
+| A16N-2023 | 0.473 | 0.527 | 0.474 |
+| I05-2023 | 0.610 | 0.572 | 0.598 |
+| A13.5-2024 | 0.613 | 0.576 | 0.647 |
+| AMT28 | 0.629 | 0.616 | 0.557 |
+| P18 | 0.617 | 0.622 | 0.641 |
+| HLY2202-2022 | 0.732 | 0.738 | 0.818 |
+| I08S-2024 | 0.905 | 0.885 | 0.865 |
+
+**Variance partition, main models** (share of total variance, %; `partition.csv`, `figures/output/variance_partition.png`)
+
+| Target | Model | Technical | Explained | Cruise offsets | Within-tile | Within-cruise | Explained / non-technical | Explained / reproducible non-technical |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| All KOs | Granite | 9.09 | 16.00 | 12.19 | 27.04 | 35.59 | **17.60** | **25.05** |
+| C | OLCI + SST + MLD30 | 15.95 | 42.56 | 7.82 | 6.49 | 27.05 | **50.63** | **54.87** |
+| C (alt.) | Granite | 15.95 | 45.22 | 5.30 | 6.49 | 26.96 | 53.80 | 58.30 |
+| D | Granite | 7.82 | 12.87 | 12.79 | 27.00 | 39.43 | 13.96 | 19.75 |
+| A | Granite | 11.69 | 12.11 | 13.97 | 25.92 | 36.21 | 13.71 | 19.41 |
+| Dp | Granite | 11.27 | 14.51 | 13.12 | 23.47 | 37.54 | 16.36 | 22.24 |
+| B | Granite | 6.99 | 9.60 | 9.39 | 57.60 | 16.37 | 10.32 | 27.11 |
+| De | Granite | 8.56 | 17.24 | 10.22 | 45.06 | 18.84 | 18.86 | 37.18 |
+
+- Rows sum to 99.87–99.95% (the held-out residual mean is not zero).
+- Supersedes R56's two-stage numbers (All KOs 17.01 / 24.21 → 17.60 / 25.05 with Granite alone).
+
+**Per-KO scatter and heatmap, remade** (`figures/make_temperature_gap.py --main` → `temperature_gap_main.png`;
+`figures/make_ko_heatmap.py --main` → `ko_heatmap_main.png`; per-KO R² on technically adjusted CLR, Granite PCs with
+`cv` penalty vs temperature spline)
+- 3,933 KOs. Median R²(Granite) − R²(temperature) +0.083. Granite ahead by ≥ 0.1 in 1,769 KOs, temperature in 58.
+- "Clearly better" (≥ 0.1 and ≥ 9 of 13 cruises): Granite 1,020, temperature 38, neither 2,875.
+- Heatmap blocks (unchanged thresholds): Granite clearly better 55 (28 shown), both high and equal 40 (14 shown),
+  temperature clearly better 10. Right column is now Granite PCs + temperature from the same run; no footnote.
+- Temperature alone loses most of its per-KO skill once platform and depth are removed (median 0.0089), because
+  platform is confounded with region and hence temperature.
+
+**Within-tile variability by samples per tile** (`within_tile_k.csv`, `within_tile_gain.csv`, `scripts/within_tile_k.py`).
+Question: as k goes 2 → 3 → 5–6, does the tile mean get closer to "truth"?
+- Single-sample within-tile variance σ² is about the same whatever k (All KOs: 918, 790, 857 for k = 2, 3, 4–6), so the
+  variance left in the tile mean falls as σ²/k: 459 → 263 → 150 (sums over KOs).
+- Inside the same tiles, the held-out error against the tile mean is lower than against a single sample by exactly
+  σ²(1 − 1/k) (an identity, not an independent test): All KOs −19.9% (k = 2), −20.8% (k = 3), −18.5% (k = 4–6); B −29% to
+  −34%; C −5% to −8%.
+- The remaining error against the tile mean (All KOs 1,843 / 2,005 / 3,084) is far above σ²/k, so it is mostly model
+  error. Beyond 2–3 samples, extra samples per tile reduce the target scatter further but cannot raise skill much.
+- Error by k across tiles is confounded with cruise: k ≥ 3 tiles are almost all GOMECC4 (48 of 49).

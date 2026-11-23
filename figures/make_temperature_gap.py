@@ -23,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import matplotlib
@@ -43,7 +44,18 @@ WIN_CRUISES = 9
 FLOOR = -0.6  # values below are drawn at the floor
 
 
+LEARNERS: dict = {}  # --main: one learner per feature set (no best-of-learners pick)
+NAME, YLABEL, WORD = "temperature_gap", "R², Granite embedding", "embedding"
+
+
 def main() -> None:
+    global RESULTS, NAME, YLABEL, WORD
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--main", action="store_true", help="R59 main model: data/results/main_model/ (technical variance removed), "
+                    "Granite PCs (ridge, penalty by leave-cruise-out) vs temperature spline; writes temperature_gap_main")  # fmt: skip
+    if ap.parse_args().main:
+        RESULTS, NAME, YLABEL, WORD = ROOT / "data" / "results" / "main_model", "temperature_gap_main", "R², Granite PCs", "Granite PCs"
+        LEARNERS.update({"embedding": "ridge", "temp": "spline"})
     plt.rcParams.update({
         "font.family": ["Arial", "Helvetica", "DejaVu Sans"], "font.size": 8, "axes.labelsize": 8,
         "xtick.labelsize": 7, "ytick.labelsize": 7, "axes.edgecolor": RULE, "axes.linewidth": 0.6,
@@ -57,14 +69,16 @@ def main() -> None:
     panel_histogram(fig.add_axes([0.58, 0.14, 0.40, 0.80]), gap)
     OUT.mkdir(parents=True, exist_ok=True)
     for suffix in ("png", "pdf"):
-        fig.savefig(OUT / f"temperature_gap.{suffix}", dpi=300)
+        fig.savefig(OUT / f"{NAME}.{suffix}", dpi=300)
     counts = gap["verdict"].value_counts()
     print(f"KOs: {len(gap):,}; " + ", ".join(f"{k}: {v:,}" for k, v in counts.items()))
-    print(f"Wrote {OUT / 'temperature_gap.png'} and .pdf, {RESULTS / 'ko_temperature_gap.csv'}")
+    print(f"Wrote {OUT / NAME}.png and .pdf, {RESULTS / 'ko_temperature_gap.csv'}")
 
 
 def per_ko() -> pd.DataFrame:
     scores = pd.read_csv(RESULTS / "ko_temperature.csv")
+    if LEARNERS:
+        scores = scores[scores["feature_set"].isin(LEARNERS) & (scores["learner"] == scores["feature_set"].map(LEARNERS))]
     best = scores.loc[scores.groupby(["ko", "feature_set"])["r2_pooled"].idxmax()]
     pooled = best.pivot(index="ko", columns="feature_set", values="r2_pooled")
     learner = best.set_index(["ko", "feature_set"])["learner"]
@@ -97,7 +111,7 @@ def panel_scatter(ax, gap: pd.DataFrame) -> None:
                                      ("embedding clearly better", GRANITE, 5, 3)):  # fmt: skip
         pick = gap["verdict"] == verdict
         ax.scatter(x[pick], y[pick], s=size, color=colour, lw=0, alpha=0.75, zorder=z,
-                   label=f"{verdict[0].upper() + verdict[1:]} ({int(pick.sum()):,})")  # fmt: skip
+                   label=f"{(verdict[0].upper() + verdict[1:]).replace('Embedding', WORD)} ({int(pick.sum()):,})")  # fmt: skip
     ax.plot([FLOOR, 0.85], [FLOOR, 0.85], color=MUTED, lw=0.7, ls=(0, (3, 2)), zorder=0)
     ax.axhline(0, color=RULE, lw=0.6, zorder=0)
     ax.axvline(0, color=RULE, lw=0.6, zorder=0)
@@ -105,7 +119,7 @@ def panel_scatter(ax, gap: pd.DataFrame) -> None:
     ax.set_ylim(FLOOR - 0.03, 0.85)
     ax.set_aspect("equal")
     ax.set_xlabel("R², in-situ temperature alone")
-    ax.set_ylabel("R², Granite embedding")
+    ax.set_ylabel(YLABEL)
     ax.legend(frameon=False, fontsize=6.5, loc="upper left", handletextpad=0.2, markerscale=2.2, borderaxespad=0.1)
     ax.text(-0.22, 1.0, "a", transform=ax.transAxes, fontsize=10, fontweight="bold", color=INK, va="top")
 
@@ -119,11 +133,11 @@ def panel_histogram(ax, gap: pd.DataFrame) -> None:
     colours = np.where(centres >= WIN_MARGIN, GRANITE, np.where(centres <= -WIN_MARGIN, TEMP, NEUTRAL))
     ax.bar(edges[:-1], counts, width=np.diff(edges) * 0.9, align="edge", color=colours, lw=0)
     ax.axvline(0, color=MUTED, lw=0.7)
-    ax.set_xlabel("R² embedding − R² temperature, per KO")
+    ax.set_xlabel(f"R² {WORD} − R² temperature, per KO")
     ax.set_ylabel(f"KOs (of {len(gap):,})")
     top = counts.max()
     better, worse = int((gap["difference"] >= WIN_MARGIN).sum()), int((gap["difference"] <= -WIN_MARGIN).sum())
-    ax.text(0.30, top * 0.55, f"embedding ahead\nby ≥ {WIN_MARGIN:g}: {better:,}", color=INK, fontsize=6.5, ha="center")
+    ax.text(0.30, top * 0.55, f"{WORD} ahead\nby ≥ {WIN_MARGIN:g}: {better:,}", color=INK, fontsize=6.5, ha="center")
     ax.text(-0.30, top * 0.55, f"temperature ahead\nby ≥ {WIN_MARGIN:g}: {worse:,}", color=INK, fontsize=6.5, ha="center")
     ax.text(0.01, top * 0.98, f"median {gap['difference'].median():+.2f}", color=MUTED, fontsize=6.5, ha="left", va="top")
     ax.text(-0.17, 1.0, "b", transform=ax.transAxes, fontsize=10, fontweight="bold", color=INK, va="top")

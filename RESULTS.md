@@ -5511,3 +5511,50 @@ while the FAIRe workbook's `samp_store_sol` says "lysis buffer".
 | clr_all | 27.3% (222 pairs) | 33.0% (83) |
 | C | 6.5% (222) | 8.1% (83) |
 | B | 63.8% (204) | 55.6% (80) |
+
+## R58. FAIRe `instrument` field filled; "replicate noise" renamed "within-tile variability" (2026-11-23)
+
+**FAIRe instrument.** Script: `scripts/faire_instrument_fill.py`. The original workbook is not modified. Outputs in
+`data/results/metadata_status/`:
+- `FAIRe-NOAA_uci-ess-biogoship_instrument.xlsx`: a copy, only `experimentRunMetadata.instrument` changed, changed
+  cells yellow
+- `instrument_column.txt`: the column for pasting, 4,993 lines in sheet order
+- `instrument_changes.csv`: per change, the old value, new value and evidence
+
+**OBI terms** (OLS4 / Ontobee, checked 2026-11-23):
+
+| Instrument | OBI term |
+|---|---|
+| Illumina NovaSeq 6000 | OBI_0002630 |
+| Illumina NovaSeq X | OBI_0003663 |
+| Illumina NovaSeq X Plus | OBI_0003664 |
+| Illumina HiSeq 4000 | OBI_0002049 |
+| Illumina HiSeq 2500 | OBI_0002002 |
+
+- The workbook's values were placeholders: "INSTRUMENT NAME [OBI_2131 / 2631 / 3310]".
+  - Those IDs are not sequencers: OBI_0002131 is a methylation BeadChip, OBI_0002631 an scRNA-seq assay and
+    OBI_0003310 a SPRITE assay.
+  - But they map one-to-one onto our flowcell assignment (2131 → HiSeq 4000, 2631 → NovaSeq 6000, 3310 → NovaSeq X), so
+    the team's grouping was right.
+
+**Filled:** 3,186 MetaG rows.
+
+| Value | Rows | Evidence |
+|---|---:|---|
+| Illumina HiSeq 4000 [OBI_0002049] | 55 | ENA |
+| Illumina NovaSeq 6000 [OBI_0002630] | 906 | ENA |
+| Illumina NovaSeq 6000 [OBI_0002630] | 193 | publication + flowcell (HFJLFDSX7, HMY7WDSX7) |
+| Illumina NovaSeq 6000 [OBI_0002630] | 96 | flowcell format only (HWKVFDSX5, unverified) |
+| Illumina NovaSeq X [OBI_0003663] | 1,936 | FASTQ headers |
+
+- NovaSeq X vs X Plus is unknown: both use "LH" instrument IDs.
+- Left as is: 1,807 amplicon and MetaT rows, whose `seq_run_id` has no flowcell.
+
+**Naming.** The R51/R56 "replicate noise" term is now called **within-tile variability**: how much samples that share a
+satellite tile (the same model input) differ, as a share of the total variance across tiles. It is the ceiling on
+satellite skill, not purely measurement noise. The `partition.csv` column keeps the name `replicate_noise`, and the
+figure is relabelled.
+
+**Unit of modelling.** The model already uses the tile as the unit, and has since R17: `tune_figure_kos.load` averages
+all samples sharing a tile (same Granite input) into one target row (1,416 samples → 1,215 tiles; 133 tiles hold ≥ 2
+samples). The budget term already scales with 1/k per tile.

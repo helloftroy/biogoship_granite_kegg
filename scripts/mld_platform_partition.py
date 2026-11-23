@@ -276,7 +276,7 @@ def figure():
     parts = [("explained", "Explained by satellite (cruise held out)", "#E69F00"),
              ("cruise_offsets", "Cruise offsets, not explained", "#56B4E9"),
              ("within_cruise", "Within-cruise, not explained", "#0072B2"),
-             ("replicate_noise", "Replicate noise", "#BBBBBB"),
+             ("replicate_noise", "Within-tile variability", "#BBBBBB"),
              ("technical", "Technical (platform, depth)", "#666666")]  # fmt: skip
     fig, ax = plt.subplots(figsize=(7.2, 3.3))
     x = np.arange(len(tg))

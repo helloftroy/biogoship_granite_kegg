@@ -5783,3 +5783,117 @@ unchanged from R59.
 
 - Not among the 3,933 modelled KOs: nifH, nifD, amoA / pmoA, nasA, narG, phnJ, bacteriorhodopsin.
 - 620 KOs have Granite R² > 0.3.
+
+## R61. Poorly predicted cruises for eukaryote : prokaryote reads; temperature on top of Granite; pathway-level predictability (2026-11-23)
+
+**Why I07N, P02-2022 and I09N-2025 score badly on eukaryote : prokaryote reads (C)** (Granite PCs, technical removed)
+
+| Cruise | Where | When | In-situ T (°C) | Tiles | C mean | C SD within cruise | Predicted SD | r (obs, pred) | Bias (pred − obs) | R² in cruise |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| I07N | W Indian Ocean, 30 °S–18 °N, 40–69 °E (incl. Arabian Sea) | 2018-04-25 to 06-03 | 22.4–31.0 | 146 | −3.41 | 0.44 | 0.35 | −0.10 | −0.28 | −1.075 |
+| P02-2022 | N Pacific zonal line, 27–33 °N, dateline crossing | 2022-05-03 to 07-12 | 17.8–25.5 | 89 | −3.36 | 0.64 | 0.30 | 0.26 | −0.17 | −0.040 |
+| I09N-2025 | E Indian Ocean, 29 °S–20 °N, 87–100 °E | 2025-03-23 to 04-23 | 22.1–30.9 | 84 | −3.61 | 0.58 | 0.29 | 0.36 | −0.19 | 0.251 |
+| (all tiles) | | | | 1,215 | | 1.05 | | | | |
+
+- All three are warm, low-latitude or subtropical lines with little range in C: within-cruise SD 0.44–0.64, against
+  1.05 over all tiles and 1.0–1.4 for the cruises that reach high latitudes (P18, A16N-2023, A13.5-2024, I08S-2024,
+  HLY2202-2022).
+- The model gets the cruise level roughly right (bias −0.17 to −0.28) but hardly tracks the variation along the line
+  (r −0.10 to 0.36; predictions compressed, SD 0.29–0.35).
+- The per-cruise R² is scored against the training-cruise mean. A cruise whose mean C sits near the global mean and
+  varies little has a small denominator, so small errors give R² ≤ 0. GOMECC4 shows the reverse: r 0.05, but its mean
+  is far from the rest (−4.40), so it gets R² 0.46 from the level alone. Per-cruise R² mostly measures whether a
+  cruise has a gradient the model can follow.
+- The variation of C along these warm lines (e.g. Arabian Sea at monsoon onset) is not something the surface image
+  resolves at present.
+
+**Granite PCs + in-situ temperature vs Granite alone** (pp of non-technical variance, cv penalty, from R59 / R60):
+All KOs −0.09, eukaryote : prokaryote reads +1.50, shared KOs −0.25, prokaryote-specific +0.22, shared prokaryote part
+−0.02, eukaryote-specific −0.25, shared eukaryote part +0.10. Only C gains more than 0.3 pp.
+
+**Pathway-level predictability** (`scripts/module_predictability.py`, `figures/output/module_predictability.png`;
+`module_predictability.csv`, `category_predictability.csv`, `ko_ceiling.csv`)
+- Per KO: ceiling = 1 − within-tile variance / non-technical variance across tiles.
+  - Within-tile variance = σ² from the sample pairs × Σ 1/k over tiles.
+  - Median ceiling 0.740 (10–90%: 0.498–0.864). 25 KOs fall below 0.1 and are floored at 0.1.
+- Fraction = held-out R² (Granite PCs) / ceiling. KO median: 0.168 for Granite PCs, 0.010 for temperature.
+- KEGG modules (REST `link/module/ko` and `br:ko00002`, downloaded 2026-11-23 to `data/reference/kegg_modules/`):
+  172 modules with ≥ 4 modelled KOs. The median over modules is 0.186 for Granite PCs and −0.007 for temperature.
+  - Top modules:
+    - NAD(P)H:quinone oxidoreductase, chloroplasts / cyanobacteria (M00145): 0.684; R² 0.605, ceiling 0.920.
+    - F-type ATPase, eukaryotes: 0.478.
+    - Thiamine salvage: 0.456; thiamine biosynthesis (archaea): 0.456.
+    - Pyrimidine ribonucleotide biosynthesis: 0.427.
+    - Isoleucine biosynthesis: 0.418; leucine biosynthesis: 0.395.
+    - Prokaryotic thiamine biosynthesis: 0.378; methionine degradation: 0.378; C5 isoprenoid (MEP): 0.377;
+      serine-pathway formaldehyde assimilation: 0.377.
+  - Bottom: methanogenesis, catechol ortho-cleavage, glucuronate degradation, eukaryotic ubiquinone, CDP-sugar
+    biosynthesis (ceiling ≈ 0) — all ≤ 0.
+  - Class medians (module count in brackets):
+    - Highest: branched-chain amino acids 0.355 (5), cysteine / methionine 0.337 (3), arginine / proline 0.330 (6),
+      fatty acids 0.266 (4), pyrimidines 0.253 (5), lysine 0.239 (7), cofactors and vitamins 0.224 (34),
+      ATP synthesis 0.210 (11).
+    - Lowest: central carbohydrate 0.119 (12), nucleotide sugars 0.111 (15), photosynthesis 0.087 (2),
+      sulfur 0.086 (2), aromatics degradation 0.061 (4), glycosaminoglycans −0.026 (2).
+  - Temperature reaches a higher module fraction than Granite in only a few modules: cyanobacterial NDH 0.718 vs 0.684,
+    and eukaryotic F-type ATPase 0.512 vs 0.478.
+- KEGG modules cover metabolism only, so panel b uses BRITE level-B categories (all KOs, ≥ 15 per category).
+  Median fraction, Granite PCs [IQR], with temperature after the semicolon:
+  - Highest:
+    - Cellular community – eukaryotes 0.502 [0.372–0.556]; 0.446.
+    - Signalling molecules 0.444; 0.346.
+    - Transcription 0.364; 0.183.
+    - Transport and catabolism 0.355; 0.198.
+    - Cell growth and death 0.280; 0.233.
+    - Folding / sorting / degradation 0.278; 0.044.
+    - Signal transduction 0.248; 0.146.
+    - Replication and repair 0.213; 0.016.
+    - Translation 0.210; −0.042.
+  - Middle:
+    - Cofactors and vitamins 0.187; nucleotides 0.185; membrane transport 0.173 (temperature 0.005); amino acids
+      0.159; energy 0.146.
+  - Lowest:
+    - Carbohydrate 0.117; prokaryotic cellular community (biofilm, quorum sensing) 0.113; xenobiotics 0.084;
+      cell motility 0.038.
+- **Caveat on interpretation:** the top BRITE categories are mostly eukaryote-only KOs (cell-cycle, signalling,
+  vesicle transport). In the all-KO CLR, their skill largely rides on the eukaryote : prokaryote balance, which is the
+  most predictable quantity (54%). The module ranking within prokaryote metabolism (amino-acid and cofactor
+  biosynthesis high, carbohydrate and degradation pathways low) is less exposed to this. A version on the domain-split
+  targets (prokaryote-specific per genome equivalent, eukaryote-specific within eukaryotes) would separate the two.
+
+**Ocean-model fields added to the main model** (`scripts/main_fields.py`, run in 3 shards; `added_fields.csv`,
+`added_fields_summary.csv`).
+- Redo of R28 with Granite PCs as the base (no temperature), the cv penalty and technically adjusted targets.
+- "Hit" = the heatmap rule: gain ≥ 0.05, R² after ≥ 0.3, and better in ≥ 10 of 13 held-out cruises. The R28
+  hits (on the old baseline) are given in brackets.
+
+| Field | KOs gaining ≥ 0.05 | Hits (R28) | Median gain |
+|---|---:|---:|---:|
+| sea level | 357 | 57 (6) | +0.0008 |
+| phosphate | 256 | 49 (36) | −0.0016 |
+| nitrate | 238 | 22 (22) | −0.0001 |
+| GLORYS temperature | 143 | 14 (1) | −0.0015 |
+| oxygen | 129 | 8 (2) | −0.0008 |
+| silicate | 63 | 7 (11) | −0.0011 |
+| chlorophyll | 121 | 6 (14) | +0.0026 |
+| salinity | 37 | 5 (7) | −0.0010 |
+| mixed layer | 67 | 2 (8) | −0.0009 |
+| mixed layer, 30-day max | 138 | 2 (10) | −0.0011 |
+| wind, 14-day mean | 68 | 2 (3) | +0.0009 |
+| wind, 14-day peak | 73 | 1 (16) | −0.0003 |
+| primary production | 30 | 0 (1) | +0.0005 |
+| SST change 14 d / current speed / sea-level gradient / EKE 30 d | 0–2 | 0 | ~0 |
+
+- Forecast-period fields (iron, DIC, alkalinity, pH, pCO2, phytoplankton carbon; 636 tiles, 6 cruises) cannot meet
+  the ≥ 10-cruise rule. Their KO counts gaining ≥ 0.05 are 259 / 100 / 288 / 86 / 104 / 35.
+- Controls: three noise columns and shuffled phosphate give 0 KOs gaining ≥ 0.05 on all tiles. Noise on the forecast
+  tiles gives 0, shuffled phosphate on the forecast tiles 4. All controls give 0 hits.
+- 154 distinct KOs are hits (best field per KO): sea level 57, phosphate 39, nitrate 18, GLORYS temperature 14,
+  silicate 6, oxygen 5, chlorophyll 5, salinity 4, mixed layer 2, 30-day max mixed layer 2, wind mean 2.
+- **The field gains survive technical removal.** Phosphate and nitrate keep their hits. Sea level and model
+  temperature gain more than before, because temperature is no longer in the base.
+- Heatmap field block (top 16 by gain, not already shown above; 144 eligible):
+  - + nitrate: the whole urease / urea-transport set. ureD 0.10 → 0.55, ureF 0.15 → 0.57, ureC 0.28 → 0.64,
+    ureB, ureE, ureA, urtA–D (+0.30 to +0.45); also mqo, menC.
+  - + phosphate: the pho regulon. phoU 0.17 → 0.53, pstC 0.33 → 0.63, pstS 0.40 → 0.67, adeR 0.26 → 0.52.
+- `figures/output/ko_heatmap_inputs_main.png` now has the four input blocks plus this field block.

@@ -146,7 +146,7 @@ def main() -> None:
     for feature_set, learner, _ in INPUTS:
         ko[f"r2_{feature_set}"] = scores[(scores["feature_set"] == feature_set) & (scores["learner"] == learner)].set_index("ko")["r2_pooled"]
     ko.round(4).to_csv(RESULTS / "ko_categories.csv")
-    added = pd.read_csv(ADDED)
+    added = pd.read_csv(ROOT / "data" / "results" / "main_model" / "added_fields.csv" if args.main else ADDED)  # main: R61
     added = added[(added["tiles"] == added["tiles"].max()) & ~added["variable"].str.startswith("CONTROL")]
     ko["best"] = added.drop_duplicates("ko").set_index("ko")["baseline"]  # 32 PCs + temperature spline (R28 baseline)
     if args.main:  # same run, same adjusted targets
@@ -165,7 +165,7 @@ def main() -> None:
         block = block.sort_values(["group", "granite" if key != "temp" else "temp"], ascending=[True, False])
         rows.append((label, key, block))
     pd.concat([b.assign(block=k) for _, k, b in rows]).round(4).to_csv(RESULTS / "ko_heatmap_rows.csv")
-    if args.columns == "inputs" and not args.main:  # fourth block: KOs that an ocean-model field improves (R28)
+    if args.columns == "inputs":  # fourth block: KOs that an ocean-model field improves (R28)
         shown = set(pd.concat([b for _, _, b in rows]).index)
         hit = added[(added["gain"] >= 0.05) & (added["added"] >= MIN_R2) & (added["cruises_improved"] >= 10) & ~added["ko"].isin(shown)]
         hit = hit.sort_values("gain", ascending=False).drop_duplicates("ko")
@@ -213,9 +213,10 @@ def main() -> None:
                 va="bottom", fontsize=6.5, color=MUTED)  # fmt: skip
         ax.plot([X_GROUP, W - 0.1], [y - 0.1, y - 0.1], color=RULE, lw=0.5)
         if key == "field":
-            for x, text in zip(X_CELLS, ["Granite\nembedding", "32 PCs + T\n+ the field", "Time &\nplace", "Raw\nsatellite"]):
+            for x, text in zip(X_CELLS, ["Granite\nPCs", "Granite PCs\n+ the field", "Time &\nplace", "Raw\nsatellite"] if args.main
+                               else ["Granite\nembedding", "32 PCs + T\n+ the field", "Time &\nplace", "Raw\nsatellite"]):
                 ax.text(x + CELL / 2, y + sub - 0.25, text, ha="center", va="bottom", fontsize=6.5, color=INK, linespacing=1.1)
-            ax.text(X_TAXON, y + sub - 0.25, "32 PCs + T → + the field", ha="left", va="bottom", fontsize=6.5, color=INK)
+            ax.text(X_TAXON, y + sub - 0.25, "Granite PCs → + the field" if args.main else "32 PCs + T → + the field", ha="left", va="bottom", fontsize=6.5, color=INK)
             y += sub
         for group, members in block.groupby("group", observed=True, sort=False):
             g0, g1 = y, y + len(members)

@@ -51,7 +51,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO), str(REPO / "scripts")]
 from domain_split_models import EMB, NOVASEQ_6000  # noqa: E402
 from mld_platform_partition import replicate_noise  # noqa: E402
-from screen_ko_predictability import ALPHAS  # noqa: E402
+from screen_ko_predictability import ALPHAS, metadata_features  # noqa: E402
 from tune_figure_kos import build, load, ridge_path  # noqa: E402
 from two_stage_models import TARGETS, spl  # noqa: E402
 from water_mass_test import features  # noqa: E402
@@ -61,6 +61,10 @@ FIG = REPO / "figures" / "output"
 TD = REPO / "data" / "targets" / "domain_split"
 ORDER = ["clr_all", "C", "D", "A", "Dp", "B", "De"]
 BLOCKS = {"granite": ["P32"], "baseline": ["P32", "T~"], "temp": ["T~"], "sat": ["S~"], "sat_mld": ["S~"]}
+# "place": time & place (lat / 90, |lat| / 90, sin and cos of longitude, sin and cos of day of year; standardised,
+# linear). R5's version without |lat| cannot follow poleward increases and scores below 0 (R60)
+NAMES = {"clr_all": "All KOs", "C": "Eukaryote :\nprokaryote\nreads", "D": "Shared KOs", "A": "Prokaryote-\nspecific KOs",
+         "Dp": "Shared KOs,\nprokaryote\npart", "B": "Eukaryote-\nspecific KOs", "De": "Shared KOs,\neukaryote\npart"}  # fmt: skip
 PENALTIES = ["gcv", "cv", "cv_shared"]
 LOG: list[str] = []
 
@@ -89,6 +93,10 @@ def setup(tname, fs, ks):
 
 
 def features_for(model, d, tr, te, cache):
+    if model == "place":
+        x = np.hstack([metadata_features(d["unit"]), np.abs(d["unit"]["sample_lat"].to_numpy())[:, None] / 90])
+        mu, sd = x[tr].mean(0), x[tr].std(0)
+        return (x[tr] - mu) / sd, (x[te] - mu) / sd
     xtr, xte = build(BLOCKS[model], tr, te, d["emb"], d["temp"], d["sat"], cache)
     if model == "sat_mld":
         a, b = spl(d["mld"][tr], d["mld"][te])
@@ -157,9 +165,9 @@ def fit_part(fs, ks):
     for tname in ORDER:
         d = setup(tname, fs, ks)
         if tname == "C":
-            models = [(m, p) for m in ("sat", "sat_mld", "granite", "baseline") for p in ("gcv", "cv")]
+            models = [(m, "cv") for m in ("granite", "sat", "sat_mld", "place", "temp", "baseline")] + [("granite", "gcv")]
         else:
-            models = [(m, p) for m in ("granite", "baseline") for p in PENALTIES] + [("temp", "gcv")]
+            models = [("granite", p) for p in PENALTIES] + [(m, "cv") for m in ("baseline", "temp", "sat", "place")]
         pred, alpha = loco(d, d["ya"], models)
         for (m, p), v in pred.items():
             s = calib_slope(d["ya"], v)
@@ -172,7 +180,8 @@ def fit_part(fs, ks):
                 f"log10 alpha median {out[-1]['log10_alpha_median']:.2f}")  # fmt: skip
         if tname == "clr_all":
             keep = {("embedding", "ridge"): pred[("granite", "cv")], ("embedding", "ridge_gcv"): pred[("granite", "gcv")],
-                    ("embedding", "ridge_cv_shared"): pred[("granite", "cv_shared")], ("temp", "spline"): pred[("temp", "gcv")],
+                    ("embedding", "ridge_cv_shared"): pred[("granite", "cv_shared")], ("temp", "spline"): pred[("temp", "cv")],
+                    ("metadata", "ridge"): pred[("place", "cv")], ("satellite", "spline"): pred[("sat", "cv")],
                     ("pca32_temp", "ridge"): pred[("baseline", "cv")]}  # fmt: skip
             pooled, cruise = per_ko_tables(d["ya"], keep, d["kos"], d["cr"])
             pooled.round(4).to_csv(OUT / "ko_temperature.csv", index=False)
@@ -186,18 +195,16 @@ def fit_part(fs, ks):
     say("\n" + (t.pivot_table(index=["target", "model"], columns="penalty", values="explained", sort=False) * 100).round(2).to_string())
 
 
-MAIN = {"C": ("sat_mld", "cv")}  # set after the fit part; KO targets: see main_choice()
+MAIN = {"C": ("granite", "cv")}  # set after the fit part; KO targets: see main_choice()
 
 
 def main_choice(tname):
-    if tname == "C":
-        return MAIN["C"]
-    return ("granite", MAIN.get("ko_penalty", "cv_shared"))
+    return ("granite", MAIN.get("ko_penalty", "cv"))
 
 
 def partition_part(fs, ks):
     out, kk = [], []
-    for label, tname, (m, p) in [(t, t, main_choice(t)) for t in ORDER] + [("C_granite", "C", ("granite", MAIN["C"][1]))]:
+    for label, tname, (m, p) in [(t, t, main_choice(t)) for t in ORDER]:
         d = setup(tname, fs, ks)
         z = np.load(OUT / f"predictions_{tname}_{m}_{p}.npz")
         pred, ya, y, cr = z["predicted"].astype(float), d["ya"], d["y"], d["cr"]
@@ -269,8 +276,7 @@ def figure_part():
     plt.rcParams.update({"font.family": "Arial", "font.size": 8, "axes.spines.top": False, "axes.spines.right": False,
                          "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6, "pdf.fonttype": 42})  # fmt: skip
     p = pd.read_csv(OUT / "partition.csv").set_index("target")
-    tl = {"clr_all": "All KOs\n(CLR)", "C": "C\nEuk : prok", "D": "D\nShared", "A": "A\nProk-specific", "Dp": "Dp\nShared, prok",
-          "B": "B\nEuk-specific", "De": "De\nShared, euk"}  # fmt: skip
+    tl = NAMES
     parts = [("explained", "Explained by satellite (cruise held out)", "#E69F00"),
              ("cruise_offsets", "Cruise offsets, not explained", "#56B4E9"),
              ("within_cruise", "Within-cruise, not explained", "#0072B2"),
@@ -291,7 +297,7 @@ def figure_part():
                 ha="center", va="bottom", fontsize=6.5)  # fmt: skip
     ax.axvline(1.5, color="#999999", lw=0.6, ls=(0, (2, 2)))
     ax.set_xticks(x)
-    ax.set_xticklabels([tl[t] for t in ORDER], fontsize=7)
+    ax.set_xticklabels([tl[t] for t in ORDER], fontsize=6.5, linespacing=1.05)
     ax.set_ylim(0, 108)
     ax.set_yticks(range(0, 101, 20))
     ax.set_ylabel("Share of total variance (%)")
@@ -305,10 +311,10 @@ def figure_part():
 
 
 def c_figure(plt):
-    """C: a observed vs held-out predicted (OLCI + SST + 30-day MLD), b per-cruise skill with and without MLD30
-    and for Granite PCs, c observed and predicted C against latitude."""
+    """Eukaryote : prokaryote reads (C): a observed vs held-out predicted (Granite PCs), b per-cruise skill of Granite PCs,
+    OLCI + SST and time & place, c observed and predicted against latitude."""
     m, p = MAIN["C"]
-    z = {k: np.load(OUT / f"predictions_C_{k}_{p}.npz", allow_pickle=True) for k in ("sat", "sat_mld", "granite")}
+    z = {k: np.load(OUT / f"predictions_C_{k}_{p}.npz", allow_pickle=True) for k in ("granite", "sat", "place")}
     obs = z[m]["observed"][:, 0].astype(float)
     cr = z[m]["cruise"]
     pr = {k: v["predicted"][:, 0].astype(float) for k, v in z.items()}
@@ -326,8 +332,8 @@ def c_figure(plt):
     a.plot([lo, hi], [lo, hi], color="#555555", lw=0.6, ls=(0, (3, 2)))
     a.set_xlim(lo, hi)
     a.set_ylim(lo, hi)
-    a.set_xlabel("Predicted C, cruise held out")
-    a.set_ylabel("Observed C (technical removed)")
+    a.set_xlabel("Predicted, cruise held out")
+    a.set_ylabel("Observed log(eukaryote / prokaryote reads)")
     a.legend(frameon=False, fontsize=6, loc="upper left", markerscale=2, handletextpad=0.2)
     e = 1 - ((obs - pr[m]) ** 2).sum() / ((obs - obs.mean()) ** 2).sum()
     a.text(0.97, 0.04, f"R² = {e:.2f}\n{len(obs):,} tiles", transform=a.transAxes, ha="right", va="bottom", fontsize=6.5)
@@ -337,13 +343,14 @@ def c_figure(plt):
         te = cr == k
         sst = ((obs[te] - obs[~te].mean()) ** 2).sum()
         rows.append({kk: 1 - ((obs[te] - pr[kk][te]) ** 2).sum() / sst for kk in pr} | {"cruise": k, "plat": bool(plat[te][0])})
-    pc = pd.DataFrame(rows).sort_values("sat_mld")
+    pc = pd.DataFrame(rows).sort_values("granite")
     yy = np.arange(len(pc))
-    for kk, col, mk, lab in (("granite", GREY, "s", "Granite PCs"), ("sat", "#56B4E9", "o", "OLCI + SST"),
-                             ("sat_mld", BLUE, "o", "OLCI + SST + 30-day MLD")):  # fmt: skip
-        b.scatter(pc[kk].clip(lower=-1), yy, s=14 if kk == "sat_mld" else 9, marker=mk, color=col, lw=0, label=lab, zorder=3)
+    for kk, col, mk, lab in (("place", GREY, "s", "Time & place"), ("sat", "#56B4E9", "^", "OLCI + SST"),
+                             ("granite", BLUE, "o", "Granite PCs")):  # fmt: skip
+        b.scatter(pc[kk].clip(lower=-1), yy, s=16 if kk == "granite" else 10, marker=mk, color=col, lw=0, label=lab, zorder=3)
     for i, (_, r) in enumerate(pc.iterrows()):
-        b.plot([max(r["sat"], -1), max(r["sat_mld"], -1)], [i, i], color="#bbbbbb", lw=0.6, zorder=1)
+        v = [max(r[kk], -1) for kk in ("place", "sat", "granite")]
+        b.plot([min(v), max(v)], [i, i], color="#dddddd", lw=0.6, zorder=1)
     b.axvline(0, color="#cccccc", lw=0.6)
     b.set_yticks(yy)
     b.set_yticklabels([("* " if r else "") + k for k, r in zip(pc["cruise"], pc["plat"])], fontsize=5.5)
@@ -358,10 +365,10 @@ def c_figure(plt):
     c.plot(lat[o], so, color="#333333", lw=1.0, label="Observed, running mean")
     c.plot(lat[o], sm, color=BLUE, lw=1.0, label="Predicted, running mean")
     c.set_xlabel("Latitude (°)")
-    c.set_ylabel("C (technical removed)")
+    c.set_ylabel("log(eukaryote / prokaryote reads)")
     c.legend(frameon=False, fontsize=5.5, loc="upper left", markerscale=2, handletextpad=0.2)
     for ax, letter in zip((a, b, c), "abc"):
-        ax.text(-0.2, 1.02, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
+        ax.text(-0.3 if letter != "b" else -0.2, 1.02, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
     for suf in ("png", "pdf"):
         fig.savefig(FIG / f"c_prediction.{suf}", dpi=300)
     plt.close(fig)
@@ -373,7 +380,7 @@ if __name__ == "__main__":
     ap.add_argument("--ko-penalty", default="cv", choices=PENALTIES, help="penalty of the main KO model")
     ap.add_argument("--c-penalty", default="cv", choices=["gcv", "cv"], help="penalty of the main C model")
     a = ap.parse_args()
-    MAIN["ko_penalty"], MAIN["C"] = a.ko_penalty, ("sat_mld", a.c_penalty)
+    MAIN["ko_penalty"], MAIN["C"] = a.ko_penalty, ("granite", a.c_penalty)
     OUT.mkdir(parents=True, exist_ok=True)
     fs = features() if {"fit", "partition"} & set(a.parts) else None
     ks = pd.read_csv(REPO / "data" / "targets" / "ko_samples.csv").set_index("sample_key")
@@ -383,7 +390,7 @@ if __name__ == "__main__":
         d["unit"][["section", "sample_lat", "sample_lon"]].rename(columns={"sample_lat": "lat", "sample_lon": "lon"}).assign(
             k=d["k"]).to_csv(OUT / "c_tiles.csv")  # fmt: skip
     if "partition" in a.parts:
-        say(f"\nVariance partition (main models: KO targets granite/{MAIN['ko_penalty']}, C sat_mld/{MAIN['C'][1]}):")
+        say(f"\nVariance partition (main models: KO targets granite/{MAIN['ko_penalty']}, C granite/{MAIN['C'][1]}):")
         partition_part(fs, ks)
     if "figure" in a.parts:
         figure_part()

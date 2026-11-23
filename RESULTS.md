@@ -5678,3 +5678,108 @@ Question: as k goes 2 → 3 → 5–6, does the tile mean get closer to "truth"?
 - The remaining error against the tile mean (All KOs 1,843 / 2,005 / 3,084) is far above σ²/k, so it is mostly model
   error. Beyond 2–3 samples, extra samples per tile reduce the target scatter further but cannot raise skill much.
 - Error by k across tiles is confounded with cruise: k ≥ 3 tiles are almost all GOMECC4 (48 of 49).
+
+## R60. One model for everything: C on Granite PCs; time & place and raw satellite as comparisons; heatmap of four inputs (2026-11-23)
+
+**Decision (user).** C is predicted with the same model as every KO target: 32 Granite PCs, ridge, penalty by
+leave-cruise-out inside the training cruises (`cv`), technical variance (platform + read-depth spline) removed
+in-sample. OLCI + SST + 30-day MLD is dropped; it is reported in a few sentences only (R59: 50.6% vs Granite 53.8%; the
+MLD gain on C is +4.7 pp on raw C and +0.3 pp after technical removal). Technical removal applies to every model and
+every figure.
+
+**Comparison inputs, all on technically adjusted targets, all with the `cv` penalty**
+- Temperature alone: in-situ temperature spline. It was GCV in R59. With `cv`, All KOs is 11.12% (GCV 10.37%).
+- Raw satellite: 16 OLCI band means + satellite SST, quantile-normalised, splines.
+- Time & place: lat / 90, **|lat| / 90**, sin and cos of longitude, sin and cos of day of year; standardised, linear.
+  - R5's version without |lat| scores below zero once cruises are held out: C −14.96%, All KOs −4.67%; for C the
+    slope of observed on predicted is −2.9. It cannot follow the increase toward both poles.
+  - Variants for C / All KOs: linear 5 features −14.96 / −4.67; + |lat| 17.17 / 6.51; latitude spline + |lat|
+    26.02 / −1.68. The + |lat| version is used throughout, as the simplest one that is positive for both.
+
+**Explained, % of non-technical variance (pooled, cruise held out)**
+
+| Target | Granite PCs | Granite + temperature | Raw satellite | Temperature | Time & place |
+|---|---:|---:|---:|---:|---:|
+| All KOs | **17.60** | 17.51 | 13.33 | 11.12 | 6.51 |
+| Eukaryote : prokaryote reads (C) | **53.80** | 55.30 | 50.32 | 45.86 | 17.17 |
+| Shared KOs (D) | **13.96** | 13.71 | 8.64 | 5.99 | 6.19 |
+| Prokaryote-specific (A) | **13.71** | 13.93 | 9.47 | 7.19 | 6.56 |
+| Shared, prokaryote part (Dp) | **16.36** | 16.34 | 9.96 | 7.06 | 9.47 |
+| Eukaryote-specific (B) | **10.32** | 10.07 | 8.82 | 7.18 | 2.20 |
+| Shared, eukaryote part (De) | **18.86** | 18.96 | 18.56 | 17.99 | 9.75 |
+
+- Granite PCs beat every other single input on every target. Adding temperature changes nothing beyond ±0.3 pp, except
+  for C (+1.5 pp).
+
+**Per-KO median R² (All KOs, 3,933 KOs)**
+- Granite PCs 0.1157; Granite + temperature 0.1111; raw satellite 0.0682; time & place 0.0387; temperature 0.0069.
+- Temperature reaches 11.12% pooled but a median of 0.007 per KO. Its skill sits in a few high-variance KOs (the
+  cyanobacterial photosynthesis / clock block: ndhD 0.76, hoxH 0.75, kaiB 0.71, cpeS 0.69). For the typical KO it
+  carries almost nothing once platform and depth are removed.
+
+**C variance partition** (`partition.csv`): technical 15.95, explained 45.22, cruise offsets 5.30, within-tile 6.49,
+within-cruise 26.96 (% of total) → **53.80% of non-technical, 58.30% of reproducible non-technical**. The KO rows are
+unchanged from R59.
+
+**C per cruise** (R² within the held-out cruise; `c_per_cruise.csv`)
+
+| Cruise | Granite PCs | OLCI + SST | Time & place |
+|---|---:|---:|---:|
+| I07N | −1.075 | −0.697 | −1.558 |
+| P02-2022 | −0.040 | −0.226 | −0.566 |
+| I09N-2025 | 0.251 | 0.004 | 0.158 |
+| GOMECC4 | 0.460 | 0.387 | −0.775 |
+| A16N-2023 | 0.474 | 0.473 | 0.334 |
+| C13.5/A13.5 | 0.475 | 0.493 | 0.208 |
+| AMT28 | 0.557 | 0.629 | 0.438 |
+| I05-2023 | 0.598 | 0.610 | 0.450 |
+| P18 | 0.641 | 0.617 | −0.068 |
+| A13.5-2024 | 0.647 | 0.613 | 0.405 |
+| HLY2202-2022 | 0.818 | 0.732 | 0.395 |
+| I09N | 0.820 | 0.484 | 0.435 |
+| I08S-2024 | 0.865 | 0.905 | 0.731 |
+
+**Figures**
+- `figures/output/variance_partition.png`: the main figure. Tick labels now use names, not letters.
+- `figures/output/c_prediction.png`: overwritten.
+  - a: observed vs held-out predicted, Granite PCs, R² 0.54, 1,215 tiles.
+  - b: per-cruise R² for Granite PCs, OLCI + SST, and time & place (* = NovaSeq 6000 cruise; values below −1 drawn
+    at −1).
+  - c: against latitude, 41-tile running means.
+  - Axes read "log(eukaryote / prokaryote reads)".
+- `figures/output/ko_heatmap_inputs_main.png` (`figures/make_ko_heatmap.py --main --columns inputs`): four inputs
+  (Granite PCs, in-situ temperature, time & place, raw satellite) plus Granite + temperature at the right.
+  - Technical variance is removed throughout; no field block, no footnote.
+  - Blocks: Granite clearly better 54 (28 shown), both high and about equal 40 (14 shown), temperature clearly
+    better 11.
+  - The R59 two-column heatmap (`ko_heatmap_main`) is deleted.
+- `figures/output/temperature_gap_main.png`: redone with the `cv` temperature model.
+  - Median difference +0.066.
+  - Granite ahead by ≥ 0.1 in 1,573 KOs, temperature in 51.
+  - "Clearly better" (also ≥ 9 of 13 cruises): Granite 835, temperature 38, neither 3,060.
+
+**Candidate marker genes** (per-KO R², technical removed; Granite / temperature / raw satellite)
+
+| Group | Gene | KO | Granite | Temperature | Raw satellite |
+|---|---|---|---:|---:|---:|
+| Phosphorus | pstS | K02040 | 0.40 | 0.28 | 0.46 |
+| Phosphorus | pstB | K02036 | 0.41 | 0.23 | 0.45 |
+| Phosphorus | phnD | K02044 | 0.38 | 0.41 | 0.33 |
+| Phosphorus | phoB | K07657 | 0.17 | −0.27 | 0.24 |
+| Phosphorus | phoD | K01113 | −0.02 | −0.07 | −0.06 |
+| Phosphorus | phoA | K01077 | 0.01 | −0.18 | 0.05 |
+| Nitrogen | narB | K00367 | 0.44 | 0.38 | 0.27 |
+| Nitrogen | ureC | K01428 | 0.28 | 0.36 | 0.26 |
+| Nitrogen | amt | K03320 | 0.26 | 0.12 | 0.20 |
+| Nitrogen | urtA | K11959 | 0.19 | 0.19 | 0.16 |
+| Iron | fiu | K16090 | 0.36 | 0.51 | 0.29 |
+| Iron | petF | K02639 | 0.27 | 0.25 | 0.17 |
+| Iron | isiB / fldA | K03839 | 0.05 | −0.07 | −0.02 |
+| Light | cpeS | K05382 | 0.67 | 0.69 | 0.55 |
+| Light | pufL | K08928 | 0.25 | 0.46 | 0.44 |
+| Light | puhA | K13991 | 0.30 | 0.45 | 0.42 |
+| Light | rbcL | K01601 | 0.17 | 0.12 | 0.05 |
+| Light | psbA | K02703 | 0.03 | 0.04 | −0.03 |
+
+- Not among the 3,933 modelled KOs: nifH, nifD, amoA / pmoA, nasA, narG, phnJ, bacteriorhodopsin.
+- 620 KOs have Granite R² > 0.3.

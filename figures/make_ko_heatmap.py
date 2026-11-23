@@ -165,7 +165,7 @@ def main() -> None:
         block = block.sort_values(["group", "granite" if key != "temp" else "temp"], ascending=[True, False])
         rows.append((label, key, block))
     pd.concat([b.assign(block=k) for _, k, b in rows]).round(4).to_csv(RESULTS / "ko_heatmap_rows.csv")
-    if args.columns == "inputs":  # fourth block: KOs that an ocean-model field improves (R28)
+    if args.columns == "inputs" and not args.main:  # fourth block: KOs that an ocean-model field improves (R28)
         shown = set(pd.concat([b for _, _, b in rows]).index)
         hit = added[(added["gain"] >= 0.05) & (added["added"] >= MIN_R2) & (added["cruises_improved"] >= 10) & ~added["ko"].isin(shown)]
         hit = hit.sort_values("gain", ascending=False).drop_duplicates("ko")
@@ -189,7 +189,7 @@ def main() -> None:
     else:
         X_CELLS, CELL = [3.98, 4.50, 5.02, 5.54], 0.50
         columns = [(f"r2_{f}", INPUT_CMAPS[args.cmap], "{:.2f}") for f, _, _ in INPUTS]
-        headers = [h for _, _, h in INPUTS]
+        headers = [h.replace("Granite\nembedding", "Granite\nPCs") if args.main else h for _, _, h in INPUTS]
     X_TAXON = X_CELLS[-1] + CELL + 0.08
     n_rows = sum(len(b) for _, _, b in rows)
     gap, sub = 2.4, 2.2  # gap before a block; extra rows for the field block's own column headers
@@ -239,7 +239,7 @@ def main() -> None:
 
     for x, text in zip(X_CELLS, headers):
         ax.text(x + CELL / 2, 0.3, text, ha="center", va="bottom", fontsize=6.8, color=INK)
-    ax.text(X_CELLS[0] + CELL if args.columns == "difference" else X_CELLS[0] + 2 * CELL, -1.7, "Pooled R², cruise held out", ha="center", va="bottom", fontsize=6.5, color=MUTED)
+    ax.text(X_CELLS[0] + CELL if args.columns == "difference" else X_CELLS[0] + 2 * CELL, -1.7, "Pooled R², cruise held out" + (", technical removed" if args.main else ""), ha="center", va="bottom", fontsize=6.5, color=MUTED)
     ax.text(X_TAXON, 0.3, "Granite PCs\n+ temperature" if args.main else "Best model so far:\n32 PCs + temperature", ha="left",
             va="bottom", fontsize=6.8, color=INK)  # fmt: skip
 

@@ -160,9 +160,18 @@ def per_ko_tables(y, preds, kos, cr):
     return pd.concat(pooled), pd.concat(cruise)
 
 
-def fit_part(fs, ks):
+def merge_rows(path, t, only):
+    """--targets: keep the other targets' rows of an existing table, replace these targets' rows."""
+    if only and path.exists():
+        old = pd.read_csv(path)
+        t = pd.concat([old[~old["target"].isin(only)], t])
+        t = t.assign(_o=t["target"].map({k: i for i, k in enumerate(ORDER)})).sort_values("_o", kind="stable").drop(columns="_o")
+    return t
+
+
+def fit_part(fs, ks, only=None):
     out = []
-    for tname in ORDER:
+    for tname in [t for t in ORDER if not only or t in only]:
         d = setup(tname, fs, ks)
         if tname == "C":
             models = [(m, "cv") for m in ("granite", "sat", "sat_mld", "place", "temp", "baseline")] + [("granite", "gcv")]
@@ -190,7 +199,7 @@ def fit_part(fs, ks):
             np.savez_compressed(OUT / f"predictions_{tname}_{m}_{p}.npz", predicted=v.astype(np.float32),
                                 observed=d["ya"].astype(np.float32), ko=np.array(d["kos"]), cruise=d["cr"],
                                 tile=d["unit"].index.to_numpy(), k=d["k"])  # fmt: skip
-    t = pd.DataFrame(out).drop(columns="explained_unadjusted_targets")
+    t = merge_rows(OUT / "scores.csv", pd.DataFrame(out).drop(columns="explained_unadjusted_targets"), only)
     t.round(5).to_csv(OUT / "scores.csv", index=False)
     say("\n" + (t.pivot_table(index=["target", "model"], columns="penalty", values="explained", sort=False) * 100).round(2).to_string())
 
@@ -202,9 +211,9 @@ def main_choice(tname):
     return ("granite", MAIN.get("ko_penalty", "cv"))
 
 
-def partition_part(fs, ks):
+def partition_part(fs, ks, only=None):
     out, kk = [], []
-    for label, tname, (m, p) in [(t, t, main_choice(t)) for t in ORDER]:
+    for label, tname, (m, p) in [(t, t, main_choice(t)) for t in ORDER if not only or t in only]:
         d = setup(tname, fs, ks)
         z = np.load(OUT / f"predictions_{tname}_{m}_{p}.npz")
         pred, ya, y, cr = z["predicted"].astype(float), d["ya"], d["y"], d["cr"]
@@ -234,8 +243,8 @@ def partition_part(fs, ks):
             f"{r['of_reproducible_nontechnical']:6.2%} of reproducible non-technical")  # fmt: skip
         if label == tname:
             kk.append(by_k(tname, d, st, res + 0, pred))
-    pd.DataFrame(out).round(5).to_csv(OUT / "partition.csv", index=False)
-    kk = pd.concat(kk)
+    merge_rows(OUT / "partition.csv", pd.DataFrame(out), only).round(5).to_csv(OUT / "partition.csv", index=False)
+    kk = merge_rows(OUT / "within_tile_k.csv", pd.concat(kk), only)
     kk.round(6).to_csv(OUT / "within_tile_k.csv", index=False)
     say("\nWithin-tile variability and held-out error by samples per tile (sums over target columns; "
         "sigma2 = single-sample within-tile variance from the pairs of that group; 'expected' = sigma2 / k):")
@@ -321,10 +330,10 @@ def decompose(o, p):
             "pattern": 2 * sp * so * (1 - r), "mse": ((o - p) ** 2).mean(0)}  # fmt: skip
 
 
-def cruise_part():
+def cruise_part(only=None):
     """Per-cruise error split for the main model of every target: level (bias), spread mismatch, pattern (1 - r)."""
     out = []
-    for t in ORDER:
+    for t in [t for t in ORDER if not only or t in only]:
         z = np.load(OUT / f"predictions_{t}_granite_cv.npz", allow_pickle=True)
         o, p, cr = z["observed"].astype(float), z["predicted"].astype(float), z["cruise"]
         for c in np.unique(cr):
@@ -336,10 +345,10 @@ def cruise_part():
                         "r_median": np.median(d["r"]), "mse_sum": mse, "share_level": d["level"].sum() / mse,
                         "share_spread": d["spread"].sum() / mse, "share_pattern": d["pattern"].sum() / mse,
                         "check": (d["level"] + d["spread"] + d["pattern"]).sum() / mse})  # fmt: skip
-    t = pd.DataFrame(out)
+    t = merge_rows(OUT / "cruise_decomposition.csv", pd.DataFrame(out), only)
     t.round(5).to_csv(OUT / "cruise_decomposition.csv", index=False)
     pd.set_option("display.width", 250)
-    for tg in ORDER:
+    for tg in [t for t in ORDER if not only or t in only]:
         say(f"\n{tg}:")
         say(t[t["target"] == tg].drop(columns=["target", "columns", "check"]).sort_values("sd_obs_median").round(3).to_string(index=False))
     say(f"\nmax |check - 1| = {np.abs(t['check'] - 1).max():.2e}")
@@ -492,23 +501,25 @@ if __name__ == "__main__":
     ap.add_argument("--parts", nargs="+", default=["fit", "partition", "figure"], choices=["fit", "partition", "cruise", "figure"])
     ap.add_argument("--ko-penalty", default="cv", choices=PENALTIES, help="penalty of the main KO model")
     ap.add_argument("--c-penalty", default="cv", choices=["gcv", "cv"], help="penalty of the main C model")
+    ap.add_argument("--targets", nargs="+", choices=ORDER, help="fit / partition / cruise only these targets; their rows "
+                    "replace those in the existing scores.csv, partition.csv, within_tile_k.csv, cruise_decomposition.csv")
     a = ap.parse_args()
     MAIN["ko_penalty"], MAIN["C"] = a.ko_penalty, ("granite", a.c_penalty)
     OUT.mkdir(parents=True, exist_ok=True)
     fs = features() if {"fit", "partition"} & set(a.parts) else None
     ks = pd.read_csv(REPO / "data" / "targets" / "ko_samples.csv").set_index("sample_key")
     if "fit" in a.parts:
-        fit_part(fs, ks)
+        fit_part(fs, ks, a.targets)
         d = setup("C", fs, ks)
         d["unit"][["section", "sample_lat", "sample_lon"]].rename(columns={"sample_lat": "lat", "sample_lon": "lon"}).assign(
             k=d["k"]).to_csv(OUT / "c_tiles.csv")  # fmt: skip
     if "partition" in a.parts:
         say(f"\nVariance partition (main models: KO targets granite/{MAIN['ko_penalty']}, C granite/{MAIN['C'][1]}):")
-        partition_part(fs, ks)
+        partition_part(fs, ks, a.targets)
     if "cruise" in a.parts:
         say("Per-cruise error split, main model (Granite PCs): level = bias^2, spread = (sd_pred - sd_obs)^2, pattern = 2 sd_pred sd_obs (1 - r)")
-        cruise_part()
+        cruise_part(a.targets)
     if "figure" in a.parts:
         figure_part()
     if LOG:
-        (OUT / f"summary_{'_'.join(p for p in a.parts if p != 'figure')}.txt").write_text("\n".join(LOG) + "\n")
+        (OUT / f"summary_{'_'.join(p for p in a.parts if p != 'figure')}{'_' + '_'.join(a.targets) if a.targets else ''}.txt").write_text("\n".join(LOG) + "\n")

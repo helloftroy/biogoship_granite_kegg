@@ -17,7 +17,9 @@ Targets (sample x KO, log scale):
   B   eukaryote-specific KOs: within-eukaryote composition
         = log(p_k) - log(pooled eukaryote-specific proportion over all 8,818 eukaryote-specific KOs of the
           full table); samples with < --min-euk (5,000) pooled eukaryote-specific reads dropped
-  C   eukaryotic amount (one column): log(pooled eukaryote-specific / pooled prokaryote-specific reads)
+  C   eukaryotic amount (one column): log(eukaryote-assigned / prokaryote-assigned KO reads), all KOs (R68).
+        The R51 version, log(pooled eukaryote-specific / pooled prokaryote-specific reads) with classes from the
+        reference-gene share, is written as C_refclass.csv.
   D   shared KOs, whole community: the existing CLR values (ko_clr.csv columns)
   Dp  shared KOs, prokaryote-assigned reads per prokaryote genome equivalent (as A)
   De  shared KOs, eukaryote-assigned reads within eukaryotes (as B)
@@ -167,7 +169,23 @@ def main() -> None:
     say(f"B: samples with < {args.min_euk:,.0f} pooled eukaryote-specific reads dropped: {int((~okB).sum())}")
     write("B", pd.DataFrame((np.log(P[B_k].to_numpy() + ps) - np.log(Esum.to_numpy()[:, None]))[okB], index=P.index[okB], columns=B_k),
           "log share of pooled eukaryote-specific reads")
-    write("C", pd.DataFrame({"euk_prok_log_ratio": np.log(Esum / Psum)}, index=P.index), "log pooled euk-specific / prok-specific")
+    # C (R68): direct read ratio, log(eukaryote-assigned / prokaryote-assigned KO reads) over all KOs, per library
+    # (as shares of its KO reads), libraries of one sample averaged. From the per-library domain split of every KO
+    # (scripts/ko_domain_reads.py cache). The R51 version (pooled reference-class KOs) is kept as C_refclass.csv.
+    write("C_refclass", pd.DataFrame({"euk_prok_log_ratio": np.log(Esum / Psum)}, index=P.index),
+          "R51 definition: log pooled euk-specific / prok-specific (classes from the reference-gene share)")
+    zc = np.load(REPO / "data" / "results" / "ko_domain" / "library_domain.npz", allow_pickle=True)
+    pos = {lib: i for i, lib in enumerate(zc["libs"])}
+    if not set(libs) <= set(pos):
+        raise SystemExit("library_domain.npz lacks some libraries; run scripts/ko_domain_reads.py first")
+    ix = [pos[lib] for lib in libs]
+    e_all = zc["euk"][ix].astype(np.float64).sum(1) / info["total"].to_numpy()
+    p_all = zc["prok"][ix].astype(np.float64).sum(1) / info["total"].to_numpy()
+    E_all = pd.Series(e_all, index=libs).groupby(info["sample_key"]).mean().loc[P.index]
+    P_all = pd.Series(p_all, index=libs).groupby(info["sample_key"]).mean().loc[P.index]
+    say(f"C: eukaryote-assigned share of KO reads, median over samples {E_all.median():.4f} (min {E_all.min():.5f}); "
+        f"r with the R51 version {np.corrcoef(np.log(E_all / P_all), np.log(Esum / Psum))[0, 1]:.4f}")
+    write("C", pd.DataFrame({"euk_prok_log_ratio": np.log(E_all / P_all)}, index=P.index), "log eukaryote / prokaryote KO reads (all KOs)")
     write("D", clr.loc[P.index, S_k], "whole-community CLR, unchanged")
     prev_p = (Pp[S_k] > 0).mean()
     prev_e = (Pe[S_k] > 0).mean()

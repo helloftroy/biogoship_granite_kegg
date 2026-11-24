@@ -6036,14 +6036,15 @@ genes and has no identified driver. Within-tile variability: variance between sa
 tile-level input. Remaining: within-cruise variation not accounted for above.
 
 **Figure — The eukaryote : prokaryote balance is predictable from space.**
-**a**, Observed vs predicted log ratio of eukaryote- to prokaryote-specific KO reads for 1,215 tiles. Predictions come
+*(Updated R68: C is now the direct read ratio.)* **a**, Observed vs predicted log ratio of eukaryote- to
+prokaryote-assigned KO reads (all KOs; each read takes the domain of the reference gene it maps to) for 1,215 tiles. Predictions come
 from 32 Granite principal components (ridge), with each cruise held out in turn. Technical variance (sequencing
 platform, depth) has been removed from the observations. Colour shows sequencing platform; the dashed line is 1:1.
 R² = 0.54 pooled over all held-out predictions (53.8% of the non-technical variance). **b**, R² within each held-out
 cruise for Granite PCs (circles), OLCI band means + SST (triangles) and time & place (squares: latitude, |latitude|,
 longitude, day of year). Per-cruise R² is relative to the mean of the training cruises, so flat cruises near the
-global mean score low even when placed correctly (Supplementary Fig. X). Values below −1 are drawn at −1 (I07N:
-Granite −1.07, time & place −1.56). * NovaSeq 6000 cruises. **c**, Observed (grey points; black line) and predicted
+global mean score low even when placed correctly (Supplementary Fig. X). Values below −1 are drawn at −1 (time &
+place on I07N, −1.32). * NovaSeq 6000 cruises. **c**, Observed (grey points; black line) and predicted
 (blue line) log ratio against latitude; lines are 41-tile running means.
 
 **Supplementary Figure X — Per-cruise error as level and pattern.**
@@ -6788,3 +6789,125 @@ inferred.
 - Each point is a KO (18,240 with reads and a reference share; blue: the 5,808 patchy KOs).
 - x: eukaryotic share of its reference-catalogue genes. y: eukaryotic share of its reads in our 2,018 libraries.
 - Circled: nifH, rpsL, rbcL, psbA, rifA, SLC7A14, KCNA2 and TUBA.
+
+---
+
+## R68. Target C redefined as the direct read ratio; what depends on C, and on B (2026-11-24)
+
+**Decision (user, 2026-11-24).**
+- **C is now log(eukaryote-assigned / prokaryote-assigned KO reads)** over all KOs. Each read takes the domain of the
+  reference sequence it maps to (R67).
+- The R51 definition is kept as `data/targets/domain_split/C_refclass.csv` (identical to the old `C.csv`). That
+  definition was log(pooled eukaryote-specific / pooled prokaryote-specific KO reads), with the classes taken from the
+  R44 reference-gene share.
+- **Target B is not used in the paper.** It is not rebuilt with read-based classes.
+
+**Paper figures** (`figures/output/`, not `old/`) and their targets:
+- `c_prediction` (+ `_split`): C. Remade.
+- `variance_budget`: the all-KO CLR. C is used only to describe axis 1. Rerun.
+- `ko_heatmap_inputs_main`, `module_predictability`: the all-KO CLR only.
+- `hurdle_kos`, `hurdle_mechanism`, `ko_domain_reads`: R65–R67. `hurdle_mechanism` uses predicted C. Rerun; that
+  figure is being redesigned anyway.
+- **No paper figure uses target B.** It is only fitted by `main_model.py` and exported in the benchmark bundle.
+
+**Construction** (`scripts/domain_split_targets.py`).
+- Per library: eukaryote-assigned and prokaryote-assigned (Bacteria + Archaea) reads over all KOs, from the
+  per-library domain split of `scripts/ko_domain_reads.py` (`data/results/ko_domain/library_domain.npz`). Each is taken
+  as a share of the library's KO reads.
+- Libraries of one sample are averaged, then C = log(eukaryote share / prokaryote share).
+- Eukaryote-assigned share of KO reads: median over samples 0.0196 (min 0.00334), so no pseudocount is needed.
+- r with the R51 version: 0.976 per sample; 0.979 per tile (R67).
+- Rebuilding all domain-split targets left A, B, D, Dp, De, `ko_classes.csv` and `shared_split.csv` byte-identical.
+  Only C changed.
+
+**Main model refit for C only.**
+- `scripts/main_model.py` has a new `--targets` option: fit / partition / cruise for the listed targets only. Their rows
+  replace those in `scores.csv`, `partition.csv`, `within_tile_k.csv` and `cruise_decomposition.csv`.
+- Ran `--parts fit partition cruise figure --targets C`. The other targets' rows are identical to before.
+
+Explained share of the non-technical variance in C (cruise held out):
+
+| Model | Old C | New C |
+|---|---:|---:|
+| **Granite PCs (main; leave-cruise-out penalty)** | **53.80%** | **53.79%** |
+| Granite PCs, GCV penalty | 53.88% | 54.01% |
+| OLCI + SST | 50.32% | 50.27% |
+| OLCI + SST + 30-day mixed-layer depth | 50.63% | 50.84% |
+| In-situ temperature | 45.86% | 46.83% |
+| Granite + temperature | 55.30% | 55.20% |
+| Time & place | 17.17% | 12.94% |
+
+- Calibration slope (Granite, pooled): 0.955 → 0.955.
+
+Variance partition of C (share of total variance):
+
+| | Technical | Explained | Cruise offsets | Within-tile | Within-cruise |
+|---|---:|---:|---:|---:|---:|
+| Old C | 15.95% | 45.22% | 5.30% | 6.49% | 26.96% |
+| New C | 15.29% | 45.56% | 4.57% | 6.40% | 28.09% |
+
+- Of the non-technical variance, 53.80% → 53.79%. Of the reproducible non-technical variance, 58.30% → 58.18%.
+
+Per-cruise R² of Granite (`c_per_cruise_r2.csv`; old → new):
+
+| Cruise | Old | New |
+|---|---:|---:|
+| I07N | −1.074 | −0.573 |
+| P02-2022 | −0.040 | −0.138 |
+| I09N-2025 | 0.251 | 0.254 |
+| GOMECC4 | 0.460 | 0.380 |
+| A16N-2023 | 0.474 | 0.450 |
+| C13.5/A13.5 | 0.474 | 0.356 |
+| AMT28 | 0.557 | 0.550 |
+| I05-2023 | 0.598 | 0.539 |
+| P18 | 0.641 | 0.708 |
+| A13.5-2024 | 0.647 | 0.720 |
+| HLY2202-2022 | 0.818 | 0.783 |
+| I09N (2016) | 0.820 | 0.712 |
+| I08S-2024 | 0.865 | 0.871 |
+
+- OLCI + SST, new: I07N −0.474, P02-2022 −0.400, I09N-2025 −0.128, C13.5 0.343, GOMECC4 0.335, A16N 0.487, I05 0.554,
+  AMT28 0.613, P18 0.702, I09N 0.340, A13.5 0.667, HLY2202 0.704, I08S 0.899.
+- Time & place, new: I07N −1.315 (the only value below −1), P02 −0.795, GOMECC4 −0.617, C13.5 −0.200, I09N-2025
+  0.093, P18 0.169, A16N 0.246, HLY2202 0.304, A13.5 0.331, AMT28 0.352, I05 0.368, I09N 0.439, I08S 0.674.
+- **The pooled result is unchanged; individual cruises move by up to ±0.1, and I07N by +0.5.**
+  - I07N's within-cruise SD is small (0.339). Its R² is sensitive to how much of C's cruise-level offset the definition
+    carries.
+  - The same cruises remain the poorly predicted ones (I07N, P02-2022, I09N-2025), as in R61 / R62.
+- Per-cruise level / spread / pattern for C (`cruise_decomposition.csv`; median within-cruise r, Granite):
+  - I09N −0.078, I07N −0.053, C13.5 0.499, GOMECC4 −0.272 (level share 0.509), I09N-2025 0.368, P02 0.206.
+  - AMT28 0.825, I05 0.475, I08S 0.917, A16N 0.712, A13.5 0.871, P18 0.816, HLY2202 0.424 (spread share 0.602).
+  - GOMECC4 is still the cruise placed wrong in level (bias −0.633).
+
+**Variance budget** (`scripts/variance_budget_main.py`).
+- The budget numbers are unchanged; it is built on the all-KO CLR.
+- Axis 1's within-cruise correlation with C: −0.602, against −0.655 with the R51 C (R63 text).
+- The old C, built from the reference-class KOs, shared part of the KO-profile signal with axis 1. The direct read
+  ratio is a cleaner eukaryote : prokaryote measure.
+
+**Hurdle C comparison** (`scripts/hurdle_mechanism.py` rerun; `mechanism.csv` now uses the new C). By read-based
+domain (R67 table, new C; within-cruise presence AUC unless stated):
+
+| Read domain | n | Granite | Granite + technical | Technical | Predicted C alone | Granite − C | Granite ahead by ≥ 0.05 | Abundance R² | r(depth) | r(C) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Eukaryotic | 2,756 | 0.635 | 0.630 | 0.534 | 0.614 | +0.017 | 13% | +0.253 | −0.094 | +0.363 |
+| Mixed | 1,055 | 0.618 | 0.626 | 0.527 | 0.583 | +0.025 | 32% | +0.083 | +0.011 | +0.227 |
+| Prokaryotic | 1,997 | 0.610 | 0.670 | 0.607 | 0.532 | +0.067 | 58% | −0.017 | +0.158 | −0.050 |
+
+- The R67 conclusion stands. Eukaryotic-KO presence is mostly what predicted C gives (Granite ahead by ≥ 0.05 for 13%;
+  7% with the old C). Prokaryotic-KO presence goes beyond it.
+
+**Benchmark bundle** (`scripts/export_benchmark.py` rerun; `benchmark_export.zip` rezipped, 188.8 MB).
+- Compared with the previous zip, decompressed contents: only `targets/C.csv.gz`, `targets_sample/C.csv.gz`,
+  `granite/predictions_C.npz` and the C rows of `granite/scores.csv`, `partition.csv`, `cruise_decomposition.csv` and
+  `c_per_cruise*.csv` differ.
+- The standalone `benchmark_eval.py` run from the bundle (`python -I`) reproduces C exactly: 53.79% of non-technical,
+  58.18% of reproducible.
+- `~/multimodal_seusmbol/instructions_agent_biogoship.md` updated:
+  - The C definition.
+  - The Granite reference row for C: 53.79 (58.18) / 50.27 / 46.83 / 12.94.
+  - Within-tile share for C: 6.4%.
+  - A note listing the files to replace if an older copy is already on the other cluster.
+
+**Legend draft** (R63, C figure): updated in place. The definition is now "eukaryote- to prokaryote-assigned KO reads",
+and the clipping note now names time & place on I07N (−1.32), since Granite on I07N is no longer below −1.

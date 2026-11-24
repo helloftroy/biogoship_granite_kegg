@@ -6085,3 +6085,30 @@ covering functions outside modules (transport, genetic information processing, s
 interquartile range over KOs for Granite PCs, and median for in-situ temperature (open). The median module scores 0.19 with
 Granite PCs and −0.01 with temperature. Categories at the top of b consist largely of eukaryote-specific genes, whose
 abundance follows the eukaryote : prokaryote balance.
+
+## R64. Benchmark bundle for the new foundation model (2026-11-23)
+
+- **Instructions:** `~/multimodal_seusmbol/instructions_agent_biogoship.md`, written for the agent working on the
+  foundation model.
+- **Bundle:** `scripts/export_benchmark.py` → `data/results/benchmark_export/` (zipped as
+  `data/results/benchmark_export.zip`, 189 MB). It contains:
+  - `samples.csv`: 1,990 samples, 1,416 in the benchmark, with the Granite match per sample.
+  - `tiles.csv`: 1,215 tiles; `in_B_De` 1,169.
+  - Raw tile-level and sample-level targets.
+  - The 305 within-tile pairs.
+  - Granite embeddings (1,215 × 512), raw satellite features, held-out predictions and all score tables.
+  - KEGG references.
+- **Tile keys:** the loader renumbers `tile_key` for each target set. The B and De tiles are mapped to the all-KO
+  keys through the embedding row.
+- **Standalone evaluation (`scripts/benchmark_eval.py`, copied into the bundle):** run from the bundle alone with
+  `python -I`, it reproduces the main model on Granite embeddings:
+  - Exact: all KOs 17.60, C 53.80, D 13.96, A 13.71, Dp 16.36.
+  - Close: B 10.33 (main 10.32), De 18.89 (18.86). For those two targets the sample composition of some tiles
+    differs, which shifts technical and within-tile terms by ≤ 0.0008.
+- **Granite tile match:** day gap median 0.59 (75th percentile 1.31, max 9.5); window offset median 2.83 km (max
+  19.48); valid fraction ≥ 0.80.
+- **Samples outside the benchmark (574):**
+  - I09N-2016 185, HLY2202-2022 100, I07N-2018 63, P18-2016 36, P02-2022 31, A13.5-2024 26, A16N-2023 25, I05-2023
+    15, I09N-2025 13, C13.5/A13.5 11, I08S-2024 5, AMT28 16.
+  - Pre-2016 cruises: NH1418 23, AE1319 13, BVAL46 12.
+- **P04E-2026:** 279 MG samples in FAIRe, no KO counts yet.

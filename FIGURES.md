@@ -27,8 +27,9 @@ matplotlib).
 | Cruise map: three KOs as coloured tracks (P18) | `figures/make_cruise_map.py` | `figures/output/cruise_map.png`, `.pdf` | RESULTS.md R18, R20 |
 | Prediction skill per sample on the globe; overlap vs similar conditions | `figures/make_skill_map.py` | `figures/output/skill_map.png`, `.pdf` | RESULTS.md R20 |
 | Cruise line: temperature vs best model per gene (P18) | `figures/make_cruise_line.py --compare perko` | `figures/output/cruise_line_perko.png`, `.pdf` | RESULTS.md R18 |
-| Presence of patchy genes (hurdle models) | `scripts/hurdle_kos.py --parts summary figure` | `figures/output/hurdle_kos.png`, `.pdf` | RESULTS.md R65 |
-| Why patchy genes are satellite or technical | `scripts/hurdle_mechanism.py` | `figures/output/hurdle_mechanism.png`, `.pdf` | RESULTS.md R66 |
+| Presence of patchy genes (hurdle models; superseded by hurdle_base) | `scripts/hurdle_kos.py --parts summary figure` | `figures/output/hurdle_kos.png`, `.pdf` | RESULTS.md R65 |
+| Why patchy genes are satellite or technical (superseded by hurdle_base) | `scripts/hurdle_mechanism.py` | `figures/output/hurdle_mechanism.png`, `.pdf` | RESULTS.md R66 |
+| Patchy genes, base model (Granite + depth + platform) | `scripts/hurdle_base.py --parts summary figure` | `figures/output/hurdle_base.png`, `.pdf` | RESULTS.md R69 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
@@ -271,3 +272,13 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   d, within-cruise presence-depth correlation vs mean reference gene length, by domain, with decile medians.
 - **Regenerate:** `python scripts/hurdle_mechanism.py` (needs R65 outputs, R60 C predictions and R44 `ko_gc.csv`);
   `--figure-only` redraws from `mechanism.csv`.
+
+## Patchy genes, base model (supersedes the two hurdle figures above)
+
+- **Shows:** 5,808 patchy KOs grouped by read-based domain (R67). a, within-cruise presence AUC (median, IQR) for depth +
+  platform, temperature + technical, predicted eukaryote : prokaryote + technical, Granite + technical. b, per-KO AUC,
+  Granite + technical vs predicted C + technical, coloured by eukaryotic read share; focus genes circled. c,
+  abundance-where-present R2 by eukaryotic read share (tenths; median, IQR, n). d, relative detection by within-cruise
+  depth fifth, prokaryotic vs eukaryotic KOs by gene-length tercile. Legend draft in RESULTS.md R69.
+- **Regenerate:** `bash cluster/run_hurdle_base_local.sh` (10 local shards, ~50 min; needs `c_nested.npz` from
+  `--parts cpred`), then `python scripts/hurdle_base.py --parts summary figure`.

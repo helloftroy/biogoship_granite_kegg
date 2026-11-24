@@ -6911,3 +6911,192 @@ domain (R67 table, new C; within-cruise presence AUC unless stated):
 
 **Legend draft** (R63, C figure): updated in place. The definition is now "eukaryote- to prokaryote-assigned KO reads",
 and the clipping note now names time & place on I07N (−1.32), since Granite on I07N is no longer below −1.
+
+### R68 addendum: paper figure legends checked against the new C and the read-based domain (2026-11-24)
+
+The user's legend document (Figures 1–4, Supplementary S1) was checked. **Figures 1 and 3: no change.** They are built
+on the all-KO CLR. Axis 1 still separates eukaryote- from prokaryote-dominated samples (within-cruise r −0.60 with the
+new C).
+
+**Figure 2** (C):
+- In a, "eukaryote-specific to prokaryote-specific KO reads" becomes "eukaryote-assigned to prokaryote-assigned KO reads
+  (each read takes the domain of the reference gene it maps to)".
+- R² 0.54 / 53.8% unchanged.
+- In b, the clipping note becomes "Values below −1 are drawn at −1 (time & place on I07N, −1.32)". Granite on I07N is now
+  −0.57.
+
+**Supplementary S1** (new C, Granite; per cruise from `predictions_C_granite_cv.npz`):
+- 12 of 13 cruises within ±0.31 (was ±0.33). Largest |bias| apart from GOMECC4: I05-2023 0.303.
+- The overall SD of the adjusted C is 0.91 (was 1.05).
+- Cruises with observed SD ≥ 0.8: six (was seven; the legend said eight).
+  - I05-2023 0.875 (r 0.475), I08S-2024 0.972 (0.917), A16N-2023 0.980 (0.712), A13.5-2024 1.002 (0.871), P18 1.156
+    (0.816), HLY2202-2022 1.303 (0.424).
+  - So r is 0.42–0.92, and 0.71–0.92 for four of the six.
+  - Old values: seven cruises, r 0.45–0.91, with five at 0.75–0.91. The legend's "seven of those eight" did not match
+    the old numbers either.
+- Flat, warm cruises with low within-cruise r: I09N −0.08, I07N −0.05, GOMECC4 −0.27, I09N-2025 0.37, P02-2022 0.21. The
+  list is unchanged.
+- GOMECC4 bias −0.63 (was −0.67).
+- HLY2202-2022 predicted SD 0.38 vs 1.30 observed (was 0.37 vs 1.35).
+
+**Figure 4:** the module and category numbers are unchanged (all-KO CLR). The last sentence ("the categories at the
+top of b consist largely of eukaryote-specific genes") was checked with the read-based domain (R67). Share of each
+category's KOs with eukaryotic read share > 0.5:
+- Cellular community – eukaryotes 95% (median read share 0.98).
+- Signaling molecules and interaction 89% (0.98).
+- Transcription 47%; transport and catabolism 52%; cell growth and death 45%.
+- Folding, sorting and degradation 30%; signal transduction 34%; replication and repair 18%.
+- At the bottom: cellular community – prokaryotes 0%, xenobiotics 4%, cell motility 43%.
+
+The sentence is reworded to: "The two categories at the top of b consist mostly of eukaryotic genes (89–95% of their
+KOs are mostly eukaryotic by reads), whose abundance follows the eukaryote : prokaryote balance; the next three are
+about half eukaryotic."
+
+## R69. Patchy KOs with one base model (Granite + depth + platform): no classes; temperature adds nothing (2026-11-24)
+
+Replaces the satellite / technical / weak classes of R65 and the R66 mechanism figure (`hurdle_kos.png`,
+`hurdle_mechanism.png` are superseded by `figures/output/hurdle_base.png`). Domain is the read-based eukaryotic share
+of each KO's reads (R67): eukaryotic > 0.9 (2,756 KOs), prokaryotic ≤ 0.1 (1,997), mixed (1,055). C is the R68 read
+ratio.
+
+### Methods
+
+- Same tiles, presence and folds as R65: 1,111 tiles, 13 cruises, 5,808 KOs present in 20–90% of tiles; presence =
+  rarefied share ≥ 1/10^6 KO reads, tile present if the majority of its kept samples are. Each cruise held out; L2
+  logistic, penalty (and, for Granite, 4 / 8 / 16 / 32 PCs) chosen by leave-cruise-out inside the training cruises.
+  Score: within-cruise AUC (n-weighted mean over held-out cruises).
+- Models per KO (`scripts/hurdle_base.py`; new fits run locally in 10 shards, `cluster/run_hurdle_base_local.sh`,
+  ~50 min; tech / Granite / Granite + tech reused from R65 `hurdle_all.csv`, identical folds):
+  - **tech**: platform group (NovaSeq 6000 group) + spline of log10 depth.
+  - **temp_tech**: in-situ temperature spline (5 knots, cubic) + tech.
+  - **c_tech**: Granite-predicted C + tech. Predicted C is nested: for held-out cruise c, a training tile in cruise t
+    gets C from a ridge on 32 Granite PCs fitted without c and t; tiles of c get C from all cruises but c (ridge on
+    all 1,215 benchmark tiles, penalty by leave-cruise-out). Held-out predicted C on the hurdle tiles: R² 0.539.
+  - **base**: Granite PCs + tech (= R65 "both").
+  - **base_temp**: Granite PCs + tech + temperature spline.
+- Abundance where present (R65, unchanged): tiles where present (≥ 50 tiles, ≥ 4 cruises), technical variance removed
+  in-sample, ridge on 32 Granite PCs, cruise held out; R² against the technically adjusted values.
+- Depth and detection (panel d): within each cruise, tiles split into fifths by log10 depth; per KO, presence rate in
+  each fifth divided by the KO's overall presence rate; median over KOs in each domain × gene-length tercile (terciles
+  of mean reference gene length within each domain, R44 `ko_gc.csv`).
+
+### 1. Temperature: no gain over the base model
+
+Within-cruise AUC, base_temp − base: median +0.001 (10–90% −0.004 to +0.007); ≥ +0.02 for 2% of KOs, ≥ +0.05 for 0%.
+Same in every domain (eukaryotic +0.002, mixed +0.001, prokaryotic +0.001). Base model = Granite + depth + platform.
+
+### 2. Within-cruise presence AUC, median (10–90%), by read domain
+
+| Domain | n | Depth + platform | Temp + tech | Pred. C + tech | Granite | Granite + tech (base) | Base + temp |
+|---|---|---|---|---|---|---|---|
+| all | 5,808 | 0.550 (0.47–0.66) | 0.620 (0.54–0.71) | 0.612 (0.53–0.70) | 0.626 (0.54–0.70) | 0.639 (0.56–0.73) | 0.641 (0.56–0.73) |
+| eukaryotic | 2,756 | 0.534 (0.46–0.60) | 0.616 (0.56–0.67) | 0.617 (0.56–0.69) | 0.635 (0.57–0.70) | 0.630 (0.56–0.70) | 0.632 (0.57–0.70) |
+| mixed | 1,055 | 0.527 (0.47–0.61) | 0.597 (0.51–0.68) | 0.594 (0.52–0.67) | 0.618 (0.54–0.70) | 0.626 (0.55–0.70) | 0.625 (0.55–0.71) |
+| prokaryotic | 1,997 | 0.607 (0.51–0.72) | 0.650 (0.53–0.75) | 0.615 (0.51–0.73) | 0.610 (0.52–0.72) | 0.670 (0.56–0.77) | 0.672 (0.56–0.77) |
+
+Pooled (not within-cruise) AUC, median: tech 0.512, temp + tech 0.694, C + tech 0.684, Granite 0.660, base 0.709,
+base + temp 0.710 (eukaryotic base 0.733, mixed 0.685, prokaryotic 0.677).
+
+Paired differences in within-cruise AUC (median, 10–90%; share of KOs ≥ +0.02 / ≥ +0.05 / ≤ −0.02):
+
+| Comparison | all | eukaryotic | mixed | prokaryotic |
+|---|---|---|---|---|
+| base − tech | +0.081 (−0.002 to +0.169); 81 / 67 / 5% | +0.097 (+0.027 to +0.166); 91 / 80 / 2% | +0.088 (+0.008 to +0.190); 86 / 73 / 3% | +0.043 (−0.020 to +0.156); 65 / 45 / 10% |
+| base − C + tech | +0.016 (−0.024 to +0.097); 45 / 22 / 12% | +0.010 (−0.023 to +0.046); 33 / 8 / 12% | +0.023 (−0.020 to +0.109); 52 / 27 / 10% | +0.030 (−0.027 to +0.152); 57 / 39 / 13% |
+| base − temp + tech | +0.014 (−0.029 to +0.079); 44 / 21 / 17% | +0.012 (−0.029 to +0.062); 41 / 17 / 17% | +0.023 (−0.024 to +0.097); 53 / 30 / 13% | +0.011 (−0.034 to +0.092); 43 / 24 / 19% |
+| C + tech − tech | +0.051 (−0.010 to +0.132); 66 / 50 / 5% | +0.085 (+0.027 to +0.144); 92 / 78 / 0% | +0.056 (−0.006 to +0.133); 72 / 54 / 2% | +0.002 (−0.025 to +0.051); 27 / 11 / 13% |
+| base_temp − base | +0.001 (−0.004 to +0.007); 2 / 0 / 1% | +0.002; 1 / 0 / 0% | +0.001; 2 / 0 / 1% | +0.001; 4 / 0 / 1% |
+
+Base − Granite alone (median): all +0.004, eukaryotic −0.004, mixed +0.002, prokaryotic +0.039. Median number of
+Granite PCs chosen (base_temp): 16 overall and for eukaryotic, 8 for prokaryotic KOs. Median prevalence: eukaryotic
+0.45, mixed 0.54, prokaryotic 0.56.
+
+Spearman across KOs: base vs C + tech 0.637; base vs eukaryotic read share −0.205; tech vs eukaryotic read share
+−0.338; abundance R² vs eukaryotic read share 0.504.
+
+### 3. Abundance where present, by eukaryotic read share
+
+| Eukaryotic read share | n | median R² | IQR |
+|---|---|---|---|
+| 0.0–0.1 | 1,997 | −0.017 | −0.047 to +0.044 |
+| 0.1–0.2 | 124 | −0.009 | −0.039 to +0.057 |
+| 0.2–0.3 | 99 | −0.004 | −0.043 to +0.077 |
+| 0.3–0.4 | 74 | −0.006 | −0.030 to +0.046 |
+| 0.4–0.5 | 63 | +0.007 | −0.034 to +0.098 |
+| 0.5–0.6 | 70 | +0.086 | +0.021 to +0.179 |
+| 0.6–0.7 | 117 | +0.132 | −0.002 to +0.222 |
+| 0.7–0.8 | 173 | +0.119 | +0.006 to +0.276 |
+| 0.8–0.9 | 335 | +0.192 | +0.067 to +0.341 |
+| 0.9–1.0 | 2,756 | +0.253 | +0.081 to +0.377 |
+
+By domain: prokaryotic median −0.017 (R² > 0.1 for 15% of KOs), mixed +0.083 (47%), eukaryotic +0.253 (73%).
+
+### 4. Sequencing depth and detection, by gene length
+
+Relative detection (presence rate in the depth fifth / the KO's mean rate; median over KOs), shallowest → deepest
+fifth within cruise. Length tercile cuts (nt): prokaryotic 763 / 1,082; mixed 694 / 806; eukaryotic 690 / 784.
+
+| Domain | Length | n | Q1 | Q2 | Q3 | Q4 | Q5 | absolute rate Q1 → Q5 |
+|---|---|---|---|---|---|---|---|---|
+| prokaryotic | short | 666 | 0.89 | 0.97 | 1.00 | 1.04 | 1.09 | 0.48 → 0.63 |
+| prokaryotic | medium | 665 | 0.82 | 0.95 | 1.01 | 1.06 | 1.14 | 0.47 → 0.69 |
+| prokaryotic | long | 666 | 0.81 | 0.94 | 1.00 | 1.07 | 1.18 | 0.44 → 0.68 |
+| mixed | short | 352 | 1.02 | 1.03 | 0.99 | 0.97 | 1.00 | 0.57 → 0.56 |
+| mixed | medium | 351 | 1.00 | 1.02 | 0.99 | 0.98 | 1.02 | 0.61 → 0.60 |
+| mixed | long | 352 | 0.99 | 1.00 | 0.98 | 0.98 | 1.02 | 0.46 → 0.46 |
+| eukaryotic | short | 919 | 1.18 | 1.08 | 0.98 | 0.90 | 0.86 | 0.53 → 0.38 |
+| eukaryotic | medium | 918 | 1.14 | 1.07 | 0.98 | 0.92 | 0.89 | 0.57 → 0.44 |
+| eukaryotic | long | 919 | 1.16 | 1.08 | 0.99 | 0.90 | 0.86 | 0.48 → 0.34 |
+
+Within cruise, log10 depth and observed C correlate at r = −0.210 (eukaryote-rich tiles were sequenced less deeply),
+so eukaryotic KOs are detected less often in the deeper tiles despite the rarefaction.
+
+### 5. Focus genes (all prokaryotic by reads)
+
+| Gene | KO | euk read share | tech | temp + tech | C + tech | base | base + temp | abundance R² |
+|---|---|---|---|---|---|---|---|---|
+| nifH | K02588 | 0.000 | 0.534 | 0.621 | 0.548 | 0.619 | 0.620 | −0.134 |
+| nifD | K02586 | 0.000 | 0.588 | 0.709 | 0.595 | 0.694 | 0.692 | −0.103 |
+| nifK | K02591 | 0.000 | 0.565 | 0.574 | 0.568 | 0.545 | 0.543 | −0.029 |
+| amoB / pmoB | K10945 | 0.000 | 0.548 | 0.548 | 0.629 | 0.723 | 0.727 | −0.034 |
+| nasA | K00372 | 0.010 | 0.576 | 0.710 | 0.560 | 0.632 | 0.696 | 0.014 |
+| phnJ | K06163 | 0.000 | 0.759 | 0.797 | 0.792 | 0.785 | 0.785 | 0.024 |
+
+(nasA is the one focus gene where temperature adds to the base model: +0.064.)
+
+### Interpretation
+
+- Granite + depth + platform is the base model: it beats depth + platform alone for 81% of patchy KOs by ≥ 0.02
+  (median +0.081) and adding temperature changes nothing (+0.001). Temperature + technical alone gets most of the way
+  (base ahead by a median 0.014).
+- **Eukaryotic KOs**: presence follows the eukaryote : prokaryote balance. The predicted ratio + technical reaches
+  0.617 against 0.630 for the base model; Granite is ahead by ≥ 0.05 for only 8%. Depth + platform alone barely
+  predicts them (0.534). Where present, their abundance is predictable (median R² 0.253).
+- **Prokaryotic KOs**: the predicted ratio adds nothing over depth + platform (+0.002), but Granite does (+0.043; ahead
+  of C + tech by ≥ 0.05 for 39%). Depth matters: depth + platform alone reaches 0.607, and detection rises with depth
+  within cruise, most for long genes (0.81 → 1.18 relative, vs 0.89 → 1.09 for short genes) — consistent with the
+  coverage filter on mapped reads penalising long genes in shallow libraries. Where present, their abundance is not
+  predictable (median R² −0.017).
+- So the old "satellite vs technical" split was mostly this: eukaryotic patchy KOs track community composition, which
+  Granite sees; prokaryotic patchy KOs are partly depth-limited detection, with a Granite-visible signal beyond
+  composition for a subset (e.g. amoB 0.723 vs 0.629 with C).
+
+### Figure legend draft (hurdle_base)
+
+**Patchy genes: presence predicted from Granite + sequencing depth and platform.** 5,808 KOs present in 20–90% of 1,111
+tiles (presence: ≥ 1 read per 10^6 KO reads after rarefaction). Each cruise held out in turn; AUC is computed within
+each held-out cruise and averaged, weighted by tiles. KOs are grouped by the share of their reads assigned to
+eukaryotic reference genes (eukaryotic > 0.9, prokaryotic ≤ 0.1, otherwise mixed). **a**, Presence AUC (median and
+interquartile range) for four logistic models: sequencing depth + platform; in-situ temperature + depth + platform;
+the Granite-predicted eukaryote : prokaryote read ratio + depth + platform; Granite PCs + depth + platform. Adding
+temperature to the last model changes the median AUC by +0.001. **b**, Per-KO presence AUC, Granite + depth + platform
+against predicted eukaryote : prokaryote ratio + depth + platform, coloured by the eukaryotic share of the KO's reads;
+dashed line, equal AUC; circled, nitrogen-fixation (nifH, nifD, nifK), ammonia-oxidation (amoB), nitrate-assimilation
+(nasA) and phosphonate (phnJ) genes. Eukaryotic KOs lie near the line (median gain 0.010); prokaryotic KOs lie above
+it (median gain 0.030; ≥ 0.05 for 39%). **c**, Abundance where present: R² of a Granite ridge model (cruise held out,
+depth and platform removed) by eukaryotic read share, in tenths; line, median; band, interquartile range; numbers,
+KOs per bin. **d**, Detection rate relative to each KO's average across fifths of the tiles ranked by sequencing
+depth within each cruise, for prokaryotic and eukaryotic KOs split into thirds by gene length (median over KOs).
+Prokaryotic genes are detected more often in deeper libraries, long genes most (0.81 to 1.18); eukaryotic genes are
+detected less often (1.16 to 0.86), because eukaryote-rich tiles were sequenced less deeply (within-cruise r = −0.21
+between depth and the eukaryote : prokaryote ratio).

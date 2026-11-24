@@ -6373,8 +6373,16 @@ Within-cruise presence AUC, Granite + technical minus technical only:
   - Technical: +0.010 (0.625 → 0.640); ≥ +0.02 for 38%.
 - **Pooled AUC:** median +0.163 (10–90% +0.023 to +0.400). By class: satellite +0.242 (0.483 → 0.743), weak +0.125
   (0.508 → 0.664), technical +0.050 (0.583 → 0.666).
-- The reverse, technical added to Granite, adds +0.004 (R65). So Granite carries almost everything the combination
-  does, except for the technical-class KOs.
+- **The reverse direction (technical added to Granite) depends on class.** The R65 figure of +0.004 is the median
+  over *all* KOs. By class, Granite + technical minus Granite:
+  - Satellite: −0.003 (Granite 0.656, both 0.653).
+  - Weak: +0.002 (0.588 vs 0.587).
+  - **Technical: +0.060** (Granite 0.571, technical 0.625, both 0.640).
+- Note on medians: the class medians of the three AUCs (technical / Granite / both) are 0.532 / 0.656 / 0.653 for
+  satellite, 0.625 / 0.571 / 0.640 for technical and 0.522 / 0.588 / 0.587 for weak. The "both − X" figures above are
+  medians of per-KO differences, so they need not equal differences of medians.
+- So each input adds to the other where the other is weak: Granite adds to technical for satellite KOs, and technical
+  adds to Granite for technical KOs. Neither carries everything.
 
 ### 2. Per-class medians
 
@@ -6541,12 +6549,13 @@ Within prevalence bins (0.2–0.5 / 0.5–0.7 / 0.7–0.9; n satellite 1,757 / 8
   genes are affected most, consistent with assembly failing the coverage-50 filter in shallow libraries. This is not
   Poisson dropout at the detection limit: technical KOs are not rarer than satellite KOs, and phn has 16–62 expected
   counts.
-- **"Satellite" KOs are mostly eukaryotic KOs**, and for them the satellite signal is largely the eukaryote :
-  prokaryote balance that the main model already predicts (C, R² 0.54). Predicted C alone gives within-cruise AUC
-  0.617, against Granite's 0.630. This is a real biogeographic signal, but mostly one signal, not thousands of
-  independent ones.
-  - Paper wording: "satellite-predictable presence of patchy genes mostly reflects where eukaryotes dominate."
-  - It should not be presented as 3,047 independent gene-level results.
+- **"Satellite" is two different things** (corrected in section 6; class is not just domain):
+  - Eukaryotic satellite KOs: the signal is largely the eukaryote : prokaryote balance that the main model already
+    predicts (C, R² 0.54). Granite 0.648 against predicted C 0.633.
+  - Prokaryotic satellite KOs (498): the strongest Granite signal of any group, and mostly *not* C. Granite 0.685
+    against predicted C 0.532.
+  - The 3,047 satellite KOs should therefore not be presented as 3,047 independent results. The eukaryotic part is
+    largely one axis; the prokaryotic part is where gene-level biogeography is.
 - **Abundance where present:** predictable for eukaryotic KOs (median R² 0.31 in the satellite class) and not for
   prokaryotic KOs of any class (≈ 0), even at low counting noise.
   - This answers why technical-class abundance is unpredictable: technical KOs are prokaryotic. Patchy prokaryotic
@@ -6570,3 +6579,45 @@ Within prevalence bins (0.2–0.5 / 0.5–0.7 / 0.7–0.9; n satellite 1,757 / 8
   (≤ 0.1) KOs in the satellite and technical classes.
 - **d:** Within-cruise correlation of presence with log10 sequencing depth against mean reference gene length, by
   domain, with decile medians.
+
+### 6. Correction / clarification: class is not just domain (2026-11-24)
+
+The summary in chat said satellite vs technical is "mostly eukaryotic vs prokaryotic KOs". Eukaryote share is the
+strongest single separator (AUC 0.77), but the class is not the domain. Domain: eukaryotic = eukaryote share > 0.9;
+prokaryotic ≤ 0.1; mixed in between.
+
+**Class shares by domain:**
+- Eukaryotic: satellite 0.662, technical 0.109, weak 0.230.
+- Mixed: satellite 0.568, technical 0.238, weak 0.195.
+- Prokaryotic: satellite 0.290, technical 0.557, weak 0.153.
+
+**Domain × class** (medians). Within-cruise AUC: Granite and predicted C, then Granite − predicted C and the share of
+KOs where Granite is ahead by ≥ 0.05.
+
+| Domain | Class | n | Granite | Predicted C | Granite − C | Ahead by ≥ 0.05 | Abundance R² | r(depth) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Eukaryotic | satellite | 1,593 | 0.648 | 0.633 | +0.014 | 11% | +0.306 | −0.091 |
+| Eukaryotic | weak | 553 | 0.588 | 0.584 | +0.002 | 6% | +0.204 | −0.069 |
+| Eukaryotic | technical | 262 | 0.574 | 0.575 | −0.003 | 6% | +0.066 | −0.109 |
+| Mixed | satellite | 956 | 0.662 | 0.631 | +0.023 | 29% | +0.139 | −0.071 |
+| Mixed | weak | 328 | 0.585 | 0.574 | +0.007 | 16% | +0.049 | −0.015 |
+| Mixed | technical | 400 | 0.565 | 0.545 | +0.020 | 30% | −0.005 | +0.148 |
+| Prokaryotic | satellite | 498 | **0.685** | 0.532 | **+0.152** | **87%** | −0.002 | +0.092 |
+| Prokaryotic | weak | 263 | 0.597 | 0.526 | +0.062 | 58% | −0.027 | +0.102 |
+| Prokaryotic | technical | 955 | 0.572 | 0.533 | +0.033 | 40% | −0.020 | +0.207 |
+
+- **Eukaryotic KOs:** whatever their class, Granite ≈ predicted C (Granite ahead by ≥ 0.05 for only 6–11%). Their
+  presence signal is the eukaryote : prokaryote axis.
+  - Abundance R² still differs by class within this domain: satellite 0.31, weak 0.20, technical 0.07. So for these
+    KOs, class does carry information on abundance beyond domain.
+- **Prokaryotic satellite KOs:** the clearest gene-level satellite signal.
+  - Granite has the highest median presence AUC of any group, and 87% beat predicted C by ≥ 0.05.
+  - Their abundance where present is still not predicted.
+  - nifH, nifD and amoA–C are in this group.
+- **Technical KOs** are depth-driven in the prokaryotic and mixed domains (r +0.21, +0.15), but not in the eukaryotic
+  domain (−0.11). The 262 eukaryotic technical KOs are simply KOs where C, and hence Granite, is weak (0.57) and depth
+  + platform happens to do as well.
+- **Caveat on the domain variable.** Eukaryote share comes from who carries the KO in the reference database (R44,
+  1-in-10 gene sample). It is not taken from which organisms carry the KO in these samples. A KO that is mostly
+  eukaryotic in the reference can be found here mainly in prokaryotes, and vice versa. A per-sample domain split of each
+  KO's counts would need the per-taxon KO tables (R50).

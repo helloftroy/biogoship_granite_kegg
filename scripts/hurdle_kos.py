@@ -3,7 +3,7 @@
 
 Unit and folds as the main model (benchmark tiles, data/results/benchmark_export/tiles.csv; one cruise held out).
 
-build  Per sample: KO gene counts summed over libraries (data/results/hurdle/sample_counts.pkl, from
+build  Per sample: KO read counts (mapped reads per KO, R30; not gene counts) summed over libraries (data/results/hurdle/sample_counts.pkl, from
        ko_counts_cov50_all.tsv with the build_ko_targets.py library -> sample link and filters).
        Rarefied presence: a KO is present if it would be expected at least once in a library of G genes,
        i.e. count / total >= 1 / G (G = --depth, default 1,000,000; samples with fewer than G genes are dropped).

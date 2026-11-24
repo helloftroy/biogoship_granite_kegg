@@ -6621,3 +6621,170 @@ KOs where Granite is ahead by ≥ 0.05.
   1-in-10 gene sample). It is not taken from which organisms carry the KO in these samples. A KO that is mostly
   eukaryotic in the reference can be found here mainly in prokaryotes, and vice versa. A per-sample domain split of each
   KO's counts would need the per-taxon KO tables (R50).
+
+---
+
+## R67. Which domain carries each KO: read-based domain share replaces the reference-gene share (2026-11-24)
+
+**Why.** R44's "eukaryote share" of a KO (`transfer/results/ko_gc/ko_gc.csv`) was used as the domain label in R44
+(a control variable), in R48 / R51 (the prokaryote-specific / eukaryote-specific / shared classes behind targets A, B, C,
+D) and in R66.
+- **What it is.** The eukaryotic fraction of a deterministic 1-in-10 sample of the KO-annotated genes in the Bio-GO-SHIP
+  2026 reference catalogue (`biogoship_2026_database_v2`).
+- **What the catalogue is.** It is not one metagenome. It is the mmseqs-clustered, non-redundant catalogue that our reads
+  are mapped to (R30–R32): OMDB v2 NR95 prokaryotic genomes verbatim, Bio-GO-SHIP assemblies (e.g. A16 unbinned contigs)
+  and eukaryotic sources, largely transcript assemblies (R48), re-clustered at 90% identity / 90% coverage. Each
+  sequence's domain comes from `biogoship_2026_taxonomy.tsv` (EUKulele for eukaryotes).
+- **So it counts distinct catalogue genes, not what is in our water.** Eukaryotic catalogue entries are many per gene
+  (diverse transcripts) while seawater reads are about 95% prokaryotic. A KO with many eukaryotic catalogue entries can
+  still be carried mostly by prokaryotes in our samples.
+
+**Method** (`scripts/ko_domain_reads.py`; `data/results/ko_domain/ko_domain_reads.csv`, `library_domain.npz`,
+`summary.txt`; `figures/output/ko_domain_reads.{png,pdf}`).
+- Each library's reads per KO, split by the domain of the reference sequence they map to.
+  - Source: the R50 phylum-level per-taxon files `ko_by_taxon/<lib>/level_2_phylum_division_ko_counts.tsv.gz`, whose
+    sum over taxa is `ko_counts_cov50_all.tsv`.
+  - Domains: prokaryotic = Bacteria + Archaea; eukaryotic = Eukaryota; viruses separately.
+- Libraries: 2,018 cov50 libraries, the same selection as `build_ko_targets.py` / `domain_split_targets.py`, covering
+  all 1,990 hurdle samples.
+- Check: the domain split sums back to the official table (max |diff| 0.0074 reads, of 10,537,343,456 KO reads).
+  - Over all KO reads: prokaryotic 0.9545, eukaryotic 0.0447, viruses 0.0008, other 0.0000.
+- Per KO:
+  - Pooled eukaryotic read share.
+  - Per-sample share (samples with ≥ 10 reads of the KO): median and IQR.
+  - The R48 reference share, Eukaryota / (Eukaryota + Bacteria + Archaea), for comparison.
+
+**Agreement.** Spearman correlation between the reference share and the read share:
+- All KOs with reads: +0.894 (n 18,240).
+- Core 3,933: +0.839.
+- Hurdle 5,808: +0.862.
+
+At the prokaryotic end the reference share is reliable:
+- Reference ≤ 0.1 → read share ≤ 0.1 for 97.0% (all KOs), 98.9% (core) and 97.7% (hurdle). Never > 0.9 for core or
+  hurdle KOs; 0.5% over all KOs.
+
+At the eukaryotic end it overstates:
+- Reference > 0.9 → read share > 0.9 for 81.6% of all KOs, 54.4% of core and 78.1% of hurdle KOs. Read share ≤ 0.1 for
+  1.0% / 2.3% / 0.9%.
+- Median read share for these KOs: 0.990 (all), 0.923 (core), 0.972 (hurdle).
+
+Medians:
+- Reference share: 0.918 over all KOs, 0.072 core, 0.975 hurdle.
+- Read share: 0.619 over all KOs, 0.009 core, 0.864 hurdle.
+- Pooled over these KOs' reads, the eukaryotic share is 0.045 (all), 0.027 (core) and 0.551 (hurdle).
+
+Cross-tabulation, hurdle KOs (rows: reference share; columns: read share):
+
+| Reference \ reads | ≤ 0.05 | 0.05–0.1 | 0.1–0.5 | 0.5–0.9 | 0.9–0.95 | > 0.95 | All |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ≤ 0.05 | 1,410 | 24 | 16 | 0 | 0 | 0 | 1,450 |
+| 0.05–0.1 | 181 | 18 | 21 | 2 | 0 | 0 | 222 |
+| 0.1–0.5 | 227 | 39 | 56 | 10 | 0 | 2 | 334 |
+| 0.5–0.9 | 45 | 23 | 112 | 104 | 16 | 14 | 314 |
+| 0.9–0.95 | 10 | 10 | 65 | 85 | 41 | 41 | 252 |
+| > 0.95 | 2 | 8 | 90 | 494 | 394 | 2,248 | 3,236 |
+| All | 1,875 | 122 | 360 | 695 | 451 | 2,305 | 5,808 |
+
+Core KOs (rows: reference share; columns: read share):
+
+| Reference \ reads | ≤ 0.05 | 0.05–0.1 | 0.1–0.5 | 0.5–0.9 | 0.9–0.95 | > 0.95 | All |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ≤ 0.05 | 1,729 | 23 | 10 | 0 | 0 | 0 | 1,762 |
+| 0.05–0.1 | 349 | 19 | 13 | 0 | 0 | 0 | 381 |
+| 0.1–0.5 | 758 | 103 | 75 | 0 | 0 | 0 | 936 |
+| 0.5–0.9 | 117 | 70 | 167 | 14 | 1 | 0 | 369 |
+| 0.9–0.95 | 5 | 4 | 36 | 16 | 2 | 2 | 65 |
+| > 0.95 | 2 | 0 | 35 | 123 | 63 | 197 | 420 |
+
+**Stability across samples.** For 11,458 KOs with ≥ 100 samples of ≥ 10 reads, the IQR of the per-sample eukaryotic
+read share has median 0.000 (90th percentile 0.267). Most KOs are carried by one domain everywhere. The 754 KOs with a
+mixed median share (0.1–0.9) vary a lot between samples (IQR median 0.612).
+
+Shares are clipped to [0, 1]: float32 sums put some all-eukaryotic KOs a hair above 1, which first dropped 17 hurdle
+KOs (592 over all KOs) from the cross-tabulation's top bin. Medians and percentages were unaffected.
+
+**Spot checks** (reference share → pooled read share; per-sample median):
+
+| KO | Reference | Reads | Note |
+|---|---:|---:|---|
+| nifH, nifD, nifK, amoA, amoB, mcrA, phnJ, sspH, nrsD, ykkD | 0.00–0.05 | 0.000 | prokaryotic, as expected |
+| nasA | 0.038 | 0.010 | |
+| TUBA, TUBB, actin, histone H3, H4 | 0.996–1.000 | 0.963–0.989 (median 1.000) | eukaryotic, as expected |
+| psbA, psaA | 0.844, 0.824 | 0.087, 0.038 | catalogue has many plastid copies; reads are cyanobacterial |
+| rbcL | 0.786 | 0.209 | |
+| rpsL, rplB (prokaryote-type ribosomal proteins) | 0.171, 0.184 | 0.239, 0.110 | organellar ribosomes; the plastid leak of R49 |
+| **KCNA2, KCNA4** (Kv channels) | 0.989, 0.987 | 0.298, 0.288 (median 0.030, 0.027) | **prokaryotic reads in most samples** |
+| **SLC7A14** | 0.982 | 0.116 (median 0.000) | prokaryotic reads |
+| **rifA** | 0.809 | 0.013 | prokaryotic reads |
+| **PCSK4** | 0.583 | 0.006 | prokaryotic reads |
+| **ETV1 / 4 / 5** | 0.707 | 0.210 (median 0.168) | mostly prokaryotic reads |
+
+The bold KOs were described in R65 / R66 as "eukaryote-annotated" top satellite KOs. **By reads they are carried by
+prokaryotes in our samples.** Their KO names are eggNOG / KEGG annotations of prokaryotic homologs (e.g. bacterial
+voltage-gated K⁺ channels assigned to KCNA KOs). That correction to R65 / R66 is below.
+
+**Consequences for earlier results**
+- **R44** (GC vs platform effects, partial correlations controlling for the eukaryote share): the share was only a
+  control variable, and the two measures agree (ρ 0.84 on the core KOs). Conclusions unchanged. Not rerun.
+- **R48 / R51 classes and targets**, by read share:
+  - Prokaryote-specific (reference ≤ 0.05; 1,759 KOs): read share median 0.002, 90th percentile 0.013, max 0.259.
+    **Target A is fine.**
+  - Eukaryote-specific (reference ≥ 0.95; 420): read share median 0.943, 10th percentile 0.526, minimum 0.038. 260 of
+    420 are > 0.9 by reads; 37 are ≤ 0.5. **Target B contains some KOs that are partly prokaryotic in our samples.**
+    Rebuilding B with read-based classes is open.
+  - Shared (1,700): read share median 0.019 (90th percentile 0.173). Already noted in R51: the shared KOs are mostly
+    prokaryotic reads. Dp / De split these by reads and are unaffected.
+  - The 54 ribosomal-protein markers: read share median 0.099 (90th percentile 0.280). R49's prokaryote-assigned
+    denominator already handles this.
+  - **Target C** (log pooled eukaryote-specific / prokaryote-specific KO reads, classes from the reference share) vs
+    the direct read-based ratio, log(eukaryotic / prokaryotic KO reads) per sample, averaged per tile (1,215 tiles):
+    Pearson r 0.979, Spearman 0.938, within cruise 0.966. **C stands.** The direct ratio is the simpler definition for
+    the paper's methods.
+- **R66** (domain × class), redone with the read-based domain (eukaryotic > 0.9, prokaryotic ≤ 0.1 pooled read share;
+  class labels dropped as agreed).
+  - Domain moves, reference → reads:
+    - Of 2,408 reference-eukaryotic KOs, 1,992 stay eukaryotic, 405 become mixed and 11 prokaryotic.
+    - Of 1,684 reference-mixed KOs, 764 become eukaryotic, 611 stay mixed and 309 become prokaryotic.
+    - Of 1,716 reference-prokaryotic KOs, 1,677 stay prokaryotic and 39 become mixed.
+    - By reads: 2,756 eukaryotic, 1,055 mixed, 1,997 prokaryotic.
+  - Medians by read domain:
+
+| Read domain | n | Granite | Granite + technical | Technical | Predicted C alone | Granite − C | Granite ahead of C by ≥ 0.05 | Abundance R² | r(depth) | r(C) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Eukaryotic | 2,756 | 0.635 | 0.630 | 0.534 | 0.622 | +0.009 | 7% | +0.253 | −0.094 | +0.402 |
+| Mixed | 1,055 | 0.618 | 0.626 | 0.527 | 0.586 | +0.022 | 30% | +0.083 | +0.011 | +0.251 |
+| Prokaryotic | 1,997 | 0.610 | 0.670 | 0.607 | 0.533 | +0.067 | 56% | −0.017 | +0.158 | −0.049 |
+
+  (Within-cruise presence AUC unless stated.)
+  - **The pattern of R66 holds with read-based domain:**
+    - Eukaryotic-KO presence is what predicted C gives (Granite ahead by ≥ 0.05 for only 7%).
+    - Prokaryotic-KO presence depends on depth (r +0.16) but is predicted beyond C (Granite + technical 0.670 vs
+      technical 0.607; Granite ahead of C by ≥ 0.05 for 56%).
+    - Abundance where present: R² 0.25 for eukaryotic KOs, −0.02 for prokaryotic ones.
+  - **But the R65 / R66 lists of "eukaryote-annotated" top KOs were wrong.** Of the 30 KOs with the highest Granite
+    within-cruise AUC, 22 are prokaryotic and 8 mixed by reads; none is eukaryotic. The R65 caveat that these KOs "follow
+    the eukaryote : prokaryote balance" does not apply to them.
+
+**Wording correction (R65 / R66).** The counts are **mapped reads per KO** (R30: samtools coverage numreads,
+coverage-50 filter, split 1/n over multi-KO references), not gene counts as R15 assumed. Where R65 / R66 say
+"genes":
+- "10⁶ genes" (the rarefaction depth G) means 10⁶ KO-assigned reads.
+- "expected count in 10⁶ genes" means expected reads at that depth.
+- "Samples with fewer than G genes" means fewer than 10⁶ KO reads.
+
+The Poisson counting-noise approximation of R66 is, if anything, more apt for reads. The 1/n split makes counts
+fractional. The coverage-50 filter makes dropout depend on reference length (R30), which is the mechanism R66 section 3
+inferred.
+
+**Going forward.**
+- Use the read-based domain share (`ko_domain_reads.csv`, `euk_read_share`) wherever a KO's domain is needed. Report
+  the reference share only as the R48 / R51 history.
+- Open:
+  - Rebuild target B with read-based classes, and possibly define C directly as the read ratio.
+  - Then the patchy-gene model restructure (base model Granite + technical ± temperature; panel b with read-based
+    colouring), on hold until this is agreed.
+
+**Figure** (supplementary) `figures/output/ko_domain_reads.{png,pdf}`.
+- Each point is a KO (18,240 with reads and a reference share; blue: the 5,808 patchy KOs).
+- x: eukaryotic share of its reference-catalogue genes. y: eukaryotic share of its reads in our 2,018 libraries.
+- Circled: nifH, rpsL, rbcL, psbA, rifA, SLC7A14, KCNA2 and TUBA.

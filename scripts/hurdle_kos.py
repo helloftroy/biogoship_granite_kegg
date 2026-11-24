@@ -58,6 +58,33 @@ FOCUS = {"K02588": "nifH", "K02586": "nifD", "K02591": "nifK", "K10944": "amoA /
          "K06166": "phnG", "K05780": "phnL", "K05781": "phnK", "K06162": "phnM"}  # fmt: skip
 warnings.filterwarnings("ignore")
 
+# Columns of a fit row. Before 2026-11-24 the .partial writer took the header from the first KO and appended each later
+# row with only the blocks that ran for it (13 / 16 / 17 / 20 fields), so the file is not a rectangular CSV.
+# read_partial() maps each row by its field count; new rows are always written with all 20 columns.
+_BASE = ["ko", "tiles", "prevalence", "granite_pcs_median"] + [
+    f"{s}_{m}" for m in ("tech", "granite", "both") for s in ("auc", "devexp", "auc_within")]
+_UNR = ["prevalence_unrarefied", "auc_tech_unrarefied", "devexp_tech_unrarefied", "auc_within_tech_unrarefied"]
+_AB = ["abund_tiles", "abund_r2", "abund_technical_share"]
+FIT_COLS = _BASE + _UNR + _AB
+_BY_N = {len(c): c for c in (_BASE, _BASE + _AB, _BASE + _UNR, FIT_COLS)}
+
+
+def read_partial(path):
+    """Read a fit .partial file whose rows may have 13 / 16 / 17 / 20 fields (see FIT_COLS)."""
+    rows = []
+    with open(path) as fh:
+        next(fh, None)  # header (from whichever KO came first)
+        for line in fh:
+            v = line.rstrip("\n").split(",")
+            if v == [""]:
+                continue
+            cols = _BY_N.get(len(v))
+            if cols is None:
+                raise ValueError(f"{path}: row with {len(v)} fields: {line[:80]}")
+            rows.append(dict(zip(cols, v)))
+    f = pd.DataFrame(rows, columns=FIT_COLS).replace("", np.nan)
+    return f.astype({c: float for c in FIT_COLS if c != "ko"})
+
 
 def build(G, lo, hi):
     S = pd.read_pickle(OUT / "sample_counts.pkl").astype(float)
@@ -186,7 +213,7 @@ def fit(shard, only=None, name=None):
         folds.append((te, trn, a, b, st.transform(tech[trn]), st.transform(tech[te])))
     name = name or (f"fit_shard{shard[0]}.csv" if shard else "fit.csv")
     part = OUT / (name + ".partial")  # one row appended per KO; a rerun skips KOs already there
-    done = set(pd.read_csv(part)["ko"]) if part.exists() and part.stat().st_size else set()
+    done = set(read_partial(part)["ko"]) if part.exists() and part.stat().st_size else set()
     if done:
         print(f"resuming: {len(done)} KOs already in {part.name}", flush=True)
     out = []
@@ -239,12 +266,13 @@ def fit(shard, only=None, name=None):
             r["abund_r2"] = 1 - ((yadj[ok] - pa[ok]) ** 2).sum() / (yc**2).sum()
             r["abund_technical_share"] = ((fitv - fitv.mean()) ** 2).sum() / ((ya - ya.mean()) ** 2).sum()
         out.append(r)
-        pd.DataFrame([r]).round(5).to_csv(part, mode="a", header=not part.exists() or part.stat().st_size == 0, index=False)
+        pd.DataFrame([r], columns=FIT_COLS).round(5).to_csv(
+            part, mode="a", header=not part.exists() or part.stat().st_size == 0, index=False)
         if n % 50 == 0 or k in FOCUS:
             print(f"  {n:5d}/{len(kos)} {k} {FOCUS.get(k, ''):10s} prev {r['prevalence']:.2f}  AUC tech {r['auc_tech']:.3f} "
                   f"granite {r['auc_granite']:.3f} both {r['auc_both']:.3f} | within-cruise AUC tech {r['auc_within_tech']:.3f} "
                   f"granite {r['auc_within_granite']:.3f} both {r['auc_within_both']:.3f} | abund R2 {r.get('abund_r2', np.nan):.3f}", flush=True)
-    pd.read_csv(part).round(5).to_csv(OUT / name, index=False)
+    read_partial(part).round(5).to_csv(OUT / name, index=False)
 
 
 def focus_models():
@@ -298,8 +326,21 @@ def focus_models():
 
 
 def summary():
-    shards = sorted(OUT.glob("fit_shard*.csv"))
-    f = pd.concat([pd.read_csv(x) for x in shards]) if shards else pd.read_csv(OUT / "fit.csv")
+    # Final fit_shard<i>.csv where present, else that shard's .partial (cluster jobs that died on the old final read).
+    parts = {p.name.split(".")[0]: p for p in OUT.glob("fit_shard*.csv.partial")}
+    parts.update({p.stem: p for p in OUT.glob("fit_shard*.csv")})
+    if parts:
+        f = pd.concat([read_partial(p) if p.suffix == ".partial" else pd.read_csv(p) for _, p in sorted(parts.items())])
+    else:
+        f = pd.read_csv(OUT / "fit.csv")
+    expect = list(pd.read_csv(OUT / "presence_tile.csv.gz", index_col=0, nrows=0).columns)
+    dup = f["ko"].duplicated().sum()
+    f = f.drop_duplicates("ko")
+    miss = len(set(expect) - set(f["ko"]))
+    LOG.append(f"read {len(parts)} shard files: {len(f):,} KOs of {len(expect):,} expected; {miss:,} missing; {dup} duplicates dropped")
+    print(LOG[-1])
+    if miss:
+        print("WARNING: summary is on an incomplete fit", file=sys.stderr)
     names = pd.read_csv(REPO / "data/reference/kegg_ko_list.tsv", sep="\t", header=None, names=["ko", "n"]).set_index("ko")["n"]
     core = set(pd.read_csv(BX / "targets" / "clr_all.csv.gz", nrows=0).columns)
     f["name"] = f["ko"].map(names).fillna("")

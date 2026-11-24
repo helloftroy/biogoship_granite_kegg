@@ -6199,3 +6199,17 @@ technical only.
      repo root.
   2. `sbatch --account=191001-364393 cluster/hurdle_fit.sbatch` (24-shard array, 2 CPUs each, resumable).
   3. Copy `data/results/hurdle/fit_shard*.csv` back, then run `scripts/hurdle_kos.py --parts summary figure` locally.
+  4. **Bug found while waiting (2026-11-24 09:40).** A smoke test of `summary` on the aborted local partials failed:
+     `fit` wrote the `.partial` header from the first KO, then appended each later row with only the blocks that ran for
+     it. Unrarefied presence columns are written only for focus KOs and abundance columns only with ≥ 50 present tiles,
+     so rows have 13 / 16 / 17 / 20 fields. The final read-back in `fit` therefore raises a pandas `ParserError`, so the
+     Morrill shards (submitted with the old code) should finish all their KOs and then exit FAILED without writing
+     `fit_shard<i>.csv`. No results are lost: each row's column order is fixed and the field counts are distinct.
+     - Fix (`scripts/hurdle_kos.py`): `read_partial()` maps each row by its field count; new rows are always written with
+       all 20 columns (`FIT_COLS`); `summary` reads `fit_shard<i>.csv` or, failing that, `fit_shard<i>.csv.partial`, and
+       reports how many of the 5,808 KOs it found (written to `summary.txt`).
+     - Checked: the summary and figure run on the 150 KOs of the aborted local partials (one 20-field row among the
+       16-field rows parsed correctly). A 3-KO fit in scratch wrote 20-field rows and resumed correctly; nifH reproduces
+       the focus table (within-cruise AUC Granite 0.629, technical 0.534).
+     - **Step 3 changes to:** copy `data/results/hurdle/fit_shard*.csv.partial` back (24 files), then
+       `scripts/hurdle_kos.py --parts summary figure`.

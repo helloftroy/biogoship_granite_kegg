@@ -177,6 +177,15 @@ cluster (`git add data/manifests && git commit && git push`) or copy them with
   header were misread. It is now read by field count and rewritten in the current
   layout automatically (`biogoship/tables.py`), with the original kept once as
   `tile_log.before_layout_update.csv`.
+  The same bug came back in the hurdle fit (R65, job `bgs_hurdle`): rows of
+  `fit_shard<i>.csv.partial` had 13 / 16 / 17 / 20 fields depending on which
+  model blocks ran, so the final read-back failed after all fitting was done.
+  Rule: any per-row append writes a fixed column list, every time.
+- Hurdle array (`cluster/hurdle_fit.sbatch`, submitted 2026-11-24 with the old
+  code): shards are expected to end FAILED with a pandas `ParserError` on the
+  last line. The results are complete in the `.partial` files; copy
+  `data/results/hurdle/fit_shard*.csv.partial` back and run
+  `scripts/hurdle_kos.py --parts summary figure`, which reads them.
 - A job that skips work because "the file exists" must check the file is still
   what is needed. The currents files were kept from a run with a shorter time
   span; `download_currents.py` now checks coverage.

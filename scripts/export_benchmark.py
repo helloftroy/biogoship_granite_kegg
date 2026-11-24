@@ -51,6 +51,7 @@ def main():
     meta = pd.concat([pd.read_csv(REPO / "data/manifests/biogoship_samples.csv"),
                       pd.read_csv(REPO / "data/faire/manifests/biogoship_samples.csv")]).drop_duplicates("sample_id").set_index("sample_id")  # fmt: skip
     s = ks.rename(columns={"total": "ko_reads", "instrument": "instrument_obi"}).copy()
+    s["read_pairs"] = pd.read_csv(mm.EFFORT, index_col="sample_key")["read_pairs"].reindex(s.index)  # R70 depth covariate
     s["platform"] = s["instrument_obi"].map(PLATFORM)
     for c in ("biosample", "collection_time_utc", "lat", "lon", "section", "expocode", "sample_method", "metagenome_runs"):
         s[c] = meta[c].reindex(s.index) if c in meta else np.nan

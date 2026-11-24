@@ -186,6 +186,10 @@ cluster (`git add data/manifests && git commit && git push`) or copy them with
   last line. The results are complete in the `.partial` files; copy
   `data/results/hurdle/fit_shard*.csv.partial` back and run
   `scripts/hurdle_kos.py --parts summary figure`, which reads them.
+- Hurdle rerun with read-pair depth (R70/R71; `cluster/hurdle_read_pairs.sbatch`, 24 shards, both
+  `hurdle_kos.py` and `hurdle_base.py` fits per shard). Inputs: `scp` `data/results/hurdle_rp_inputs.tar.gz` from
+  the Mac to the repo on scratch and untar it in the repo root; delete the old `fit_shard*` / `base_shard*` files
+  first (they used KO-read depth). Copy back `data/results/hurdle/fit_shard*.csv*` and `base_shard*.csv*`.
 - A job that skips work because "the file exists" must check the file is still
   what is needed. The currents files were kept from a run with a shorter time
   span; `download_currents.py` now checks coverage.

@@ -7374,3 +7374,10 @@ technical fit shifts cruise means, because read pairs, like C, differ between cr
   - Flat, warm cruises unchanged (I09N r 0.00, I07N 0.01, GOMECC4 −0.21, I09N-2025 0.30, P02-2022 0.28).
   - "GOMECC4 is placed lowest (bias −0.56); I05-2023 highest (+0.48)."
   - "HLY2202-2022 is under-dispersed (predicted SD 0.36 vs 1.20 observed)."
+
+**Benchmark bundle (R71).** Re-exported with the read-pair covariate (`tiles.csv` `log10_read_pairs`; `samples.csv`
+gains `read_pairs`, 1,988 of 1,990 samples, the 2 missing are in no tile). The bundle's own `benchmark_eval.py` check
+reproduces the main model: all KOs 16.86, C 51.87, D 13.18, A 13.01, Dp 15.57, B 10.68, De 20.01 (% of non-technical;
+B and De differ by ≤ 0.14 pp as before, from tile composition; 76 s, 4 threads). New `benchmark_export.zip` (189 MB);
+the old one is in the archive folder. `~/multimodal_seusmbol/instructions_agent_biogoship.md` (outside git) updated
+with the new reference numbers.

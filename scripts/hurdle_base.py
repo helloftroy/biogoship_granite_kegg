@@ -185,7 +185,8 @@ def depth_detection():
     """Relative detection by within-cruise depth quintile, per read domain and gene-length tercile (within domain)."""
     tp = pd.read_csv(OUT / "presence_tile.csv.gz", index_col=0)
     cr = pd.read_csv(BX / "tiles.csv", index_col="tile_key").loc[tp.index, "cruise"]
-    dep = pd.read_csv(OUT / "tile_depth.csv", index_col=0)["log10_total_genes"].loc[tp.index]
+    eff = pd.read_csv(REPO / "data/results/sequencing_effort/tile_effort.csv", index_col="tile_key").loc[tp.index]
+    dep = eff["log10_read_pairs"]  # raw sequencing effort (R70), not KO-assigned reads
     q = dep.groupby(cr).transform(lambda s: pd.qcut(s.rank(method="first"), 5, labels=False)).to_numpy()
     rate = tp.groupby(q).mean()
     rel = rate / rate.mean()  # 5 quintiles x KOs, relative to the KO's mean detection
@@ -203,18 +204,19 @@ def depth_detection():
                              "rel_q25": rel.loc[i, kk].quantile(.25), "rel_q75": rel.loc[i, kk].quantile(.75),
                              "rate_median": rate.loc[i, kk].median()})  # fmt: skip
     dd = dep - dep.groupby(cr).transform("mean")
-    C = pd.read_csv(BX / "targets" / "C.csv.gz", index_col="tile_key")["euk_prok_log_ratio"].reindex(tp.index)
-    cc = C - C.groupby(cr).transform("mean")
+    cc = eff["C"] - eff["C"].groupby(cr).transform("mean")
     ok = cc.notna()
     return pd.DataFrame(rows), cuts, float(np.corrcoef(dd[ok], cc[ok])[0, 1])
 
 
 def core_table():
     """Core (full-KO model) KOs: held-out Granite R2 (main model, ko_ceiling.csv), read domain, gene length and the
-    within-cruise correlation of abundance (CLR, before technical adjustment) with log10 KO reads, over all 1,215 tiles."""
+    within-cruise correlation of abundance (CLR, before technical adjustment) with log10 read pairs sequenced (raw
+    effort, R70), over all 1,215 tiles."""
     tiles = pd.read_csv(BX / "tiles.csv", index_col="tile_key")
     X = pd.read_csv(BX / "targets" / "clr_all.csv.gz", index_col="tile_key")
-    cr, dp = tiles.loc[X.index, "cruise"], tiles.loc[X.index, "log10_ko_reads"]
+    eff = pd.read_csv(REPO / "data/results/sequencing_effort/tile_effort.csv", index_col="tile_key").loc[X.index]
+    cr, dp = tiles.loc[X.index, "cruise"], eff["log10_read_pairs"]  # raw sequencing effort (R70)
     Xd, dd = X - X.groupby(cr).transform("mean"), dp - dp.groupby(cr).transform("mean")
     k = pd.read_csv(REPO / "data/results/main_model/ko_ceiling.csv", index_col="ko")[["r2"]]
     k["r_depth_within"] = Xd.mul(dd, axis=0).sum() / np.sqrt((Xd**2).sum() * (dd**2).sum())
@@ -370,7 +372,7 @@ def figure():
     e[0].legend(handles=LEN_HANDLES, frameon=False, fontsize=5.4, loc="upper left", handlelength=1.4, handletextpad=0.3,
                 borderaxespad=0.1)  # fmt: skip
     e[0].set_ylabel("Detection vs the KO's average (%)\n(patchy KOs)")
-    e[1].set_xlabel("Sequencing depth within cruise\n(fifths of the tiles; 1 = fewest reads, 5 = most)")
+    e[1].set_xlabel("Read pairs sequenced, within cruise\n(fifths of the tiles; 1 = fewest, 5 = most)")
 
     # f: core KOs, within-cruise correlation of abundance with depth, by gene length
     for j, tt in enumerate(("short", "medium", "long")):
@@ -381,14 +383,14 @@ def figure():
     g6.set_xticks(range(3))
     g6.set_xticklabels([f"{dm.capitalize()}\n({(core['domain'] == dm).sum():,})" for dm in doms])
     g6.set_xlim(-0.5, 2.5)
-    g6.set_ylabel("Within-cruise r, abundance vs\nsequencing depth (core KOs)")
+    g6.set_ylabel("Within-cruise r, abundance vs\nread pairs sequenced (core KOs)")
     g6.legend(handles=[Line2D([], [], color=tint("#444444", SHADE[tt]), marker="o", ms=3, lw=1.2, label=f"{tt.capitalize()} genes")
                        for tt in ("short", "medium", "long")], frameon=False, fontsize=5.8, loc="upper right", handlelength=1.2)
-    log.append(f"\npatchy depth detection: length tercile cuts (nt) {cuts}; within-cruise r(log10 depth, observed C) {r_dc:+.3f}")
+    log.append(f"\npatchy depth detection: length tercile cuts (nt) {cuts}; within-cruise r(log10 read pairs, observed C) {r_dc:+.3f}")
     for (dm, tt), s_ in dd.groupby(["domain", "length"], sort=False):
         log.append(f"  {dm:12s} {tt:6s} n {s_['n'].iloc[0]:4d}  % vs KO average Q1..Q5 "
                    + " ".join(f"{100 * (v - 1):+.0f}" for v in s_["rel_median"]))  # fmt: skip
-    log.append("\ncore KOs: within-cruise r(CLR abundance, log10 KO reads), median (IQR) by domain x length tercile:")
+    log.append("\ncore KOs: within-cruise r(CLR abundance, log10 read pairs), median (IQR) by domain x length tercile:")
     for dm in doms:
         g = core[core["domain"] == dm]
         cut = [round(x) for x in g["length_mean"].quantile([1 / 3, 2 / 3])]

@@ -7168,3 +7168,93 @@ depth and platform are removed) and sequencing depth, by gene length (median, in
 prokaryotic genes are detected more often and counted more in deeper libraries; eukaryotic genes go the other way
 because eukaryote-rich tiles were sequenced less deeply (within-cruise r = −0.21 between depth and the eukaryote :
 prokaryote ratio).
+
+## R70. What "depth" is: KO-assigned reads are partly the eukaryote fraction; raw read pairs are not (2026-11-24)
+
+**Question (user).** The technical covariate "depth" in every model so far (main model `setup()`, `benchmark_eval.technical()`,
+hurdle models, R33/R34) is log10 KO-assigned reads: per sample the summed KO counts of its libraries
+(`data/targets/ko_samples.csv` "total"; hurdle: `tile_depth.csv` `log10_total_genes`, r 0.99 with it), per tile the mean
+of log10 over its samples. Eukaryotic reads map and annotate poorly (largely transcript-based references), so
+eukaryote-rich samples give fewer KO reads from the same sequencing. Removing "depth" per KO then removes some biology.
+
+**Method.** `scripts/sequencing_effort.py`. Raw effort = read pairs sequenced (FAIRe `input_read_count`, via
+`transfer/results/library_metadata/library_metadata.csv` `total_reads`), with the same library → sample mapping and
+filters as the targets (`build_ko_targets.library_samples`; controls dropped, ≥ 10^5 KO reads, ≤ 10 m): 2,018
+libraries for all 1,990 target samples; read pairs for 2,016 libraries (2 samples incomplete, in no tile). Per tile the
+mean of log10 over its samples, as in the main model. log10 KO reads = log10 read pairs + log10 KO yield (KO reads per
+read pair). Check: rebuilt per-sample KO reads equal `ko_samples.csv` totals (max |Δlog10| 9e-16); tile values r 1.0000
+with the exported `log10_ko_reads`. All 1,215 tiles have read pairs for every sample. Outputs:
+`data/results/sequencing_effort/{sample_effort,tile_effort}.csv`, `summary.txt`.
+
+**Within-cruise Pearson r (1,215 tiles, cruise means removed)**
+
+| | log10 read pairs | log10 KO reads | log10 KO yield | C |
+|---|---|---|---|---|
+| log10 read pairs | 1 | 0.831 | 0.300 | 0.019 |
+| log10 KO reads | | 1 | 0.780 | −0.189 |
+| log10 KO yield | | | 1 | −0.346 |
+
+Pooled: read pairs vs C 0.136, KO reads vs C −0.100, KO yield vs C −0.379. Within-cruise SD: read pairs 0.199, KO reads
+0.303, KO yield 0.177, C 0.747. Read pairs share 69.1% of the within-cruise variance of KO reads.
+
+Per cruise, r with C (read pairs / KO reads / KO yield): A13.5-2024 −0.03 / −0.48 / −0.63; A16N-2023 −0.10 / −0.23 /
+−0.29; AMT28 +0.26 / +0.15 / −0.09; C13.5/A13.5 −0.00 / −0.25 / −0.50; GOMECC4 −0.12 / −0.22 / −0.27; HLY2202-2022
++0.48 / +0.43 / +0.11; I05-2023 +0.04 / −0.20 / −0.40; I07N −0.15 / −0.32 / −0.40; I08S-2024 −0.12 / −0.53 / −0.64; I09N
++0.12 / −0.40 / −0.56; I09N-2025 +0.08 / −0.21 / −0.47; P02-2022 −0.11 / −0.41 / −0.62; P18 +0.08 / −0.28 / −0.54. KO
+yield falls with C in 12 of 13 cruises.
+
+**How much the current adjustment removes** (platform + 8-knot spline of depth, pooled over tiles, as
+`benchmark_eval.technical()`; share of each target's variance in the fitted technical part; quick check, scratch
+script, not yet a pipeline step):
+
+| Target | depth = log10 KO reads (current) | depth = log10 read pairs |
+|---|---|---|
+| C | 0.153 | 0.130 |
+| clr_all KOs, median: eukaryotic (265) | 0.138 | 0.114 |
+| clr_all KOs, median: mixed (489) | 0.065 | 0.057 |
+| clr_all KOs, median: prokaryotic (3,179) | 0.090 | 0.090 |
+| clr_all KOs, median: all | 0.093 | 0.089 |
+| A (prokaryote-specific), median | 0.133 | 0.107 |
+
+So the overlap with biology is real but modest (≈ 2–2.5 pp for C and eukaryotic KOs, none for prokaryotic KOs). The
+pooled adjustment also takes between-cruise variance with either covariate.
+
+**Depth panels redone with read pairs (hurdle_base e, f).**
+
+Patchy KOs, detection in % vs the KO's average, fifths of tiles by read pairs within cruise (1 → 5):
+
+| Domain | short | medium | long |
+|---|---|---|---|
+| prokaryotic | −9 −5 +1 +4 +9 | −14 −6 +1 +6 +13 | −17 −8 +1 +7 +17 |
+| mixed | −9 −4 +2 +2 +8 | −10 −4 +1 +3 +10 | −11 −5 +1 +3 +12 |
+| eukaryotic | −6 −3 +1 +1 +7 | −7 −3 +1 +1 +8 | −8 −3 +1 +1 +8 |
+
+(Same fifths by KO reads, R69: eukaryotic +18 → −14; by KO yield: eukaryotic +34 → −31, prokaryotic long −12 → +11.)
+Within-cruise r(log10 read pairs, C) on the hurdle tiles +0.031.
+
+Core KOs, within-cruise r(abundance CLR, log10 read pairs), median (IQR):
+
+| Domain | n | short | medium | long | Spearman (r, length) |
+|---|---|---|---|---|---|
+| prokaryotic | 3,179 | −0.159 (−0.309 to −0.036) | −0.043 (−0.175 to +0.054) | +0.056 (−0.051 to +0.138) | 0.535 |
+| mixed | 489 | −0.033 (−0.113 to +0.019) | +0.052 (+0.003 to +0.088) | +0.084 (+0.035 to +0.134) | 0.585 |
+| eukaryotic | 265 | −0.007 (−0.030 to +0.017) | +0.008 (−0.023 to +0.024) | +0.012 (−0.020 to +0.035) | 0.161 |
+
+(With KO reads, R69 addendum, eukaryotic KOs were ≈ −0.2 at every length; with KO yield ≈ −0.38.)
+
+**Correction to R69.** "Eukaryote-rich tiles were sequenced less deeply" is wrong. They were sequenced as deeply
+(r +0.02 within cruise) but gave fewer KO-assigned reads (KO yield r −0.35). The eukaryotic decline in the old panel e
+and the negative eukaryotic r in the old panel f came from using KO reads as depth. With raw effort, detection rises
+with sequencing in every domain (+7 to +17% in the deepest fifth), more for longer prokaryotic genes; abundance of
+eukaryotic KOs does not change with effort, and the prokaryotic short-vs-long split remains (coverage filter).
+
+**Still on KO reads.** Panels a–d (hurdle fits) and the main model (all paper targets) use log10 KO reads as the
+technical covariate. Fix proposed: rerun with log10 read pairs (+ platform) on Morrill.
+
+**Legend text for e, f (replaces the R69 addendum's e, f and last sentence)**: **e**, Patchy KOs: how often a KO is
+detected in each fifth of the tiles ranked by read pairs sequenced within their cruise, as % above or below its average
+over all tiles, for short, medium and long genes (thirds by mean reference gene length within each domain; median over
+KOs). **f**, Core KOs: within-cruise correlation between abundance (before depth and platform are removed) and read
+pairs sequenced, by gene length (median, interquartile range). All genes are detected more often with more sequencing;
+for prokaryotic genes the effect grows with gene length, and in core prokaryotic KOs long genes gain share and short
+genes lose it, as expected from the 50% coverage filter on mapped reads.

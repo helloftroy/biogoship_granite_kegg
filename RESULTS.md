@@ -5897,3 +5897,89 @@ All KOs −0.09, eukaryote : prokaryote reads +1.50, shared KOs −0.25, prokary
     ureB, ureE, ureA, urtA–D (+0.30 to +0.45); also mqo, menC.
   - + phosphate: the pho regulon. phoU 0.17 → 0.53, pstC 0.33 → 0.63, pstS 0.40 → 0.67, adeR 0.26 → 0.52.
 - `figures/output/ko_heatmap_inputs_main.png` now has the four input blocks plus this field block.
+
+## R62. Per-cruise error as level + pattern instead of per-cruise R²; module figure fixes (2026-11-23)
+
+**Decisions (user)**
+- Granite PCs alone is the main model. The C gain from adding temperature (+1.5 pp) gets one sentence.
+- Pooled R² stays the headline. Per-cruise R² is dropped: it is scored against the training-cruise mean, so it rewards
+  cruises whose mean is far from the rest (GOMECC4) and penalises flat ones (R61).
+
+**Per-cruise reporting** (`main_model.py --parts cruise`; `cruise_decomposition.csv` for every target,
+`c_per_cruise.csv` for C). For each cruise and target column:
+
+MSE = bias² + (SD_pred − SD_obs)² + 2 · SD_pred · SD_obs · (1 − r)
+
+- bias = mean(observed − predicted); SDs and r are within the cruise (population moments). The identity is exact:
+  max |sum / MSE − 1| = 8.9e−16.
+- **Level** = bias. **Pattern** = within-cruise r. Each cruise's within-cruise SD (observed and predicted) is shown
+  beside them. Shares are given as parts of each cruise's MSE.
+
+**Eukaryote : prokaryote reads (C), Granite PCs, sorted by within-cruise SD of the observed values** (* NovaSeq 6000
+cruise; the last two columns are bias / r for OLCI + SST and for time & place)
+
+| Cruise | Tiles | SD obs | SD pred | Level (bias) | Pattern (r) | Level share | Spread share | Pattern share | MSE | OLCI + SST | Time & place |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| * I09N | 54 | 0.364 | 0.131 | −0.106 | 0.124 | 0.08 | 0.36 | 0.56 | 0.149 | −0.410 / 0.140 | −0.583 / 0.170 |
+| * I07N | 146 | 0.434 | 0.349 | +0.283 | −0.104 | 0.19 | 0.02 | 0.79 | 0.422 | +0.339 / 0.108 | +0.204 / −0.315 |
+| GOMECC4 | 53 | 0.486 | 0.414 | −0.668 | 0.052 | 0.54 | 0.01 | 0.46 | 0.833 | −0.740 / 0.053 | −1.582 / 0.124 |
+| * C13.5/A13.5 | 216 | 0.487 | 0.485 | +0.043 | 0.531 | 0.01 | 0.00 | 0.99 | 0.224 | +0.004 / 0.470 | +0.050 / 0.200 |
+| I09N-2025 | 84 | 0.576 | 0.285 | +0.195 | 0.362 | 0.11 | 0.25 | 0.63 | 0.332 | +0.234 / 0.391 | −0.101 / 0.130 |
+| P02-2022 | 89 | 0.640 | 0.300 | +0.168 | 0.256 | 0.07 | 0.27 | 0.67 | 0.430 | +0.279 / 0.148 | −0.482 / −0.125 |
+| * AMT28 | 46 | 0.825 | 0.918 | +0.264 | 0.827 | 0.21 | 0.03 | 0.77 | 0.340 | +0.237 / 0.855 | +0.141 / 0.649 |
+| I05-2023 | 141 | 0.939 | 0.465 | +0.290 | 0.449 | 0.11 | 0.28 | 0.61 | 0.789 | −0.037 / 0.369 | +0.473 / 0.302 |
+| I08S-2024 | 23 | 0.996 | 1.182 | −0.036 | 0.909 | 0.01 | 0.14 | 0.86 | 0.249 | +0.013 / 0.935 | +0.195 / 0.901 |
+| A13.5-2024 | 93 | 1.115 | 0.853 | −0.227 | 0.831 | 0.12 | 0.16 | 0.73 | 0.442 | −0.197 / 0.804 | +0.079 / 0.682 |
+| A16N-2023 | 174 | 1.121 | 0.574 | −0.317 | 0.746 | 0.14 | 0.41 | 0.45 | 0.727 | −0.469 / 0.830 | +0.006 / 0.633 |
+| * P18 | 64 | 1.190 | 1.128 | +0.321 | 0.782 | 0.15 | 0.01 | 0.85 | 0.691 | +0.425 / 0.786 | +1.069 / 0.602 |
+| * HLY2202-2022 | 32 | 1.353 | 0.366 | +0.060 | 0.457 | 0.00 | 0.64 | 0.36 | 1.515 | +0.310 / 0.005 | +1.809 / 0.368 |
+
+- **The model places cruises well and follows the gradient where there is one.**
+  - Level is within ±0.33 for 12 of 13 cruises, against an overall SD of 1.05.
+  - Every cruise with within-cruise SD ≥ 0.8 has r 0.45–0.91; seven of those eight have r 0.75–0.91.
+- **On flat, warm lines it misses the pattern:** I09N (2016) r 0.12, I07N −0.10, GOMECC4 0.05, I09N-2025 0.36,
+  P02-2022 0.26. C13.5/A13.5, also flat, is the exception (r 0.53).
+- The 2016 I09N line is flat too. Its R² of 0.82 in R60 came from its level alone.
+- **GOMECC4 is the one cruise placed wrong:** bias −0.67 (observed below predicted). Level is 54% of its MSE. The Gulf
+  of Mexico in Sep–Oct 2021 had the lowest eukaryote share of any cruise (mean −4.40). OLCI + SST and time & place
+  misplace it too (−0.74, −1.58).
+- **HLY2202-2022:** right level (+0.06), but the predicted spread is 0.37 against 1.35 observed. Its error is mostly
+  under-dispersion (spread share 0.64).
+
+**All KOs (CLR), Granite PCs: medians over KOs per cruise; shares of the cruise's summed MSE**
+
+| Cruise | SD obs | SD pred | abs(bias) | r | Level | Spread | Pattern |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| I09N-2025 | 0.250 | 0.147 | 0.084 | 0.261 | 0.14 | 0.25 | 0.61 |
+| P02-2022 | 0.314 | 0.143 | 0.076 | 0.205 | 0.10 | 0.31 | 0.59 |
+| GOMECC4 | 0.407 | 0.147 | 0.274 | 0.158 | 0.34 | 0.28 | 0.38 |
+| I08S-2024 | 0.432 | 0.233 | 0.099 | 0.635 | 0.13 | 0.28 | 0.58 |
+| A13.5-2024 | 0.443 | 0.218 | 0.072 | 0.521 | 0.08 | 0.35 | 0.57 |
+| AMT28 | 0.457 | 0.232 | 0.131 | 0.369 | 0.20 | 0.26 | 0.54 |
+| I07N | 0.479 | 0.126 | 0.118 | 0.099 | 0.13 | 0.44 | 0.43 |
+| I05-2023 | 0.545 | 0.170 | 0.253 | 0.214 | 0.25 | 0.36 | 0.39 |
+| C13.5/A13.5 | 0.561 | 0.178 | 0.082 | 0.392 | 0.07 | 0.53 | 0.40 |
+| I09N | 0.580 | 0.087 | 0.165 | 0.035 | 0.20 | 0.57 | 0.22 |
+| HLY2202-2022 | 0.585 | 0.120 | 0.308 | 0.184 | 0.40 | 0.38 | 0.22 |
+| A16N-2023 | 0.665 | 0.211 | 0.181 | 0.336 | 0.11 | 0.44 | 0.45 |
+| P18 | 0.690 | 0.251 | 0.175 | 0.489 | 0.17 | 0.42 | 0.41 |
+
+- For single KOs, the level error is a small part of the MSE (7–40%). Most of the error is pattern and under-dispersion:
+  predicted SD is 0.09–0.25 against 0.25–0.69 observed. Ridge shrinkage plus weak per-KO signal.
+- The highest-r cruises for KOs (I08S-2024 0.635, A13.5-2024 0.521, P18 0.489) are the high-gradient ones, as for C.
+- Tables for D, A, Dp, B, De are in `cruise_decomposition.csv` and `summary_cruise.txt`.
+
+**C figure** (`figures/output/c_prediction.png`, overwritten). Cruises in c–e are sorted by observed within-cruise SD;
+c and d also show OLCI + SST and time & place as open markers.
+- a: observed vs held-out predicted (R² 0.54).
+- b: against latitude.
+- c: level, mean(observed − predicted).
+- d: pattern, within-cruise r.
+- e: within-cruise SD, observed and predicted.
+
+**Module figure fixes** (`figures/output/module_predictability.png`)
+- Panel a has x-tick labels and a dot-size legend (KOs in module: 5, 10, 20).
+- "Metabolic capacity" is a KEGG class from the Signature modules branch ("Signature modules > Module set > Metabolic
+  capacity"). Signature modules are marker sets, not pathways. Most are defined by other modules (e.g. M00611
+  oxygenic photosynthesis), so they have no direct KO links. Only M00615 nitrate assimilation links to KOs here (4 KOs:
+  fraction 0.253, R² 0.016, ceiling 0.462). Its row is now labelled "Signature module: nitrate assimilation".

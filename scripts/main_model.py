@@ -310,9 +310,46 @@ def figure_part():
     c_figure(plt)
 
 
+def decompose(o, p):
+    """Per column: MSE = bias^2 + (sd_p - sd_o)^2 + 2 sd_p sd_o (1 - r) (population moments; exact).
+    bias = mean(observed - predicted)."""
+    bias = (o - p).mean(0)
+    so, sp = o.std(0), p.std(0)
+    r = ((o - o.mean(0)) * (p - p.mean(0))).mean(0) / np.maximum(so * sp, 1e-12)
+    return {"bias": bias, "sd_obs": so, "sd_pred": sp, "r": r, "level": bias**2, "spread": (sp - so) ** 2,
+            "pattern": 2 * sp * so * (1 - r), "mse": ((o - p) ** 2).mean(0)}  # fmt: skip
+
+
+def cruise_part():
+    """Per-cruise error split for the main model of every target: level (bias), spread mismatch, pattern (1 - r)."""
+    out = []
+    for t in ORDER:
+        z = np.load(OUT / f"predictions_{t}_granite_cv.npz", allow_pickle=True)
+        o, p, cr = z["observed"].astype(float), z["predicted"].astype(float), z["cruise"]
+        for c in np.unique(cr):
+            d = decompose(o[cr == c], p[cr == c])
+            mse = d["mse"].sum()
+            out.append({"target": t, "cruise": c, "tiles": int((cr == c).sum()), "columns": o.shape[1],
+                        "bias_mean": d["bias"].mean(), "abs_bias_median": np.median(np.abs(d["bias"])),
+                        "sd_obs_median": np.median(d["sd_obs"]), "sd_pred_median": np.median(d["sd_pred"]),
+                        "r_median": np.median(d["r"]), "mse_sum": mse, "share_level": d["level"].sum() / mse,
+                        "share_spread": d["spread"].sum() / mse, "share_pattern": d["pattern"].sum() / mse,
+                        "check": (d["level"] + d["spread"] + d["pattern"]).sum() / mse})  # fmt: skip
+    t = pd.DataFrame(out)
+    t.round(5).to_csv(OUT / "cruise_decomposition.csv", index=False)
+    pd.set_option("display.width", 250)
+    for tg in ORDER:
+        say(f"\n{tg}:")
+        say(t[t["target"] == tg].drop(columns=["target", "columns", "check"]).sort_values("sd_obs_median").round(3).to_string(index=False))
+    say(f"\nmax |check - 1| = {np.abs(t['check'] - 1).max():.2e}")
+
+
 def c_figure(plt):
-    """Eukaryote : prokaryote reads (C): a observed vs held-out predicted (Granite PCs), b per-cruise skill of Granite PCs,
-    OLCI + SST and time & place, c observed and predicted against latitude."""
+    """Eukaryote : prokaryote reads (C).
+    a observed vs held-out predicted (Granite PCs); b observed and predicted against latitude;
+    per cruise, sorted by the within-cruise SD of the observed values: c level (mean of observed - predicted),
+    d pattern (within-cruise correlation of observed and predicted), e within-cruise SD (observed, predicted).
+    Panels c and d show Granite PCs (filled), OLCI + SST and time & place (small, open)."""
     m, p = MAIN["C"]
     z = {k: np.load(OUT / f"predictions_C_{k}_{p}.npz", allow_pickle=True) for k in ("granite", "sat", "place")}
     obs = z[m]["observed"][:, 0].astype(float)
@@ -321,11 +358,13 @@ def c_figure(plt):
     unit = pd.read_csv(OUT / "c_tiles.csv")
     lat = unit["lat"].to_numpy()
     plat = np.isin(cr, NOVASEQ_6000)
-    BLUE, ORANGE, GREY = "#0072B2", "#E69F00", "#999999"
-    fig = plt.figure(figsize=(7.2, 2.6))
-    a = fig.add_axes([0.065, 0.17, 0.25, 0.75])
-    b = fig.add_axes([0.40, 0.17, 0.25, 0.75])
-    c = fig.add_axes([0.73, 0.17, 0.25, 0.75])
+    BLUE, ORANGE, GREY, LBLUE = "#0072B2", "#E69F00", "#8c8c8c", "#56B4E9"
+    fig = plt.figure(figsize=(7.2, 5.4))
+    a = fig.add_axes([0.08, 0.60, 0.36, 0.37])
+    b = fig.add_axes([0.58, 0.60, 0.40, 0.37])
+    c = fig.add_axes([0.20, 0.08, 0.24, 0.40])
+    d = fig.add_axes([0.48, 0.08, 0.24, 0.40])
+    e = fig.add_axes([0.76, 0.08, 0.22, 0.40])
     lo, hi = np.r_[obs, pr[m]].min() - 0.1, np.r_[obs, pr[m]].max() + 0.1
     for msk, col, lab in ((plat, ORANGE, "NovaSeq 6000 cruises"), (~plat, BLUE, "NovaSeq X cruises")):
         a.scatter(pr[m][msk], obs[msk], s=4, lw=0, alpha=0.6, color=col, label=lab)
@@ -335,48 +374,57 @@ def c_figure(plt):
     a.set_xlabel("Predicted, cruise held out")
     a.set_ylabel("Observed log(eukaryote / prokaryote reads)")
     a.legend(frameon=False, fontsize=6, loc="upper left", markerscale=2, handletextpad=0.2)
-    e = 1 - ((obs - pr[m]) ** 2).sum() / ((obs - obs.mean()) ** 2).sum()
-    a.text(0.97, 0.04, f"R² = {e:.2f}\n{len(obs):,} tiles", transform=a.transAxes, ha="right", va="bottom", fontsize=6.5)
-    cruises = pd.Series(obs).groupby(cr).size().index
-    rows = []
-    for k in cruises:
-        te = cr == k
-        sst = ((obs[te] - obs[~te].mean()) ** 2).sum()
-        rows.append({kk: 1 - ((obs[te] - pr[kk][te]) ** 2).sum() / sst for kk in pr} | {"cruise": k, "plat": bool(plat[te][0])})
-    pc = pd.DataFrame(rows).sort_values("granite")
-    yy = np.arange(len(pc))
-    for kk, col, mk, lab in (("place", GREY, "s", "Time & place"), ("sat", "#56B4E9", "^", "OLCI + SST"),
-                             ("granite", BLUE, "o", "Granite PCs")):  # fmt: skip
-        b.scatter(pc[kk].clip(lower=-1), yy, s=16 if kk == "granite" else 10, marker=mk, color=col, lw=0, label=lab, zorder=3)
-    for i, (_, r) in enumerate(pc.iterrows()):
-        v = [max(r[kk], -1) for kk in ("place", "sat", "granite")]
-        b.plot([min(v), max(v)], [i, i], color="#dddddd", lw=0.6, zorder=1)
-    b.axvline(0, color="#cccccc", lw=0.6)
-    b.set_yticks(yy)
-    b.set_yticklabels([("* " if r else "") + k for k, r in zip(pc["cruise"], pc["plat"])], fontsize=5.5)
-    b.set_xlabel("R² within the held-out cruise")
-    b.set_xlim(-1.05, 1)
-    b.legend(frameon=False, fontsize=5.5, loc="center left", handletextpad=0.1)
-    pc.round(4).to_csv(OUT / "c_per_cruise.csv", index=False)
+    ev = 1 - ((obs - pr[m]) ** 2).sum() / ((obs - obs.mean()) ** 2).sum()
+    a.text(0.97, 0.04, f"R² = {ev:.2f}\n{len(obs):,} tiles", transform=a.transAxes, ha="right", va="bottom", fontsize=6.5)
     o = np.argsort(lat)
-    c.scatter(lat, obs, s=3, lw=0, color="#bbbbbb", label="Observed")
-    sm = pd.Series(pr[m][o]).rolling(41, center=True, min_periods=10).mean()
-    so = pd.Series(obs[o]).rolling(41, center=True, min_periods=10).mean()
-    c.plot(lat[o], so, color="#333333", lw=1.0, label="Observed, running mean")
-    c.plot(lat[o], sm, color=BLUE, lw=1.0, label="Predicted, running mean")
-    c.set_xlabel("Latitude (°)")
-    c.set_ylabel("log(eukaryote / prokaryote reads)")
-    c.legend(frameon=False, fontsize=5.5, loc="upper left", markerscale=2, handletextpad=0.2)
-    for ax, letter in zip((a, b, c), "abc"):
-        ax.text(-0.3 if letter != "b" else -0.2, 1.02, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
+    b.scatter(lat, obs, s=3, lw=0, color="#bbbbbb", label="Observed")
+    b.plot(lat[o], pd.Series(obs[o]).rolling(41, center=True, min_periods=10).mean(), color="#333333", lw=1.0,
+           label="Observed, running mean")  # fmt: skip
+    b.plot(lat[o], pd.Series(pr[m][o]).rolling(41, center=True, min_periods=10).mean(), color=BLUE, lw=1.0,
+           label="Predicted, running mean")  # fmt: skip
+    b.set_xlabel("Latitude (°)")
+    b.set_ylabel("log(eukaryote / prokaryote reads)")
+    b.legend(frameon=False, fontsize=5.5, loc="upper left", markerscale=2, handletextpad=0.2)
+    rows = []
+    for k in np.unique(cr):
+        te = cr == k
+        row = {"cruise": k, "plat": bool(plat[te][0]), "tiles": int(te.sum())}
+        for kk in pr:
+            dd = decompose(obs[te, None], pr[kk][te, None])
+            row |= {f"{kk}_{q}": float(v[0]) for q, v in dd.items()}
+        rows.append(row)
+    pc = pd.DataFrame(rows).sort_values("granite_sd_obs")
+    pc.round(4).to_csv(OUT / "c_per_cruise.csv", index=False)
+    yy = np.arange(len(pc))
+    for ax, q, xl in ((c, "bias", "Level: mean (observed − predicted)"), (d, "r", "Pattern: within-cruise r")):
+        for kk, col, mk, lab, sz, face in (("place", GREY, "s", "Time & place", 9, "white"), ("sat", LBLUE, "^", "OLCI + SST", 9, "white"),
+                                           ("granite", BLUE, "o", "Granite PCs", 18, BLUE)):  # fmt: skip
+            ax.scatter(pc[f"{kk}_{q}"], yy, s=sz, marker=mk, facecolor=face, edgecolor=col, lw=0.8, label=lab, zorder=3)
+        ax.axvline(0, color="#cccccc", lw=0.6, zorder=1)
+        ax.set_xlabel(xl)
+        ax.set_ylim(-0.6, len(pc) - 0.4)
+    c.set_yticks(yy)
+    c.set_yticklabels([("* " if r else "") + k for k, r in zip(pc["cruise"], pc["plat"])], fontsize=6)
+    d.set_yticks(yy)
+    d.set_yticklabels([])
+    d.set_xlim(-0.6, 1)
+    c.legend(frameon=False, fontsize=5.5, loc="upper left", handletextpad=0.1, borderaxespad=0.1)
+    e.barh(yy + 0.18, pc["granite_sd_obs"], height=0.34, color="#444444", label="Observed")
+    e.barh(yy - 0.18, pc["granite_sd_pred"], height=0.34, color=BLUE, label="Predicted (Granite PCs)")
+    e.set_yticks(yy)
+    e.set_yticklabels([])
+    e.set_ylim(-0.6, len(pc) - 0.4)
+    e.set_xlabel("Within-cruise SD")
+    e.legend(frameon=False, fontsize=5.5, loc="lower right", handletextpad=0.3)
+    for ax, letter, x in ((a, "a", -0.2), (b, "b", -0.17), (c, "c", -0.62), (d, "d", -0.08), (e, "e", -0.08)):
+        ax.text(x, 1.02, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
     for suf in ("png", "pdf"):
         fig.savefig(FIG / f"c_prediction.{suf}", dpi=300)
     plt.close(fig)
 
-
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parts", nargs="+", default=["fit", "partition", "figure"], choices=["fit", "partition", "figure"])
+    ap.add_argument("--parts", nargs="+", default=["fit", "partition", "figure"], choices=["fit", "partition", "cruise", "figure"])
     ap.add_argument("--ko-penalty", default="cv", choices=PENALTIES, help="penalty of the main KO model")
     ap.add_argument("--c-penalty", default="cv", choices=["gcv", "cv"], help="penalty of the main C model")
     a = ap.parse_args()
@@ -392,6 +440,9 @@ if __name__ == "__main__":
     if "partition" in a.parts:
         say(f"\nVariance partition (main models: KO targets granite/{MAIN['ko_penalty']}, C granite/{MAIN['C'][1]}):")
         partition_part(fs, ks)
+    if "cruise" in a.parts:
+        say("Per-cruise error split, main model (Granite PCs): level = bias^2, spread = (sd_pred - sd_obs)^2, pattern = 2 sd_pred sd_obs (1 - r)")
+        cruise_part()
     if "figure" in a.parts:
         figure_part()
     if LOG:

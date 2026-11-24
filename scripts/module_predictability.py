@@ -55,8 +55,11 @@ def modules():
             for l2 in l1["children"]:
                 for l3 in l2["children"]:
                     mid, name = l3["name"].split("  ", 1)
-                    rows.append({"module": mid, "name": name.split(" [")[0], "type": top["name"], "class1": l1["name"],
-                                 "class2": l2["name"]})
+                    nm = name.split(" [")[0]
+                    # Signature modules (KEGG "Gene set > Metabolic capacity" etc.) are marker gene sets, not pathways;
+                    # each gets its own row named after the module
+                    c2 = l2["name"] if top["name"] == "Pathway modules" else f"Signature module: {nm.lower()}"
+                    rows.append({"module": mid, "name": nm, "type": top["name"], "class1": l1["name"], "class2": c2})
     return link, pd.DataFrame(rows).drop_duplicates("module").set_index("module")
 
 
@@ -147,7 +150,10 @@ def figure(c, t):
     a.set_xlim(lo, hi)
     a.axvline(0, color="#cccccc", lw=0.6, zorder=1)
     a.text(hi + 0.02, na - 0.2, "Best module in the class", fontsize=6, fontweight="bold", va="bottom")
-    a.tick_params(axis="x", labelbottom=False)
+    for n in (5, 10, 20):
+        a.scatter([], [], s=n * 0.9, color=BLUE, alpha=0.55, lw=0, label=f"{n}")
+    a.legend(title="KOs in module", frameon=False, fontsize=6, title_fontsize=6, loc="upper left", bbox_to_anchor=(1.02, 0.0),
+             ncol=3, handletextpad=0.1, columnspacing=0.8)  # fmt: skip
     a.text(-0.72, 1.0, "a", transform=a.transAxes, fontsize=9, fontweight="bold", va="bottom")
     y = np.arange(nb)
     bx.hlines(y, rb["q25"].clip(lo, hi), rb["q75"].clip(lo, hi), color=BLUE, alpha=0.35, lw=3, zorder=2)

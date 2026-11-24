@@ -6112,3 +6112,84 @@ abundance follows the eukaryote : prokaryote balance.
     15, I09N-2025 13, C13.5/A13.5 11, I08S-2024 5, AMT28 16.
   - Pre-2016 cruises: NH1418 23, AE1319 13, BVAL46 12.
 - **P04E-2026:** 279 MG samples in FAIRe, no KO counts yet.
+
+## R65. Hurdle models for patchy KOs (nifH, amoA, nasA, phnJ): rarefied presence + abundance where present (2026-11-24; full run in progress)
+
+**Why.** The 90% prevalence filter of the main targets drops nifH, amoA, nasA and phnJ. They are modelled separately as
+a hurdle: presence / absence (logistic) plus abundance where present, at a relaxed prevalence cut.
+
+**Absence is partly technical** (R45; the coverage-50 filter turns low coverage into zeros). Raw presence (any gene
+> 0), by sample-depth quartile, lowest to highest:
+- nifH 0.17 / 0.29 / 0.40 / 0.62; amoC 0.16 / 0.15 / 0.18 / 0.48; nasA 0.57 / 0.73 / 0.87 / 0.95; phnJ 0.61 / 0.84 /
+  0.92 / 0.97.
+- By platform, nifH is 0.08 on HiSeq 4000, 0.33 on NovaSeq 6000 and 0.42 on NovaSeq X.
+
+**Method** (`scripts/hurdle_kos.py`; `data/results/hurdle/`)
+- **Counts.** Per sample, KO gene counts summed over libraries (`sample_counts.pkl`). These come from
+  `ko_counts_cov50_all.tsv` with the same library → sample link and filters as `build_ko_targets.py`.
+- **Rarefied presence.** A KO is present if count / total ≥ 1 / G, with G = 1,000,000 genes; that is, if it would be
+  expected at least once in a library of G genes. Samples with fewer than G genes are dropped: 180 of 1,990, leaving
+  1,111 of the 1,215 benchmark tiles. Tile presence = majority of the tile's kept samples.
+- **Abundance where present.** log(share) minus the mean log share of the 3,933 core KOs, which is the CLR scale of the
+  main targets; averaged over present samples.
+- **Hurdle set.** KOs present in 20–90% of tiles, plus the focus KOs: 5,808 KOs, 212 of them also in the core set.
+- **Presence models.** L2 logistic, each cruise held out, penalty chosen by inner leave-cruise-out.
+  - Technical only: platform group + spline of log10 total genes.
+  - Granite PCs: the number of PCs (4 / 8 / 16 / 32) is chosen with the penalty inside the training cruises. With all
+    32, sparse presence overfits: nifH pooled AUC 0.541, against 0.654 with 4 PCs.
+  - Granite + technical.
+- **Presence scores.**
+  - Pooled AUC: dominated by cruise-level differences.
+  - **Within-cruise AUC:** n-weighted mean over cruises, the "pattern" measure, used as the primary score.
+  - Deviance explained.
+- **The "presence is technical" check:** technical-only AUC within cruise ≥ Granite − 0.02.
+- **Abundance models:** technical removal in-sample, ridge on Granite PCs, leave-cruise-out penalty (as the main
+  model). Fitted for KOs with ≥ 50 present tiles.
+
+**Focus genes** (`focus_models.csv`, `focus_predictions.npz`). Presence AUC. Columns: tile prevalence; within cruise
+for Granite, technical only, in-situ temperature (spline) and raw satellite (OLCI + SST); then pooled for Granite and
+technical only.
+
+| Gene | Prevalence | Within: Granite | Within: technical | Within: temperature | Within: OLCI + SST | Pooled: Granite | Pooled: technical |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| nifH | 0.28 | 0.629 | 0.534 | 0.625 | 0.613 | 0.655 | 0.409 |
+| nifD | 0.15 | 0.696 | 0.588 | 0.705 | 0.704 | 0.721 | 0.339 |
+| nifK | 0.32 | 0.484 | 0.565 | 0.513 | 0.493 | 0.376 | 0.622 |
+| amoA / pmoA | 0.16 | 0.665 | 0.484 | 0.606 | 0.736 | 0.590 | 0.224 |
+| amoB / pmoB | 0.15 | 0.691 | 0.548 | 0.632 | 0.669 | 0.677 | 0.251 |
+| amoC / pmoC | 0.17 | 0.653 | 0.476 | 0.592 | 0.681 | 0.555 | 0.252 |
+| nasA | 0.77 | 0.584 | 0.576 | 0.659 | 0.583 | 0.610 | 0.535 |
+| phnJ | 0.88 | 0.683 | 0.759 | 0.641 | 0.599 | 0.647 | 0.725 |
+| phnI | 0.85 | 0.547 | 0.740 | 0.586 | 0.598 | 0.584 | 0.703 |
+| phnH | 0.86 | 0.643 | 0.646 | 0.689 | 0.688 | 0.626 | 0.582 |
+| phnG | 0.86 | 0.664 | 0.647 | 0.677 | 0.661 | 0.694 | 0.513 |
+| phnL | 0.85 | 0.607 | 0.676 | 0.615 | 0.560 | 0.593 | 0.670 |
+| phnK | 0.85 | 0.580 | 0.664 | 0.679 | 0.632 | 0.563 | 0.669 |
+| phnM | 0.95 | 0.664 | 0.747 | 0.512 | 0.664 | 0.598 | 0.713 |
+
+- **Nitrogen fixation (nifH, nifD): a real but modest signal.**
+  - Within-cruise AUC is 0.63 / 0.70 with Granite, against 0.53 / 0.59 for technical only, and it matches temperature
+    (0.63 / 0.71).
+  - nifH is present in 41% of tiles above 24 °C and 14% below; the within-cruise correlation with temperature is 0.24.
+  - Cruise-level differences dominate: I09N 2016 at 30.6 °C has 0.14, I09N-2025 has 0.52.
+  - nifK does not behave like nifH / nifD. Its presence follows sequencing depth: highest on the two
+    deepest-sequenced cruises (P02-2022 0.78, I09N-2025 0.64), and the technical model beats Granite.
+- **amoA / B / C (K10944–6; KEGG does not separate pmo and amo): a satellite signal** (Granite 0.65–0.69 against
+  technical 0.48–0.55). Presence is highest on I05-2023 (0.70; cold, southern Indian Ocean in austral winter) and
+  falls with temperature.
+- **phn (C-P lyase) presence is technical:** the technical model alone matches or beats Granite for phnJ, phnI, phnL,
+  phnK and phnM.
+- **nasA:** temperature 0.66, Granite 0.58, technical 0.58.
+- **Abundance where present: not predicted** for any focus gene (R² −0.13 to 0.02).
+- **Technical AUC below 0.5 pooled** (nifH 0.41, amo 0.22–0.25): the depth / platform relation reverses between
+  cruises, so the technical covariates do not transfer across cruises. Adding them to Granite lowers some pooled AUCs
+  (nifD 0.72 → 0.60).
+
+**Full run (5,808 KOs).**
+- A first run was lost when the machine rebooted (about 86% done; results were only written at the end).
+- `fit` now appends each KO to `fit_shard<i>.csv.partial` and resumes from it.
+- To restart or resume: `bash cluster/run_hurdle_local.sh` (4 shards, `caffeinate`). Then
+  `scripts/hurdle_kos.py --parts summary figure` for `hurdle_all.csv`, `summary.txt` and `figures/output/hurdle_kos.png`
+  (a: Granite vs technical-only within-cruise AUC for all hurdle KOs; b: focus genes, four inputs; c, d: nifH and amoB
+  presence against latitude).
+- Restarted 2026-11-24 09:25, about 5.5 h.

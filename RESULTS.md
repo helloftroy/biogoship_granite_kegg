@@ -6193,3 +6193,9 @@ technical only.
   (a: Granite vs technical-only within-cruise AUC for all hurdle KOs; b: focus genes, four inputs; c, d: nifH and amoB
   presence against latitude).
 - Restarted 2026-11-24 09:25, about 5.5 h.
+- **Moved to Morrill (2026-11-24).** The local restart was stopped after a few minutes; its partial files are in
+  `data/results/hurdle/local_4shard_aborted/`. Steps:
+  1. Copy `data/results/hurdle_cluster_inputs.tar.gz` (12 MB) to the Morrill repo, `git pull`, and unpack it in the
+     repo root.
+  2. `sbatch --account=191001-364393 cluster/hurdle_fit.sbatch` (24-shard array, 2 CPUs each, resumable).
+  3. Copy `data/results/hurdle/fit_shard*.csv` back, then run `scripts/hurdle_kos.py --parts summary figure` locally.

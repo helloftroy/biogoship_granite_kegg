@@ -298,7 +298,7 @@ def focus_models():
 
 
 def summary():
-    shards = sorted(OUT.glob("fit_shard[0-9].csv"))
+    shards = sorted(OUT.glob("fit_shard*.csv"))
     f = pd.concat([pd.read_csv(x) for x in shards]) if shards else pd.read_csv(OUT / "fit.csv")
     names = pd.read_csv(REPO / "data/reference/kegg_ko_list.tsv", sep="\t", header=None, names=["ko", "n"]).set_index("ko")["n"]
     core = set(pd.read_csv(BX / "targets" / "clr_all.csv.gz", nrows=0).columns)

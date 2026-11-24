@@ -6113,7 +6113,7 @@ abundance follows the eukaryote : prokaryote balance.
   - Pre-2016 cruises: NH1418 23, AE1319 13, BVAL46 12.
 - **P04E-2026:** 279 MG samples in FAIRe, no KO counts yet.
 
-## R65. Hurdle models for patchy KOs (nifH, amoA, nasA, phnJ): rarefied presence + abundance where present (2026-11-24; full run in progress)
+## R65. Hurdle models for patchy KOs (nifH, amoA, nasA, phnJ): rarefied presence + abundance where present (2026-11-24; full run done)
 
 **Why.** The 90% prevalence filter of the main targets drops nifH, amoA, nasA and phnJ. They are modelled separately as
 a hurdle: presence / absence (logistic) plus abundance where present, at a relaxed prevalence cut.
@@ -6213,3 +6213,122 @@ technical only.
        the focus table (within-cruise AUC Granite 0.629, technical 0.534).
      - **Step 3 changes to:** copy `data/results/hurdle/fit_shard*.csv.partial` back (24 files), then
        `scripts/hurdle_kos.py --parts summary figure`.
+
+### R65 full-run results (5,808 KOs; 2026-11-24)
+
+**Run.** Morrill array `bgs_hurdle`, 24 shards. As expected (step 4 above), the shards ended on the old final read-back,
+so the 24 `fit_shard<i>.csv.partial` files were copied back. Rows: 14 with 20 fields (the 14 focus KOs) and 5,794 with 16.
+`summary` read 5,808 of the 5,808 expected KOs: none missing, no duplicates. Outputs: `data/results/hurdle/hurdle_all.csv`,
+`summary.txt`, `figures/output/hurdle_kos.{png,pdf}`. The full-run focus-gene values match the focus table above exactly
+(e.g. nifH within-cruise AUC 0.629 Granite / 0.534 technical; amoB 0.690 / 0.548).
+
+**Setup recap.** 1,111 tiles in 13 cruises; each cruise held out in turn. Presence classes (from `summary`):
+- **Satellite:** within-cruise Granite AUC ≥ 0.60 *and* ≥ 0.05 above technical only.
+- **Technical:** technical-only within-cruise AUC ≥ Granite − 0.02.
+- **Weak:** neither.
+
+**Presence: score distributions** (median, 10–90% range over 5,808 KOs)
+
+| Score | Granite PCs | Technical only | Granite + technical |
+|---|---|---|---|
+| Within-cruise AUC | 0.626 (0.543–0.704) | 0.550 (0.474–0.663) | 0.639 (0.562–0.730) |
+| Pooled AUC | 0.660 (0.465–0.780) | 0.512 (0.320–0.659) | 0.709 (0.552–0.808) |
+
+- **Classes:** satellite 3,047 (52.5%), technical 1,617 (27.8%), weak 1,144 (19.7%).
+- Within-cruise Granite AUC is below 0.5 for 182 KOs; technical-only AUC is below 0.5 for 1,183.
+- **Mirror-tail check against chance.** If presence had no relation to Granite, within-cruise AUC would scatter
+  roughly symmetrically around 0.5. Only 1 KO has Granite AUC < 0.40, against 3,853 above 0.60 (35 below 0.45, against
+  5,109 above 0.55). So the satellite class is not a multiple-testing artefact. It is still a descriptive threshold, not
+  a per-KO test.
+- **Adding the technical covariates to Granite** adds little within cruise: median change +0.004; +0.02 or more for
+  1,853 KOs.
+- **Pooled AUC exceeds within-cruise AUC** for Granite by a median 0.031, because cruise-level differences help the
+  pooled score.
+- **Granite PCs chosen** (median over folds): 4 for 905 KOs, 8 for 2,047, 16 for 2,110 and 32 for 746. The PC count
+  matters for sparse targets (R65 method).
+- **Near-duplicate KOs.** There are 5,799 distinct tile-presence profiles among the 5,808 KOs (3,040 of the 3,047
+  satellite KOs). A few KOs are counted from the same genes, e.g. ETV1 / ETV4 / ETV5 have identical scores.
+
+**Class by tile prevalence**
+
+| Prevalence | Satellite | Technical | Weak | Total |
+|---|---:|---:|---:|---:|
+| 0–0.3 | 601 | 283 | 259 | 1,143 |
+| 0.3–0.5 | 1,160 | 337 | 320 | 1,817 |
+| 0.5–0.7 | 816 | 371 | 271 | 1,458 |
+| 0.7–0.9 | 470 | 625 | 294 | 1,389 |
+| > 0.9 | 0 | 1 | 0 | 1 |
+
+- **Near-ubiquitous KOs (prevalence 0.7–0.9) are mostly technical (45%).** When a KO is almost always present, its
+  occasional absences are dropouts in shallow or HiSeq libraries. This is the phn pattern.
+- **Mid-prevalence KOs (0.3–0.5) are mostly satellite (64%).**
+- **The 212 KOs also in the core set:** satellite 93, technical 46, weak 73.
+
+**Abundance where present** (ridge on Granite PCs after in-sample technical removal; all 5,808 KOs had ≥ 50 present
+tiles)
+- Overall: median R² 0.087 (10–90% −0.058 to 0.402). R² > 0.1 for 2,796 KOs; > 0.3 for 1,358; > 0.5 for 38.
+- **By presence class** (median R², 10–90% range):
+  - Satellite: 0.206 (−0.037 to 0.427).
+  - Weak: 0.070 (−0.061 to 0.396).
+  - Technical: −0.012 (−0.076 to 0.171).
+- Abundance R² tracks presence AUC within cruise (Spearman 0.23).
+- Median share of abundance variance that is technical (in-sample): 0.093.
+- **Focus genes:** abundance where present is not predicted (R² −0.134 to 0.024). This matches the focus run.
+
+**Focus genes in the full-run classes**
+- **Satellite:** nifH, nifD, amoA, amoB, amoC.
+- **Technical:** nifK; phnG, phnH, phnI, phnJ, phnK, phnL, phnM; and nasA.
+  - **nasA** is technical only by the class rule (Granite 0.584 is below 0.60; technical 0.576). In-situ temperature
+    does best for nasA (0.659, focus table).
+  - **phnG / phnH:** Granite and technical are tied (0.664 / 0.647 and 0.643 / 0.646), so these are "technical" by the
+    −0.02 rule rather than because technical wins.
+
+**Rarefying removes part of the depth signal** (focus KOs; technical-only within-cruise AUC, unrarefied vs rarefied
+presence):
+- nifH 0.651 vs 0.534; nifD 0.673 vs 0.588.
+- amoA 0.570 vs 0.484; amoB 0.575 vs 0.548; amoC 0.570 vs 0.476.
+- nasA 0.650 vs 0.576; phnH 0.768 vs 0.646; phnJ 0.788 vs 0.759.
+- Unrarefied prevalence is also higher (nifH 0.44 vs 0.28).
+- Rarefying to G = 10⁶ genes therefore does what it was meant to, but not completely: technical AUC stays above 0.5
+  within cruise.
+
+**Top satellite KOs** (`summary.txt`; within-cruise Granite AUC 0.82–0.94).
+- Prokaryotic examples:
+  - ykkD multidrug pump 0.941 (prevalence 0.27).
+  - **mcrA** (methyl-coenzyme M reductase α) 0.905 (prevalence 0.24).
+  - nrsD 0.890; malF 0.885; aaeB 0.867.
+  - The rifamycin PKS modules rifA / rifB / rifE 0.86–0.88, and asm21 0.872.
+  - abrB 0.854; pcpB 0.846; csy2 0.838.
+- Eukaryote-annotated examples:
+  - Kv1 potassium channels KCNA2 / 4 / 5, 0.83–0.84.
+  - SLC7A14 0.869; PCSK4 0.851.
+  - ETV1 / 4 / 5 0.828.
+- **Caveat on the top list.** KOs like the Kv channels, rif PKS modules or mcrA in surface seawater are probably
+  homolog hits that mark a lineage rather than the named function. Their presence would then follow the
+  eukaryote : prokaryote balance and community-composition axes that the main model already predicts (R59–R61), so
+  they should not be read as evidence for that pathway in situ. Not checked yet: correlation of each satellite KO's
+  presence with the C target (eukaryote : prokaryote log ratio).
+
+**Interpretation for the paper**
+- **Presence / absence of patchy KOs is predictable from space within cruise for about half of them.** Granite is above
+  technical only by ≥ 0.05 AUC, at a median within-cruise AUC of 0.63, with essentially no chance-level tail below 0.4.
+- **Near-ubiquitous KOs are mostly technical:** their absences are sequencing-depth dropouts. The phn genes are the
+  clearest case.
+- **Where a KO is present, its abundance is modestly predictable for satellite-class KOs** (median R² 0.21) and not at
+  all for technical-class KOs.
+- **Focus genes.** nifH / nifD and amoA–C are satellite-class. Their signal matches what in-situ temperature gives
+  (nif) or raw OLCI + SST (amo). Their abundance where present is not predicted.
+
+**Figure** (`figures/output/hurdle_kos.{png,pdf}`; `scripts/hurdle_kos.py --parts figure`). Layout fixes made today:
+the amoB / nifD labels in panel a no longer overlap, and the panel b legend now sits above the axis instead of over the
+phn points.
+
+Draft legend: **Figure — Presence of patchy genes.** **a**, Presence AUC within cruise (n-weighted mean over 13
+held-out cruises) for 5,808 KEGG orthologues present in 20–90% of 1,111 tiles. Presence is rarefied to 10⁶ genes, and a
+tile is present if most of its samples are. x: logistic model on sequencing platform + spline of log10 sequencing depth.
+y: logistic model on Granite principal components (4–32, chosen within the training cruises). Blue: satellite signal
+(Granite ≥ 0.60 and ≥ 0.05 above depth + platform; 3,047). Orange: technical (depth + platform within 0.02 of Granite
+or better; 1,617). Grey: neither (1,144). Circles: focus genes. **b**, Within-cruise presence AUC of focus genes for four
+inputs: depth + platform, in-situ temperature (spline), OLCI band means + SST, and Granite PCs. **c**, **d**, nifH and
+amoB: observed share of tiles with the gene present (black) and mean held-out predicted probability, in 10° latitude
+bins with ≥ 8 tiles.

@@ -27,6 +27,7 @@ matplotlib).
 | Cruise map: three KOs as coloured tracks (P18) | `figures/make_cruise_map.py` | `figures/output/cruise_map.png`, `.pdf` | RESULTS.md R18, R20 |
 | Prediction skill per sample on the globe; overlap vs similar conditions | `figures/make_skill_map.py` | `figures/output/skill_map.png`, `.pdf` | RESULTS.md R20 |
 | Cruise line: temperature vs best model per gene (P18) | `figures/make_cruise_line.py --compare perko` | `figures/output/cruise_line_perko.png`, `.pdf` | RESULTS.md R18 |
+| Presence of patchy genes (hurdle models) | `scripts/hurdle_kos.py --parts summary figure` | `figures/output/hurdle_kos.png`, `.pdf` | RESULTS.md R65 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
@@ -250,3 +251,13 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   sample's conditions are for the other cruises (5 nearest in 8 embedding PCs +
   temperature). Median and quartiles.
 - **Regenerate:** `python figures/make_skill_map.py`
+
+## Presence of patchy genes (hurdle models)
+
+- **Shows:** a, within-cruise presence AUC for 5,808 patchy KOs (20-90% of 1,111 tiles, rarefied to 10^6 genes):
+  depth + platform logistic (x) vs Granite PCs logistic (y), coloured by class (satellite 3,047 / technical 1,617 /
+  weak 1,144); focus genes circled. b, focus genes (nif, amo, nasA, phn) under four inputs: depth + platform,
+  in-situ temperature, OLCI + SST, Granite PCs. c, d, nifH and amoB presence by 10 deg latitude bin: observed share
+  vs mean held-out probability. Legend draft in RESULTS.md R65.
+- **Regenerate:** fit on Morrill (`cluster/hurdle_fit.sbatch`, 24 shards), copy back
+  `data/results/hurdle/fit_shard*.csv.partial`, then `python scripts/hurdle_kos.py --parts summary figure`.

@@ -375,9 +375,10 @@ def figure():
     BLUE, GREY, MAG, ORANGE, LBLUE = "#0072B2", "#8c8c8c", "#c0457e", "#E69F00", "#56B4E9"
     fig = plt.figure(figsize=(7.2, 5.6))
     a = fig.add_axes([0.08, 0.55, 0.36, 0.41])
-    b = fig.add_axes([0.60, 0.55, 0.37, 0.41])
+    b = fig.add_axes([0.60, 0.55, 0.37, 0.37])
     c = fig.add_axes([0.08, 0.08, 0.40, 0.33])
     d = fig.add_axes([0.57, 0.08, 0.40, 0.33])
+    LABEL_OFF = {"amoB": (-22, 5), "nifD": (5, 3)}  # points 0.04 apart; keep labels from colliding
     col = {"satellite": BLUE, "technical": ORANGE, "weak": "#cccccc"}
     lab = {"satellite": "Satellite signal", "technical": "Technical (depth / platform)", "weak": "Weak / neither"}
     for cls in ("weak", "technical", "satellite"):
@@ -389,7 +390,7 @@ def figure():
         if k in set(f["ko"]) and gname in ("nifH", "nifD", "amoB / pmoB", "nasA", "phnJ"):
             r = f[f["ko"] == k].iloc[0]
             a.scatter(r["auc_within_tech"], r["auc_within_granite"], s=16, facecolor="none", edgecolor="black", lw=0.8, zorder=4)
-            a.annotate(gname.split(" /")[0], (r["auc_within_tech"], r["auc_within_granite"]), xytext=(4, 3),
+            a.annotate(gname.split(" /")[0], (r["auc_within_tech"], r["auc_within_granite"]), xytext=LABEL_OFF.get(gname.split(" /")[0], (4, 3)),
                        textcoords="offset points", fontsize=6.5, style="italic")  # fmt: skip
     a.set_xlim(0.3, 1)
     a.set_ylim(0.3, 1)
@@ -406,7 +407,7 @@ def figure():
     b.set_yticks(y)
     b.set_yticklabels(genes, fontsize=6.5, style="italic")
     b.set_xlabel("Presence AUC within cruise")
-    b.legend(frameon=False, fontsize=5.8, loc="lower right", handletextpad=0.1)
+    b.legend(frameon=False, fontsize=5.8, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=4, handletextpad=0.1, columnspacing=0.8)
     models = list(z["models"])
     lat = z["lat"].astype(float)
     bins = np.arange(-75, 85, 10)

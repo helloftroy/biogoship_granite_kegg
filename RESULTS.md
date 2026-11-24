@@ -7258,3 +7258,119 @@ KOs). **f**, Core KOs: within-cruise correlation between abundance (before depth
 pairs sequenced, by gene length (median, interquartile range). All genes are detected more often with more sequencing;
 for prokaryotic genes the effect grows with gene length, and in core prokaryotic KOs long genes gain share and short
 genes lose it, as expected from the 50% coverage filter on mapped reads.
+
+## R71. Rerun with depth = read pairs sequenced: main model, export, fields, figures (2026-11-24)
+
+**Change (user's decision, after R70).** The technical covariate is now platform group + an 8-knot cubic spline of
+log10 read pairs sequenced per tile (FAIRe `input_read_count`; mean of log10 over the tile's samples), replacing log10
+KO-assigned reads. Code: `main_model.sample_log10_depth()` / `setup()` (used by every main-model script),
+`export_benchmark.py` (tiles.csv now has `log10_read_pairs` = covariate and `log10_ko_reads` for reference),
+`benchmark_eval.technical()`, `hurdle_kos.py` / `hurdle_base.py` (`tile_depth.csv` `log10_read_pairs`, over the same
+kept samples as the presence calls; r 0.876 with the old KO-read depth on the 1,111 hurdle tiles). All results with the
+old covariate are archived in `data/results/archive_depth_koreads_2026-11-24/` (main_model, benchmark_export, hurdle
+tables, the paper PNGs).
+
+**Rerun locally** (ridge only): `main_model.py --parts fit partition cruise figure` (all targets; 646 s wall),
+`export_benchmark.py`, `module_predictability.py` (ko_ceiling.csv deleted first: it is a cache and depends on the
+technical adjustment), `variance_budget_main.py`, `main_fields.py` (3 shards + merge), `make_ko_heatmap.py --main
+--columns inputs`, `hurdle_base.py --parts cpred`. **On Morrill** (`cluster/hurdle_read_pairs.sbatch`, 24 shards):
+both hurdle fits; inputs `data/results/hurdle_rp_inputs.tar.gz`. Until those return, `hurdle_base.png` and R69's
+presence numbers are on the old covariate.
+
+### 1. Main model, % of non-technical variance explained (pooled, cruise held out; old → new)
+
+| Target | Granite cv | Granite GCV | Granite cv_shared | Granite + temp cv | Temp | OLCI + SST | Time & place |
+|---|---|---|---|---|---|---|---|
+| All KOs (CLR) | 17.60 → 16.86 | 16.96 → 16.22 | 17.45 → 16.71 | 17.51 → 16.60 | 11.12 → 11.17 | 13.33 → 13.61 | 6.51 → 5.98 |
+| C | 53.79 → 51.87 | 54.01 → 52.30 | – | 55.20 → 51.22 | 46.83 → 47.51 | 50.27 → 50.88 | 12.94 → 9.17 |
+| D | 13.96 → 13.19 | 13.28 → 12.45 | 13.83 → 13.17 | 13.71 → 12.79 | 6.00 → 5.82 | 8.64 → 8.43 | 6.19 → 5.95 |
+| A | 13.72 → 13.01 | 12.78 → 11.89 | 13.33 → 12.55 | 13.93 → 13.04 | 7.19 → 6.80 | 9.48 → 9.43 | 6.56 → 6.26 |
+| Dp | 16.36 → 15.57 | 15.63 → 14.75 | 15.83 → 15.14 | 16.34 → 15.51 | 7.06 → 7.01 | 9.96 → 10.20 | 9.47 → 9.10 |
+| B | 10.32 → 10.78 | 9.56 → 10.07 | 9.77 → 10.13 | 10.08 → 10.40 | 7.18 → 8.13 | 8.82 → 9.93 | 2.20 → 1.98 |
+| De | 18.86 → 20.15 | 18.44 → 19.77 | 18.79 → 19.91 | 18.96 → 20.28 | 17.99 → 20.02 | 18.56 → 21.28 | 9.76 → 9.69 |
+
+C with OLCI + SST + 30-day MLD (sat_mld, cv): 50.84 → 53.21, now above Granite (51.87).
+
+Per-KO median R² (all KOs, Granite cv): 0.1157 → 0.1054; temperature 0.0069 → 0.0141 (ko_temperature.csv).
+
+**Partition** (share of total variance; old → new):
+
+| Target | technical | explained | cruise offsets | within-tile | within-cruise | of non-technical | of reproducible non-technical |
+|---|---|---|---|---|---|---|---|
+| All KOs | 9.09 → 8.41 | 16.00 → 15.44 | 12.19 → 12.39 | 27.04 → 27.04 | 35.59 → 36.59 | 17.60 → 16.86 | 25.05 → 23.92 |
+| C | 15.29 → 11.95 | 45.57 → 45.67 | 4.57 → 6.21 | 6.40 → 6.40 | 28.09 → 29.49 | 53.79 → 51.87 | 58.18 → 55.93 |
+| D | 7.82 → 7.85 | 12.87 → 12.15 | 12.79 → 12.88 | 27.00 → 27.00 | 39.43 → 40.02 | 13.96 → 13.19 | 19.75 → 18.65 |
+| A | 11.69 → 10.60 | 12.11 → 11.63 | 13.97 → 13.97 | 25.92 → 25.92 | 36.21 → 37.78 | 13.72 → 13.01 | 19.41 → 18.33 |
+| Dp | 11.27 → 10.15 | 14.51 → 13.99 | 13.12 → 13.00 | 23.47 → 23.47 | 37.54 → 39.30 | 16.36 → 15.57 | 22.24 → 21.08 |
+| B | 6.99 → 6.15 | 9.60 → 10.12 | 9.39 → 9.22 | 57.60 → 57.60 | 16.37 → 16.85 | 10.32 → 10.78 | 27.11 → 27.90 |
+| De | 8.56 → 6.13 | 17.24 → 18.92 | 10.22 → 9.09 | 45.06 → 45.06 | 18.84 → 20.71 | 18.86 → 20.15 | 37.18 → 38.76 |
+
+Reading: less is removed as technical, as intended (C 15.3 → 11.9%). For C the absolute explained share is unchanged
+(45.6 → 45.7%): the variance the KO-read covariate had removed is variance Granite does not predict (it moves to cruise
+offsets and within-cruise). For the eukaryote-side targets (B, De) Granite now explains more; for the prokaryote and
+all-KO targets slightly less (−0.5 to −0.9 pp of total).
+
+**Variance budget, all KOs (Figure 1; raw share; old → new):** explained 16.00 → 15.44; platform 4.54 → 4.54; depth
+4.55 → 3.87; other cruise offsets 12.29 → 12.52; axis 1 (eukaryotes vs prokaryotes) 6.78 → 7.19; axis 2 (phototrophs)
+3.72 → 3.70; within-tile 27.04 → 27.04; remaining 25.08 → 25.70. Axis 1 still loads eukaryotic genes at its negative
+end.
+
+### 2. C per cruise (Granite cv; old → new)
+
+| Cruise | tiles | R² Granite | R² OLCI + SST | R² time & place | r | bias | SD obs | SD pred |
+|---|---|---|---|---|---|---|---|---|
+| I08S-2024 | 23 | 0.87 → 0.84 | 0.90 → 0.88 | 0.67 → 0.67 | 0.92 → 0.90 | 0.01 → −0.00 | 0.97 → 1.00 | 1.14 → 1.14 |
+| HLY2202-2022 * | 32 | 0.78 → 0.80 | 0.70 → 0.68 | 0.30 → 0.31 | 0.42 → 0.44 | −0.07 → −0.17 | 1.30 → 1.20 | 0.38 → 0.36 |
+| P18 * | 64 | 0.71 → 0.73 | 0.70 → 0.73 | 0.17 → 0.15 | 0.82 → 0.84 | 0.11 → −0.01 | 1.16 → 1.18 | 1.03 → 1.02 |
+| A13.5-2024 | 93 | 0.72 → 0.68 | 0.67 → 0.66 | 0.33 → 0.37 | 0.87 → 0.86 | −0.17 → −0.25 | 1.00 → 1.04 | 0.76 → 0.79 |
+| I05-2023 | 141 | 0.54 → 0.55 | 0.55 → 0.60 | 0.37 → 0.27 | 0.48 → 0.50 | 0.30 → 0.48 | 0.87 → 0.90 | 0.42 → 0.41 |
+| I09N * | 54 | 0.71 → 0.54 | 0.34 → 0.27 | 0.44 → 0.54 | −0.08 → 0.00 | −0.04 → 0.14 | 0.33 → 0.29 | 0.14 → 0.15 |
+| AMT28 * | 46 | 0.55 → 0.46 | 0.61 → 0.52 | 0.35 → 0.27 | 0.83 → 0.82 | 0.13 → −0.13 | 0.68 → 0.66 | 0.79 → 0.82 |
+| GOMECC4 | 53 | 0.38 → 0.44 | 0.34 → 0.37 | −0.62 → −0.38 | −0.27 → −0.21 | −0.63 → −0.56 | 0.42 → 0.44 | 0.36 → 0.36 |
+| A16N-2023 | 174 | 0.45 → 0.43 | 0.49 → 0.51 | 0.25 → 0.23 | 0.71 → 0.70 | −0.21 → −0.16 | 0.98 → 1.02 | 0.48 → 0.49 |
+| I09N-2025 | 84 | 0.25 → 0.38 | −0.13 → 0.29 | 0.09 → 0.15 | 0.37 → 0.30 | 0.14 → 0.06 | 0.44 → 0.48 | 0.24 → 0.25 |
+| P02-2022 | 89 | −0.14 → 0.25 | −0.40 → 0.08 | −0.79 → −1.25 | 0.21 → 0.28 | 0.20 → 0.02 | 0.51 → 0.55 | 0.23 → 0.23 |
+| C13.5/A13.5 * | 216 | 0.36 → −0.08 | 0.34 → −0.12 | −0.20 → −0.58 | 0.50 → 0.47 | 0.08 → 0.22 | 0.38 → 0.41 | 0.40 → 0.45 |
+| I07N * | 146 | −0.57 → −0.56 | −0.47 → −0.47 | −1.31 → −1.11 | −0.05 → 0.01 | 0.14 → 0.18 | 0.34 → 0.32 | 0.26 → 0.23 |
+
+(* NovaSeq 6000 cruise.) The per-cruise changes are mostly in the level (bias), not the pattern (r): the pooled
+technical fit shifts cruise means, because read pairs, like C, differ between cruises. Overall SD of the adjusted C
+0.932 (was 0.91). Held-out nested predicted C on the hurdle tiles (`c_nested.npz`): r 0.728, R² 0.528 (was 0.539).
+
+### 3. Ceilings, modules, heatmap, fields
+
+- Ceilings (`ko_ceiling.csv`, recomputed): median 0.741 (10–90% 0.504–0.862; was 0.740); 22 KOs below the 0.1 floor
+  (was 25). KO-level median fraction: Granite 0.151 (was 0.168), temperature 0.022. Modules with ≥ 4 KOs: 172; median
+  over modules Granite 0.166 (was 0.19), temperature 0.003 (was −0.01).
+- Heatmap categories (`ko_categories.csv`): Granite clearly better 54 → 37; both high, about equal 40 → 33; temperature
+  clearly better 11 → 10. Rows shown: 28 / 14 / 10. Field block: 98 KOs meet the rule (legend said 144), 16 shown.
+- Fields (`added_fields_summary.csv`; KOs gaining ≥ 0.05, heatmap-rule KOs; old → new): sea level 357 / 57 → 212 / 18;
+  phosphate 256 / 49 → 276 / 45; nitrate 238 / 22 → 272 / 21; GLORYS temperature 143 / 14 → 120 / 7; mixed layer
+  67 / 2 → 101 / 11; silicate 63 / 7 → 86 / 8; oxygen 129 / 8 → 108 / 7; chlorophyll 121 / 6 → 75 / 1; salinity
+  37 / 5 → 22 / 0; mixed layer 30-day max 138 / 2 → 160 / 2; wind 14-day mean 68 / 2 → 70 / 0; wind 14-day peak
+  73 / 1 → 73 / 1; all controls 0 rule KOs (noise 1, forecast tiles: 1 KO with gain ≥ 0.05, 0 rule KOs).
+
+### 4. Revised paper legends (user's document, 2026-11-24 version)
+
+- **Figure 1**, depth bullet → "Sequencing depth: a cubic spline of log10 read pairs sequenced per tile (raw
+  sequencing effort, before mapping; KO-assigned reads would partly track the eukaryote fraction, because eukaryotic
+  reads annotate poorly). Platform and depth are fitted in-sample." Bar values change (above); no numbers are in the
+  legend text.
+- **Figure 2**: a, "R² = 0.52 … (51.9% of the non-technical variance)"; "Technical variance (sequencing platform and
+  read pairs sequenced)". b, "Values below −1 are drawn at −1 (time & place on P02-2022, −1.25, and I07N, −1.11)".
+  (R68 wording for C kept: "eukaryote-assigned to prokaryote-assigned KO reads (each read takes the domain of the
+  reference gene it maps to)".)
+- **Figure 3**: "Technical variance (platform and read pairs sequenced) is removed from every KO." Blocks: "The 28
+  with the highest Granite R² are shown, of 37."; "14 shown of 33."; "All 10 shown."; "The 16 largest gains of 98 such
+  KOs are shown".
+- **Figure 4**: "The median ceiling is 0.74; the 22 KOs with ceilings below 0.1 are set to 0.1." "The median module
+  scores 0.17 with Granite PCs and 0.00 with temperature." Last sentence as in R68.
+- **Supplementary S1**:
+  - "The model places 11 of 13 cruises within ±0.25, against an overall SD of 0.93; I05-2023 (+0.48) and GOMECC4
+    (−0.56) are placed off."
+  - "It follows the gradient where there is one: r is 0.44–0.90 for the six cruises with SD ≥ 0.8, and 0.70–0.90 for
+    four of them." (I05-2023 0.896 / r 0.498; I08S-2024 0.999 / 0.896; A16N-2023 1.023 / 0.702; A13.5-2024 1.041 /
+    0.861; P18 1.185 / 0.839; HLY2202-2022 1.203 / 0.437.)
+  - Flat, warm cruises unchanged (I09N r 0.00, I07N 0.01, GOMECC4 −0.21, I09N-2025 0.30, P02-2022 0.28).
+  - "GOMECC4 is placed lowest (bias −0.56); I05-2023 highest (+0.48)."
+  - "HLY2202-2022 is under-dispersed (predicted SD 0.36 vs 1.20 observed)."

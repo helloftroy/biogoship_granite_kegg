@@ -190,6 +190,9 @@ cluster (`git add data/manifests && git commit && git push`) or copy them with
   `hurdle_kos.py` and `hurdle_base.py` fits per shard). Inputs: `scp` `data/results/hurdle_rp_inputs.tar.gz` from
   the Mac to the repo on scratch and untar it in the repo root; delete the old `fit_shard*` / `base_shard*` files
   first (they used KO-read depth). Copy back `data/results/hurdle/fit_shard*.csv*` and `base_shard*.csv*`.
+- Combination search (R73; `cluster/combo_search.sbatch`, target and shard count as arguments): `scp`
+  `data/results/combo/inputs.npz` into `data/results/combo/` on scratch; C as `--array=0-63 ... C 64`, KOs as
+  `--array=0-31 ... ko 32`. Copy back `data/results/combo/*_shard*.npz`.
 - A job that skips work because "the file exists" must check the file is still
   what is needed. The currents files were kept from a run with a shorter time
   span; `download_currents.py` now checks coverage.

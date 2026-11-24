@@ -7425,3 +7425,35 @@ OLCI + SST + MLD per cruise (R² / r): A13.5-2024 0.65 / 0.85; A16N-2023 0.54 / 
   shrunk together; this says nothing about the separate inputs.
 - Where Granite's pattern is better than the bands' it stays so with MLD: HLY2202-2022 r 0.45 vs 0.08, P02-2022 0.28 vs
   0.05, C13.5/A13.5 0.48 vs 0.37. The bands follow A16N-2023 better (0.81 vs 0.69).
+
+## R73. Nested search over input combinations for C and the KOs (2026-11-24; design, running on Morrill)
+
+**Question (user).** After R72: could some combination of Granite PCs, OLCI bands, SST, mixed layer and other inputs
+reach the best score on each cruise, perhaps with only certain bands and certain PCs? Would combining Granite with
+OLCI and other inputs also help for the KOs?
+
+**Design** (`scripts/combo_search.py`, `cluster/combo_search.sbatch`).
+- Targets and setup as the main model (R71): technically adjusted C and all-KO CLR (read-pair depth), 1,215 tiles,
+  13 cruises held out, ridge with the penalty per column by leave-cruise-out inside the training cruises (`cv`).
+- Candidate models = every non-empty subset of input groups, stacked into one ridge.
+  - C, 15 groups (32,767 subsets): Granite PC1–4, PC5–8, PC9–16, PC17–32; OLCI blue (Oa01–05), green-red (Oa06–08),
+    red-edge (Oa09–12), NIR (Oa16–18, Oa21); SST; 30-day mean MLD along the back-trajectory; PISCES nutrients (nitrate,
+    phosphate, silicate, oxygen); GLORYS physics (salinity, temperature, same-day mixed layer, sea level, current
+    speed); history (30-day max MLD, 14-day SST change, 14-day wind mean and peak, sea-level gradient, 30-day EKE);
+    PISCES biology (chlorophyll, primary production); time & place.
+  - KOs, 7 groups (127 subsets): Granite PCs (32), OLCI (16 bands), SST, MLD30, nutrients + biology, physics +
+    history, time & place.
+  - Transforms as in the main model: PCs from PCA 64 on the standardised embedding of the training tiles; satellite
+    quantile-normalised then 8-knot splines; fields standardised then splines (log as in R61); time & place linear.
+    No in-situ measurement; fields that exist only for the forecast period (iron, pH, DIC, alkalinity, pCO2,
+    phytoplankton carbon) are left out; the 17 fields used have no missing tiles.
+- **Selection is nested.** For each held-out cruise (and each KO), the subset is chosen by its leave-cruise-out error
+  inside the 12 training cruises (at the chosen penalty), then scored once on the held-out cruise. Reported:
+  - nested score (honest);
+  - the oracle, the best subset per held-out cruise (optimistic upper bound, not a result);
+  - the best single subset chosen on held-out error over all cruises (also optimistic);
+  - how often each group appears among the chosen / best subsets.
+- Check before submitting: the reference subsets reproduce the main model exactly (C: Granite 51.87, Granite + MLD
+  54.28, OLCI + SST + MLD 53.21, all 15 groups in one ridge 51.54; all KOs: Granite 16.86).
+- Timing (Mac): C 0.1–4.5 s per subset (≈ 14 core-hours in all); KOs 39 s for Granite alone (4 threads), more for
+  larger subsets (≈ 3–5 hours in all). Inputs: `data/results/combo/inputs.npz` (19 MB, built with `--parts bundle`).

@@ -28,6 +28,7 @@ matplotlib).
 | Prediction skill per sample on the globe; overlap vs similar conditions | `figures/make_skill_map.py` | `figures/output/skill_map.png`, `.pdf` | RESULTS.md R20 |
 | Cruise line: temperature vs best model per gene (P18) | `figures/make_cruise_line.py --compare perko` | `figures/output/cruise_line_perko.png`, `.pdf` | RESULTS.md R18 |
 | Presence of patchy genes (hurdle models) | `scripts/hurdle_kos.py --parts summary figure` | `figures/output/hurdle_kos.png`, `.pdf` | RESULTS.md R65 |
+| Why patchy genes are satellite or technical | `scripts/hurdle_mechanism.py` | `figures/output/hurdle_mechanism.png`, `.pdf` | RESULTS.md R66 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
@@ -261,3 +262,12 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
   vs mean held-out probability. Legend draft in RESULTS.md R65.
 - **Regenerate:** fit on Morrill (`cluster/hurdle_fit.sbatch`, 24 shards), copy back
   `data/results/hurdle/fit_shard*.csv.partial`, then `python scripts/hurdle_kos.py --parts summary figure`.
+
+## Why patchy genes are satellite or technical
+
+- **Shows:** a, presence class by eukaryote share of each KO's reference genes; b, within-cruise presence AUC for
+  Granite PCs vs the Granite-predicted eukaryote : prokaryote ratio alone, coloured by eukaryote share; c, median
+  abundance-where-present R2 by counting-noise quintile, eukaryotic vs prokaryotic KOs x satellite vs technical;
+  d, within-cruise presence-depth correlation vs mean reference gene length, by domain, with decile medians.
+- **Regenerate:** `python scripts/hurdle_mechanism.py` (needs R65 outputs, R60 C predictions and R44 `ko_gc.csv`);
+  `--figure-only` redraws from `mechanism.csv`.

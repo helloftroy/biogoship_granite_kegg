@@ -6332,3 +6332,241 @@ or better; 1,617). Grey: neither (1,144). Circles: focus genes. **b**, Within-cr
 inputs: depth + platform, in-situ temperature (spline), OLCI band means + SST, and Granite PCs. **c**, **d**, nifH and
 amoB: observed share of tiles with the gene present (black) and mean held-out predicted probability, in 10° latitude
 bins with ≥ 8 tiles.
+
+---
+
+## R66. Why hurdle KOs are "satellite" or "technical": the split is mostly eukaryotic vs prokaryotic KOs, not detection limit (2026-11-24)
+
+**Questions.**
+1. Does adding Granite to the technical covariates (depth + platform) improve presence AUC?
+2. **Hypothesis to test:** technical-class KOs are low-abundance genes near the detection limit. Their absences are
+   sampling dropouts, and when present their counts are small and dominated by counting noise, so abundance has nothing
+   to predict. Satellite-class KOs are mid-prevalence genes whose presence and abundance follow real biogeography. Long
+   genes should be more depth-sensitive; this would fit nifK being technical while nifH / nifD are satellite.
+
+**Method** (`scripts/hurdle_mechanism.py`; outputs `data/results/hurdle/mechanism.csv`, `mechanism_summary.txt`,
+`figures/output/hurdle_mechanism.{png,pdf}`). Same 5,808 KOs, 1,111 tiles, 13 cruises and samples as R65 (samples with
+≥ 10⁶ genes). Per KO:
+- **Expected count at G:** mean share over kept samples × 10⁶.
+- **Counting-noise share (`noise_frac`)** of the abundance-where-present variance.
+  - For a present sample with count c, var(log c) ≈ 1/c (Poisson).
+  - The tile value is a mean over its n present samples, so its noise variance is Σ(1/cᵢ) / n².
+  - `noise_frac` = mean noise variance over present tiles / observed variance of the tile values.
+  - 1 − `noise_frac` is an approximate ceiling on abundance R².
+  - Counts are gene counts with the 1/n multi-KO split (not reads), so Poisson is an approximation.
+- **Within-cruise correlations of tile presence** (cruise means removed from both) with log10 depth (`r_depth_within`),
+  in-situ temperature (`r_temp_within`) and observed target C, the eukaryote : prokaryote log ratio (`r_C_within`).
+- **Predicted-C presence AUC** (`auc_within_Cpred`): within-cruise AUC of the Granite prediction of C for that tile
+  (main model R60, cruise held out). The sign is taken from the training cruises, so this is a one-number model
+  comparable with Granite's own within-cruise AUC.
+- **Gene length and eukaryote share:** mean reference gene length (nt) and eukaryote share of the KO's reference genes
+  (genes_Eukaryota / genes), both from R44 `transfer/results/ko_gc/ko_gc.csv` (a 1-in-10 sample of the 2026 reference
+  database). No KO is missing.
+
+### 1. Granite added to technical: a large gain except for technical-class KOs
+
+Within-cruise presence AUC, Granite + technical minus technical only:
+- **All KOs:** median +0.081 (10–90% −0.002 to +0.169). At least +0.02 for 4,716 of 5,808 KOs; −0.02 or worse for 280.
+- **By class:**
+  - Satellite: +0.121 (0.532 → 0.653); ≥ +0.02 for 100%.
+  - Weak: +0.062 (0.522 → 0.587); ≥ +0.02 for 93%.
+  - Technical: +0.010 (0.625 → 0.640); ≥ +0.02 for 38%.
+- **Pooled AUC:** median +0.163 (10–90% +0.023 to +0.400). By class: satellite +0.242 (0.483 → 0.743), weak +0.125
+  (0.508 → 0.664), technical +0.050 (0.583 → 0.666).
+- The reverse, technical added to Granite, adds +0.004 (R65). So Granite carries almost everything the combination
+  does, except for the technical-class KOs.
+
+### 2. Per-class medians
+
+| | Satellite | Weak | Technical |
+|---|---:|---:|---:|
+| Prevalence | 0.455 | 0.495 | 0.612 |
+| Expected count in 10⁶ genes | 4.69 | 3.45 | 4.18 |
+| Median count where present | 20.0 | 16.0 | 21.5 |
+| Counting-noise share | 0.085 | 0.125 | 0.117 |
+| Abundance R² | 0.206 | 0.070 | −0.012 |
+| r(presence, depth) within cruise | −0.071 | −0.027 | +0.171 |
+| r(presence, temperature) within cruise | −0.228 | −0.142 | +0.045 |
+| Between-cruise share of presence variance | 0.208 | 0.162 | 0.153 |
+| Mean gene length (nt) | 741 | 756 | 874 |
+| **Eukaryote share of genes** | **0.907** | 0.895 | **0.041** |
+
+Within prevalence bins (0.2–0.5 / 0.5–0.7 / 0.7–0.9; n satellite 1,757 / 816 / 470, weak 579 / 271 / 294, technical
+620 / 371 / 625):
+- **Expected count:** satellite 3.00 / 6.90 / 12.18; weak 1.85 / 4.79 / 10.92; technical 1.66 / 4.03 / 8.82.
+- **Counting-noise share:** satellite 0.107 / 0.074 / 0.059; weak 0.175 / 0.116 / 0.066; technical 0.176 / 0.125 /
+  0.083.
+- **Abundance R²:** satellite 0.118 / 0.336 / 0.315; weak −0.015 / 0.164 / 0.274; technical −0.023 / −0.011 / 0.010.
+- **r(presence, depth):** satellite −0.091 / −0.065 / +0.009; technical +0.079 / +0.197 / +0.214.
+- **Gene length (nt):** satellite 750 / 739 / 722; technical 862 / 904 / 862.
+- **Eukaryote share:** satellite 0.892 / 0.926 / 0.918; weak 0.863 / 0.912 / 0.922; technical 0.122 / 0.028 / 0.032.
+
+### 3. The detection-limit hypothesis: half right for presence, wrong for abundance
+
+**Presence: depth-driven for technical KOs, and long genes are more depth-sensitive (supported, for prokaryotic KOs).**
+- Technical-class presence rises with sequencing depth within cruise (r +0.17); satellite-class presence does not
+  (−0.07).
+- Within prevalence bins, technical KOs have somewhat lower expected counts than satellite KOs (1.7 vs 3.0 at 0.2–0.5).
+- Gene length vs depth sensitivity, across all KOs: Spearman ρ +0.336; vs technical-only within-cruise AUC +0.270.
+  Within prevalence bins: +0.339 / +0.356 / +0.434.
+- **The length effect is a prokaryotic-KO effect.**
+  - Prokaryotic KOs (euk share ≤ 0.1; 1,716): ρ(length, r_depth) = +0.404, and +0.432 / +0.457 / +0.480 within the
+    prevalence bins; ρ(length, technical AUC) +0.366.
+  - Eukaryotic KOs (> 0.9; 2,408): +0.093 and −0.017.
+  - This fits R15: the coverage-50 filter keeps 68% of counts for genes under 140 aa but 13% over 565 aa. A long
+    prokaryotic gene needs a better assembly to pass, and assemblies are worse in shallow libraries.
+  - Across all KOs, the length–depth curve is not monotonic (it dips at 600–900 nt). That is because mid-length KOs are
+    mostly eukaryotic, and eukaryotic presence correlates *negatively* with depth (median −0.087). Panel d therefore
+    splits by domain.
+- **Why eukaryotic presence falls with depth:** eukaryote-rich tiles were sequenced less deeply within a cruise. The
+  within-cruise r between C (eukaryote : prokaryote log ratio) and log10 depth is −0.231. This is biology carried by
+  depth, not a depth artefact.
+- **But "near the detection limit" in the Poisson sense does not describe the technical class.**
+  - Prokaryotic technical KOs have *higher* expected counts than prokaryotic satellite KOs (4.74 vs 2.89) and lower
+    counting noise (0.103 vs 0.119).
+  - The phn genes (all technical) have expected counts of 16–62 per 10⁶ genes, yet are absent in 5–15% of tiles. A
+    Poisson dropout at 16–62 expected counts is essentially impossible.
+  - Their absences are therefore assembly / coverage-filter failures in shallow libraries, which hit long genes most.
+    This is not counting noise.
+
+**Abundance: counting noise caps R² in general, but does not explain the technical class.**
+- Across KOs, noise share vs abundance R²: Spearman −0.465. Noise share quantiles: 10% 0.048, 25% 0.066, 50% 0.100,
+  75% 0.165, 90% 0.277. Only 9 KOs exceed their noise ceiling (1 − noise share).
+- Median abundance R² by noise-share quintile:
+
+| Noise-share quintile | Satellite | Weak | Technical |
+|---|---:|---:|---:|
+| 0.008–0.060 | 0.350 | 0.331 | −0.014 |
+| 0.060–0.083 | 0.316 | 0.280 | 0.003 |
+| 0.083–0.119 | 0.221 | 0.173 | −0.006 |
+| 0.119–0.189 | 0.080 | 0.045 | −0.009 |
+| 0.189–1.894 | −0.017 | −0.019 | −0.015 |
+
+  (n per quintile: satellite 721 / 758 / 641 / 497 / 430; weak 171 / 165 / 203 / 291 / 314; technical 270 / 238 /
+  318 / 373 / 418.)
+- **Technical KOs with low counting noise are still unpredictable** (R² −0.014 in the lowest-noise quintile, against
+  0.350 for satellite). Their abundance has real variance, about 90% of it beyond counting noise, that Granite does not
+  predict.
+
+### 4. What does separate the classes: domain
+
+- **The best single separator of satellite vs technical is the eukaryote share** of the KO's genes.
+  - Medians: 0.907 satellite, 0.041 technical.
+  - Satellite vs technical KOs (n 4,664, of which 3,047 satellite), 10-fold cross-validated logistic on ranked
+    predictors (AUC; standardised coefficient):
+    - Prevalence: 0.626 (−0.45).
+    - Expected count: 0.536 (+0.13).
+    - Gene length: 0.657 (−0.57).
+    - **Eukaryote share: 0.773 (+1.12).**
+    - Expected count + prevalence: 0.745.
+    - All four: 0.835 (expected count +1.22, length −0.49, eukaryote share +0.77, prevalence −1.38).
+- **Class by eukaryote share:**
+
+| Eukaryote share | Satellite | Weak | Technical | n |
+|---|---:|---:|---:|---:|
+| ≤ 0.1 | 498 | 263 | 955 | 1,716 |
+| 0.1–0.5 | 100 | 50 | 177 | 327 |
+| 0.5–0.9 | 856 | 278 | 223 | 1,357 |
+| > 0.9 | 1,593 | 553 | 262 | 2,408 |
+
+- The 3,933 core KOs are mostly prokaryotic: median eukaryote share 0.064; 56.7% at ≤ 0.1 and 9.9% at > 0.9. The
+  patchy set is the reverse: 41% eukaryotic (> 0.9) and 30% prokaryotic (≤ 0.1).
+- **Eukaryotic KOs: the satellite signal is largely the eukaryote : prokaryote balance (target C).**
+  - Median within-cruise presence AUC: Granite 0.630, *predicted C alone* 0.617, technical 0.529.
+  - Presence correlates with observed C within cruise (median r +0.380).
+  - Abundance where present: median R² 0.263. For the 1,593 eukaryotic satellite KOs it is +0.306; weak +0.204;
+    technical +0.066.
+  - Abundance is on the CLR-like scale relative to the (mostly prokaryotic) core KOs, so a eukaryotic KO's abundance
+    also moves with C.
+  - Not yet tested: the abundance R² of eukaryotic KOs from predicted C alone. We expect it to be most of the 0.31.
+- **Prokaryotic KOs: presence mostly technical, abundance unpredictable.**
+  - Median within-cruise AUC: Granite 0.609, technical 0.604, predicted C 0.532. r with C −0.052.
+  - Abundance R²: median −0.017. By class: satellite −0.002, weak −0.027, technical −0.020.
+  - Even at the lowest counting noise, prokaryotic KOs reach a median abundance R² of only 0.04 (satellite) and −0.02
+    (technical); see figure panel c.
+  - Prokaryotic KOs by prevalence bin (0.2–0.5 / 0.5–0.7 / 0.7–0.9): satellite 278 / 108 / 108; weak 153 / 60 / 50;
+    technical 305 / 252 / 397.
+- **Across classes:**
+  - Granite minus predicted-C within-cruise AUC, median: satellite +0.022, weak +0.010, technical +0.020. Granite is
+    ahead by ≥ 0.05 for 29% / 21% / 32%.
+  - Median r_C_within: satellite 0.373, weak 0.263, technical −0.017.
+  - Median auc_within_Cpred: satellite 0.625, weak 0.574, technical 0.545.
+- **The 498 prokaryotic satellite KOs are the set with a signal beyond C.**
+  - Top of the list (within-cruise AUC: Granite / predicted C / technical):
+    - ykkD 0.940 / 0.725 / 0.507; mcrA 0.905 / 0.641 / 0.554.
+    - nrsD 0.890 / 0.474; malF 0.885 / 0.873; aaeB 0.867 / 0.537.
+    - abrB 0.854 / 0.671; pcpB 0.846 / 0.463; bar 0.840; csy2 0.838; aaeR 0.837.
+    - K07721 (ArsR family) 0.832 / 0.332; tgtA2 0.815 / 0.229; adiC 0.807 (r_temp −0.503).
+  - nifH, nifD and amoA–C are in this set (eukaryote share 0.000–0.010).
+  - Several top ones (mcrA, sspH spore protein, ykkD, pcpB) are odd for surface seawater. They could be homolog hits
+    marking a lineage, or a technical axis that depth + platform does not capture (e.g. the axis-1 KO-profile spread,
+    R45).
+  - Their abundance where present is still not predicted (median −0.002).
+- **Other correlations** (Spearman, all KOs):
+  - Granite within-cruise AUC vs |r(presence, temperature)|: +0.584; vs signed r: −0.310. Most satellite KOs are more
+    often present in colder water within a cruise (median −0.228).
+  - Eukaryote share vs Granite AUC: +0.105.
+  - Expected count vs technical AUC: −0.094; vs r_depth +0.164. Noise share vs expected count: −0.856.
+
+### 5. Gene length and the nif genes: does not explain the split
+
+| Gene | Class | Prevalence | Expected count | Noise share | Abundance R² | r(depth) | r(temperature) | Length (nt) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| nifH | satellite | 0.275 | 1.95 | 0.064 | −0.134 | +0.071 | +0.236 | 836 |
+| nifD | satellite | 0.151 | 1.10 | 0.055 | −0.103 | +0.118 | +0.270 | 1,334 |
+| nifK | technical | 0.325 | 2.22 | 0.063 | −0.029 | +0.127 | +0.188 | 1,225 |
+| amoA | satellite | 0.164 | 2.17 | 0.055 | −0.038 | +0.038 | −0.182 | 698 |
+| amoB | satellite | 0.146 | 1.91 | 0.078 | −0.034 | +0.030 | −0.182 | 1,000 |
+| amoC | satellite | 0.170 | 1.82 | 0.071 | −0.001 | +0.044 | −0.132 | 669 |
+| nasA | technical | 0.767 | 17.88 | 0.034 | +0.014 | +0.105 | −0.159 | 1,818 |
+| phnJ | technical | 0.885 | 40.01 | 0.016 | +0.024 | +0.273 | +0.183 | 843 |
+| phnI | technical | 0.845 | 41.87 | 0.016 | −0.037 | +0.292 | +0.133 | 1,006 |
+| phnH | technical | 0.858 | 16.07 | 0.039 | −0.027 | +0.199 | +0.144 | 612 |
+| phnG | technical | 0.859 | 21.87 | 0.031 | +0.022 | +0.180 | +0.183 | 467 |
+| phnL | technical | 0.853 | 25.34 | 0.025 | −0.058 | +0.225 | +0.112 | 699 |
+| phnK | technical | 0.851 | 28.48 | 0.022 | −0.014 | +0.236 | +0.131 | 748 |
+| phnM | technical | 0.947 | 62.18 | 0.015 | −0.117 | +0.202 | +0.111 | 1,033 |
+
+- **nifK (1,225 nt) is shorter than nifD (1,334 nt)**, and their depth correlations are about the same (+0.127 vs
+  +0.118). So length does not explain why nifK is technical.
+- nifK has twice nifD's prevalence (0.33 vs 0.15), although the two genes sit in one operon. A likely reason
+  (unverified) is that K02591 also collects homolog hits (nifE / nifN-like and other nitrogenase-like genes), which dilute
+  the diazotroph signal.
+- The phn genes are not near the detection limit (expected count 16–62; noise share 0.015–0.039), yet presence follows
+  depth (r +0.18 to +0.29). This is the assembly / filter dropout described in section 3.
+
+### Interpretation
+
+- **Presence:** "technical" KOs are mostly *prokaryotic* KOs whose occasional absences track sequencing depth. Long
+  genes are affected most, consistent with assembly failing the coverage-50 filter in shallow libraries. This is not
+  Poisson dropout at the detection limit: technical KOs are not rarer than satellite KOs, and phn has 16–62 expected
+  counts.
+- **"Satellite" KOs are mostly eukaryotic KOs**, and for them the satellite signal is largely the eukaryote :
+  prokaryote balance that the main model already predicts (C, R² 0.54). Predicted C alone gives within-cruise AUC
+  0.617, against Granite's 0.630. This is a real biogeographic signal, but mostly one signal, not thousands of
+  independent ones.
+  - Paper wording: "satellite-predictable presence of patchy genes mostly reflects where eukaryotes dominate."
+  - It should not be presented as 3,047 independent gene-level results.
+- **Abundance where present:** predictable for eukaryotic KOs (median R² 0.31 in the satellite class) and not for
+  prokaryotic KOs of any class (≈ 0), even at low counting noise.
+  - This answers why technical-class abundance is unpredictable: technical KOs are prokaryotic. Patchy prokaryotic
+    genes' abundance where present is not predicted from space.
+  - That contrasts with the core (mostly prokaryotic, always present) KOs at about 16% (R59). The difference is
+    probably that core KOs' variance is dominated by shared community axes, while a patchy prokaryotic KO, where
+    present, varies with its particular carriers.
+- **The genuinely gene-specific satellite signals** are among the 498 prokaryotic satellite KOs, which include nif and
+  amo. These need the next checks:
+  - (a) Granite beyond predicted C *and* temperature for each.
+  - (b) Whether the oddities at the top (mcrA, ykkD, sspH) follow a residual technical axis, such as axis 1 of R45.
+  - (c) The abundance R² of eukaryotic KOs from predicted C alone.
+
+**Figure** `figures/output/hurdle_mechanism.{png,pdf}` (`python scripts/hurdle_mechanism.py`, about 2 min;
+`--figure-only` redraws).
+- **a:** Share of KOs in each presence class by eukaryote share of the KO's reference genes; n at right.
+- **b:** Within-cruise presence AUC, Granite PCs vs the Granite-predicted eukaryote : prokaryote ratio alone (sign from
+  the training cruises), coloured by eukaryote share. Eukaryotic KOs sit on the 1:1 line; prokaryotic KOs sit above it
+  or near 0.5.
+- **c:** Median abundance-where-present R² by quintile of counting-noise share, for eukaryotic (> 0.9) and prokaryotic
+  (≤ 0.1) KOs in the satellite and technical classes.
+- **d:** Within-cruise correlation of presence with log10 sequencing depth against mean reference gene length, by
+  domain, with decile medians.

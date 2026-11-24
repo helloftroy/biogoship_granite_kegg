@@ -7100,3 +7100,71 @@ depth within each cruise, for prokaryotic and eukaryotic KOs split into thirds b
 Prokaryotic genes are detected more often in deeper libraries, long genes most (0.81 to 1.18); eukaryotic genes are
 detected less often (1.16 to 0.86), because eukaryote-rich tiles were sequenced less deeply (within-cruise r = −0.21
 between depth and the eukaryote : prokaryote ratio).
+
+### R69 addendum: core KOs alongside patchy KOs; temperature dropped; figure redone as a–f (2026-11-24)
+
+Decisions: temperature is not used (base_temp − base +0.001; its numbers stay above for the record); the figure no
+longer shows temperature. Core and patchy KOs are shown side by side but scored separately: the patchy abundance R²
+does not enter any main-model number.
+
+Core KOs = the 3,933 KOs of the main (full-KO, CLR) model; per-KO held-out Granite R² from
+`data/results/main_model/ko_ceiling.csv` (technical variance removed in-sample, cruise held out). 212 of them are also
+in the patchy set (they pass both filters). Domain by read share as above. Depth sensitivity of core KOs = within-cruise
+Pearson r between the CLR abundance (before technical adjustment, `targets/clr_all.csv.gz`) and log10 KO reads per
+tile, over all 1,215 tiles; length terciles within domain. Outputs: `data/results/hurdle/core_domain_depth.csv`,
+`depth_detection.csv`; numbers appended to `base_summary.txt`.
+
+**Abundance R² by read domain (median, IQR, share of KOs with R² > 0.1)**
+
+| | Prokaryotic | Mixed | Eukaryotic |
+|---|---|---|---|
+| Core KOs (main model) | n 3,179: +0.102 (+0.010 to +0.213), 50% | n 489: +0.132 (+0.035 to +0.223), 59% | n 265: +0.320 (+0.236 to +0.376), 92% |
+| Patchy KOs, where present | n 1,997: −0.017 (−0.047 to +0.044), 15% | n 1,055: +0.083 (−0.015 to +0.235), 47% | n 2,756: +0.253 (+0.081 to +0.377), 73% |
+
+Core R² by eukaryotic read share (tenths; n, median): 0.0–0.1 3,179 +0.102; 0.1–0.2 190 +0.104; 0.2–0.3 74 +0.133;
+0.3–0.4 46 +0.066; 0.4–0.5 26 +0.058; 0.5–0.6 32 +0.138; 0.6–0.7 30 +0.212; 0.7–0.8 40 +0.228; 0.8–0.9 51 +0.259;
+0.9–1.0 265 +0.320. Spearman (R², eukaryotic read share): core 0.116, patchy 0.504.
+
+**Core KOs: within-cruise r (abundance, depth), median (IQR), by length tercile**
+
+| Domain | n | Tercile cuts (nt) | Short | Medium | Long | Spearman (r, length) |
+|---|---|---|---|---|---|---|
+| Prokaryotic | 3,179 | 746 / 1,010 | −0.112 (−0.246 to −0.010) | +0.033 (−0.070 to +0.114) | +0.133 (+0.056 to +0.207) | 0.657 |
+| Mixed | 489 | 665 / 765 | −0.126 (−0.218 to −0.043) | −0.048 (−0.127 to +0.014) | +0.010 (−0.079 to +0.077) | 0.489 |
+| Eukaryotic | 265 | 687 / 754 | −0.228 (−0.250 to −0.201) | −0.221 (−0.247 to −0.188) | −0.202 (−0.248 to −0.174) | 0.162 |
+
+Patchy detection in % vs the KO's average, depth fifths 1 → 5: prokaryotic short −11 −3 +0 +4 +9, medium −18 −5 +1 +6
++14, long −19 −6 +0 +7 +18; mixed short +2 +3 −1 −3 −0, medium +0 +2 −1 −2 +2, long −1 +0 −2 −2 +2; eukaryotic
+short +18 +8 −2 −10 −14, medium +14 +7 −2 −8 −11, long +16 +8 −1 −10 −14.
+
+**Interpretation**
+- The domain gradient in abundance predictability holds for core KOs: eukaryotic 0.320, mixed 0.132, prokaryotic
+  0.102. Unlike patchy prokaryotic KOs (−0.017), core prokaryotic KOs are predictable (half have R² > 0.1); the
+  patchy result does not carry over to them.
+- The depth × length effect is the same in core KOs: within a cruise, abundance of long prokaryotic genes rises with
+  depth (+0.133) and of short ones falls (−0.112; CLR, so relative). This is the coverage filter on mapped reads; the
+  main model removes depth per KO, so it does not enter the R². Eukaryotic KOs fall with depth at every length
+  (≈ −0.2), i.e. composition: eukaryote-rich tiles were sequenced less deeply.
+- Mixed KOs sit in between in every respect: presence AUC as eukaryotic (base 0.626), detection flat with depth
+  (within ±3%), abundance R² between the two.
+
+**Legend draft (replaces the R69 draft)**
+
+**Patchy and core genes: what Granite predicts depends on whether the gene is carried by eukaryotes or prokaryotes.**
+KOs are grouped by the share of their reads mapped to eukaryotic reference genes (eukaryotic > 0.9, prokaryotic ≤ 0.1,
+otherwise mixed). Patchy KOs: 5,808 KOs present in 20–90% of 1,111 tiles (≥ 1 read per 10^6 KO reads after
+rarefaction). Core KOs: the 3,933 KOs of the main model. Every model holds out each cruise in turn. **a**, Presence of
+patchy KOs: AUC within the held-out cruise (median, interquartile range) for logistic models on sequencing depth +
+platform, the Granite-predicted eukaryote : prokaryote read ratio + depth + platform, and Granite PCs + depth +
+platform. **b**, Abundance R² (Granite ridge, depth and platform removed) for core KOs (main model) and for patchy KOs
+where present, scored separately; numbers, KOs. **c**, Per-KO presence AUC of patchy KOs, Granite + depth + platform
+against predicted ratio + depth + platform, coloured by eukaryotic read share; dashed line, equal AUC; labelled,
+nitrogen-fixation (nifH, nifD, nifK), ammonia-oxidation (amoB), nitrate-assimilation (nasA) and phosphonate (phnJ)
+genes. **d**, Abundance R² against eukaryotic read share (tenths; line, median; band, interquartile range). **e**,
+Patchy KOs: how often a KO is detected in each fifth of the tiles ranked by sequencing depth within their cruise,
+as % above or below its average over all tiles, for short, medium and long genes (thirds by mean reference gene
+length within each domain; median over KOs). **f**, Core KOs: within-cruise correlation between abundance (before
+depth and platform are removed) and sequencing depth, by gene length (median, interquartile range). Longer
+prokaryotic genes are detected more often and counted more in deeper libraries; eukaryotic genes go the other way
+because eukaryote-rich tiles were sequenced less deeply (within-cruise r = −0.21 between depth and the eukaryote :
+prokaryote ratio).

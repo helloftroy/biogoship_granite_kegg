@@ -275,10 +275,13 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
 
 ## Patchy genes, base model (supersedes the two hurdle figures above)
 
-- **Shows:** 5,808 patchy KOs grouped by read-based domain (R67). a, within-cruise presence AUC (median, IQR) for depth +
-  platform, temperature + technical, predicted eukaryote : prokaryote + technical, Granite + technical. b, per-KO AUC,
-  Granite + technical vs predicted C + technical, coloured by eukaryotic read share; focus genes circled. c,
-  abundance-where-present R2 by eukaryotic read share (tenths; median, IQR, n). d, relative detection by within-cruise
-  depth fifth, prokaryotic vs eukaryotic KOs by gene-length tercile. Legend draft in RESULTS.md R69.
-- **Regenerate:** `bash cluster/run_hurdle_base_local.sh` (10 local shards, ~50 min; needs `c_nested.npz` from
-  `--parts cpred`), then `python scripts/hurdle_base.py --parts summary figure`.
+- **Shows:** KOs grouped by read-based domain (R67). a, patchy KOs (5,808): within-cruise presence AUC (median, IQR) for
+  depth + platform, predicted eukaryote : prokaryote + technical, Granite + technical. b, abundance R2 by domain, core
+  KOs (main model, 3,933) and patchy KOs where present, side by side. c, per-KO presence AUC, Granite + technical vs
+  predicted C + technical, coloured by eukaryotic read share; focus genes labelled. d, abundance R2 by eukaryotic read
+  share, core and patchy. e, patchy KOs: detection (% vs the KO's average) by within-cruise depth fifth, per domain, by
+  gene-length tercile. f, core KOs: within-cruise r of abundance with depth, by domain x length. Legend draft in
+  RESULTS.md R69 addendum.
+- **Regenerate:** fits: `cluster/run_hurdle_base_local.sh` (next time on Morrill), then
+  `python scripts/hurdle_base.py --parts summary figure` (figure needs main_model/ko_ceiling.csv and
+  targets/clr_all.csv.gz).

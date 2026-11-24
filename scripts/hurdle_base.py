@@ -22,7 +22,8 @@ Parts:
   cpred    data/results/hurdle/c_nested.npz (per outer fold: predicted C for its training and test tiles)
   fit      --shard i n; appends to base_shard<i>.csv.partial (fixed columns, resumable)
   summary  base_all.csv (joined with hurdle_all.csv and ko_domain_reads.csv), base_summary.txt
-  figure   figures/output/hurdle_base.{png,pdf}; depth_detection.csv; figure numbers appended to base_summary.txt
+  figure   figures/output/hurdle_base.{png,pdf}; depth_detection.csv, core_domain_depth.csv; figure numbers appended
+           to base_summary.txt. Core KOs = the 3,933 KOs of the main (full-KO) model, R2 from main_model/ko_ceiling.csv.
 Usage:
   OMP_NUM_THREADS=2 ~/miniforge3/bin/python3 scripts/hurdle_base.py --parts cpred
   bash cluster/run_hurdle_base_local.sh            (shards in parallel, resumable)
@@ -208,127 +209,203 @@ def depth_detection():
     return pd.DataFrame(rows), cuts, float(np.corrcoef(dd[ok], cc[ok])[0, 1])
 
 
+def core_table():
+    """Core (full-KO model) KOs: held-out Granite R2 (main model, ko_ceiling.csv), read domain, gene length and the
+    within-cruise correlation of abundance (CLR, before technical adjustment) with log10 KO reads, over all 1,215 tiles."""
+    tiles = pd.read_csv(BX / "tiles.csv", index_col="tile_key")
+    X = pd.read_csv(BX / "targets" / "clr_all.csv.gz", index_col="tile_key")
+    cr, dp = tiles.loc[X.index, "cruise"], tiles.loc[X.index, "log10_ko_reads"]
+    Xd, dd = X - X.groupby(cr).transform("mean"), dp - dp.groupby(cr).transform("mean")
+    k = pd.read_csv(REPO / "data/results/main_model/ko_ceiling.csv", index_col="ko")[["r2"]]
+    k["r_depth_within"] = Xd.mul(dd, axis=0).sum() / np.sqrt((Xd**2).sum() * (dd**2).sum())
+    k = k.join(pd.read_csv(REPO / "data/results/ko_domain/ko_domain_reads.csv", index_col="ko")[["euk_read_share"]])
+    k["domain"] = np.select([k["euk_read_share"] > 0.9, k["euk_read_share"] <= 0.1], ["eukaryotic", "prokaryotic"], "mixed")
+    k["length_mean"] = pd.read_csv(REPO / "transfer/results/ko_gc/ko_gc.csv", index_col="ko")["length_mean"].reindex(k.index)
+    k["length_tercile"] = ""
+    for dm in ("prokaryotic", "mixed", "eukaryotic"):
+        m = k["domain"] == dm
+        k.loc[m, "length_tercile"] = pd.qcut(k.loc[m, "length_mean"], 3, labels=["short", "medium", "long"]).astype(str)
+    k.round(5).to_csv(OUT / "core_domain_depth.csv")
+    return k
+
+
 def figure():
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.colors import LinearSegmentedColormap, to_rgb
+    from scipy.stats import spearmanr
 
     plt.rcParams.update({"font.family": "Arial", "font.size": 7, "axes.spines.top": False, "axes.spines.right": False,
                          "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6, "pdf.fonttype": 42})  # fmt: skip
     FIG = REPO / "figures" / "output"
     f = pd.read_csv(OUT / "base_all.csv", index_col="ko")
-    PROK, EUK, MIX = "#33a02c", "#6a3d9a", "#8c8c8c"
+    core = core_table()
+    PROK, EUK, MIX = "#33a02c", "#6a3d9a", "#7f7f7f"
     dcol = {"prokaryotic": PROK, "mixed": MIX, "eukaryotic": EUK}
+    doms = ("prokaryotic", "mixed", "eukaryotic")
+    CORE_C, PATCHY_C = "#D55E00", "#0072B2"
     cmap = LinearSegmentedColormap.from_list("dom", [PROK, "#c8c8c8", EUK])
-    fig = plt.figure(figsize=(7.2, 5.8))
-    a = fig.add_axes([0.09, 0.57, 0.38, 0.38])
-    b = fig.add_axes([0.58, 0.57, 0.33, 0.38])
-    cb = fig.add_axes([0.925, 0.62, 0.012, 0.28])
-    c = fig.add_axes([0.09, 0.08, 0.38, 0.36])
-    d = fig.add_axes([0.58, 0.08, 0.38, 0.36])
+
+    def tint(c, s):
+        rgb = np.array(to_rgb(c))
+        return 1 - s * (1 - rgb)
+
+    SHADE = {"short": 0.42, "medium": 0.7, "long": 1.0}
+    fig = plt.figure(figsize=(7.2, 8.6))
+    a = fig.add_axes([0.09, 0.715, 0.36, 0.255])
+    b = fig.add_axes([0.60, 0.715, 0.37, 0.255])
+    c = fig.add_axes([0.09, 0.375, 0.32, 0.255])
+    cb = fig.add_axes([0.425, 0.40, 0.010, 0.20])
+    d = fig.add_axes([0.60, 0.375, 0.37, 0.255])
+    e = [fig.add_axes([0.09 + i * 0.125, 0.06, 0.105, 0.225]) for i in range(3)]
+    g6 = fig.add_axes([0.60, 0.06, 0.37, 0.225])
     log = []
 
-    # a: within-cruise presence AUC by model and read domain (median, IQR)
-    models = (("tech", "Depth + platform", "#E69F00", "s"), ("temp_tech", "Temperature + depth + platform", "#c0457e", "D"),
-              ("c_tech", "Predicted eukaryote : prokaryote + depth + platform", "#56B4E9", "^"),
-              ("base", "Granite + depth + platform", "#0072B2", "o"))  # fmt: skip
-    doms = ("prokaryotic", "mixed", "eukaryotic")
+    def dotrange(ax, x, v, cc, mk, lb):
+        ax.plot([x, x], [v.quantile(.25), v.quantile(.75)], color=cc, lw=1.2, solid_capstyle="butt")
+        ax.scatter(x, v.median(), s=18, marker=mk, color=cc, lw=0, zorder=3, label=lb)
+
+    # a: presence AUC (patchy KOs)
+    models = (("tech", "Depth + platform", "#E69F00", "s"),
+              ("c_tech", "Predicted eukaryote : prokaryote\n+ depth + platform", "#56B4E9", "^"),
+              ("base", "Granite + depth + platform", PATCHY_C, "o"))  # fmt: skip
     for j, (m, lb, cc, mk) in enumerate(models):
         for i, dm in enumerate(doms):
-            v = f.loc[f["domain"] == dm, f"auc_within_{m}"]
-            x = i + (j - 1.5) * 0.17
-            a.plot([x, x], [v.quantile(.25), v.quantile(.75)], color=cc, lw=1.2, solid_capstyle="butt")
-            a.scatter(x, v.median(), s=18, marker=mk, color=cc, lw=0, zorder=3, label=lb if i == 0 else None)
+            dotrange(a, i + (j - 1) * 0.22, f.loc[f["domain"] == dm, f"auc_within_{m}"], cc, mk, lb if i == 0 else None)
     a.axhline(0.5, color="#cccccc", lw=0.6, zorder=0)
     a.set_xticks(range(3))
-    a.set_xticklabels([f"{dm.capitalize()}\n({(f['domain'] == dm).sum():,} KOs)" for dm in doms])
-    a.set_ylabel("Presence AUC within cruise (median, IQR)")
+    a.set_xticklabels([f"{dm.capitalize()}\n({(f['domain'] == dm).sum():,})" for dm in doms])
     a.set_xlim(-0.5, 2.5)
-    a.legend(frameon=False, fontsize=5.8, loc="upper left", handletextpad=0.2, bbox_to_anchor=(0, 1.04))
-    a.set_ylim(0.44, 0.86)
+    a.set_ylim(0.44, 0.84)
+    a.set_ylabel("Presence AUC within cruise\n(patchy KOs; median, IQR)")
+    a.legend(frameon=False, fontsize=5.8, loc="upper left", handletextpad=0.2, bbox_to_anchor=(0, 1.06))
 
-    # b: Granite + technical vs predicted C + technical, coloured by eukaryotic read share
-    o = f.sample(frac=1, random_state=0)  # random draw order so neither domain hides the other
-    sc = b.scatter(o["auc_within_c_tech"], o["auc_within_base"], c=o["euk_read_share"], cmap=cmap, vmin=0, vmax=1, s=2.2,
+    # b: abundance R2, core (main model) vs patchy (where present), side by side, scored separately
+    for j, (src, lb, cc, mk) in enumerate(((core, "Core KOs (main model)", CORE_C, "D"),
+                                            (f.rename(columns={"abund_r2": "r2"}), "Patchy KOs, where present", PATCHY_C, "o"))):  # fmt: skip
+        for i, dm in enumerate(doms):
+            v = src.loc[src["domain"] == dm, "r2"]
+            dotrange(b, i + (j - 0.5) * 0.28, v, cc, mk, lb if i == 0 else None)
+            b.text(i + (j - 0.5) * 0.28, v.quantile(.75) + 0.012, f"{len(v):,}", ha="center", va="bottom", fontsize=5.3, color="#555555")
+    b.axhline(0, color="#cccccc", lw=0.6, zorder=0)
+    b.set_xticks(range(3))
+    b.set_xticklabels([dm.capitalize() for dm in doms])
+    b.set_xlim(-0.5, 2.5)
+    b.set_ylabel("Abundance R², Granite, cruise held out\n(median, IQR)")
+    b.legend(frameon=False, fontsize=5.8, loc="upper left", handletextpad=0.2, bbox_to_anchor=(0, 1.06))
+    log.append("abundance R2 by read domain (median, IQR, share > 0.1):")
+    for nm, src in (("core", core), ("patchy where present", f.rename(columns={"abund_r2": "r2"}))):
+        for dm in doms:
+            v = src.loc[src["domain"] == dm, "r2"]
+            log.append(f"  {nm:21s} {dm:12s} n {len(v):5,}  median {v.median():+.3f}  IQR {v.quantile(.25):+.3f} to "
+                       f"{v.quantile(.75):+.3f}  > 0.1 {(v > 0.1).mean():.0%}")  # fmt: skip
+    log.append(f"  core KOs also in the patchy set: {len(core.index.intersection(f.index))}")
+
+    # c: per-KO presence AUC, Granite + tech vs predicted C + tech
+    o = f.sample(frac=1, random_state=0)
+    sc = c.scatter(o["auc_within_c_tech"], o["auc_within_base"], c=o["euk_read_share"], cmap=cmap, vmin=0, vmax=1, s=2,
                    lw=0, alpha=0.75, rasterized=True)  # fmt: skip
-    b.plot([0.25, 1], [0.25, 1], color="#555555", lw=0.6, ls=(0, (3, 2)))
-    LABEL_OFF = {"nifH": (-22, -5), "nasA": (5, -4), "nifD": (-23, 2), "amoB": (5, 2), "nifK": (5, -5), "phnJ": (4, -7)}
+    c.plot([0.25, 1], [0.25, 1], color="#555555", lw=0.6, ls=(0, (3, 2)))
+    LABEL_AT = {"amoB": (0.30, 0.97), "nifD": (0.30, 0.91), "nasA": (0.28, 0.66), "nifH": (0.28, 0.60),
+                "nifK": (0.78, 0.42), "phnJ": (0.88, 0.62)}  # fmt: skip
     for k, gname in h.FOCUS.items():
-        if k in f.index and gname in ("nifH", "nifD", "nifK", "amoB / pmoB", "nasA", "phnJ"):
+        gn = gname.split(" /")[0]
+        if k in f.index and gn in LABEL_AT:
             r = f.loc[k]
-            gn = gname.split(" /")[0]
-            b.scatter(r["auc_within_c_tech"], r["auc_within_base"], s=16, facecolor="none", edgecolor="black", lw=0.8, zorder=4)
-            b.annotate(gn, (r["auc_within_c_tech"], r["auc_within_base"]), xytext=LABEL_OFF.get(gn, (4, 3)),
-                       textcoords="offset points", fontsize=6.5, style="italic")  # fmt: skip
-            log.append(f"  focus {gn:5s} {k}: domain {r['domain']}, euk read share {r['euk_read_share']:.3f}, AUC within: tech "
-                       f"{r['auc_within_tech']:.3f}, temp+tech {r['auc_within_temp_tech']:.3f}, C+tech {r['auc_within_c_tech']:.3f}, "
-                       f"Granite+tech {r['auc_within_base']:.3f}, +temp {r['auc_within_base_temp']:.3f}; abundance R2 {r['abund_r2']:.3f}")  # fmt: skip
-    b.set_xlim(0.25, 1)
-    b.set_ylim(0.25, 1)
-    b.set_xlabel("Presence AUC within cruise,\npredicted eukaryote : prokaryote + depth + platform")
-    b.set_ylabel("Presence AUC within cruise, Granite + depth + platform")
+            xy = (r["auc_within_c_tech"], r["auc_within_base"])
+            c.scatter(*xy, s=16, facecolor="none", edgecolor="black", lw=0.8, zorder=4)
+            c.annotate(gn, xy, xytext=LABEL_AT[gn], textcoords="data", fontsize=6.8, style="italic", fontweight="bold",
+                       va="center", arrowprops=dict(arrowstyle="-", lw=0.5, color="#333333", shrinkA=1, shrinkB=3))  # fmt: skip
+            log.append(f"  focus {gn:5s} {k}: euk read share {r['euk_read_share']:.3f}, AUC within: tech {r['auc_within_tech']:.3f}, "
+                       f"C+tech {r['auc_within_c_tech']:.3f}, Granite+tech {r['auc_within_base']:.3f}")  # fmt: skip
+    c.set_xlim(0.25, 1)
+    c.set_ylim(0.25, 1)
+    c.set_xlabel("Presence AUC, predicted eukaryote :\nprokaryote + depth + platform")
+    c.set_ylabel("Presence AUC, Granite + depth + platform")
     cbar = fig.colorbar(sc, cax=cb)
     cbar.set_ticks([0, 0.5, 1])
     cbar.outline.set_linewidth(0.5)
-    cbar.set_label("Eukaryotic share of the KO's reads", fontsize=6.5)
+    cbar.set_label("Eukaryotic share of reads", fontsize=6.3)
     cbar.solids.set_rasterized(True)
 
-    # c: abundance-where-present R2 by eukaryotic read share (deciles of share)
+    # d: abundance R2 vs eukaryotic read share, core and patchy
     edges = np.linspace(0, 1, 11)
-    bins = pd.cut(f["euk_read_share"], edges, include_lowest=True)
-    g = f.groupby(bins, observed=True)["abund_r2"]
     mid = (edges[:-1] + edges[1:]) / 2
-    med, q1, q3, n = g.median().to_numpy(), g.quantile(.25).to_numpy(), g.quantile(.75).to_numpy(), g.size().to_numpy()
-    c.fill_between(mid, q1, q3, color="#0072B2", alpha=0.18, lw=0)
-    c.plot(mid, med, color="#0072B2", lw=1.2, marker="o", ms=3)
-    for x, y, k in zip(mid, q3, n):
-        c.text(x, y + 0.012, f"{k:,}", ha="center", va="bottom", fontsize=5.3, color="#555555")
-    c.axhline(0, color="#cccccc", lw=0.6, zorder=0)
-    c.set_xlim(0, 1)
-    c.set_xlabel("Eukaryotic share of the KO's reads")
-    c.set_ylabel("Abundance where present, R² (Granite, cruise held out)")
-    log.append("\nabundance-where-present R2 by eukaryotic read share bin (n, median, IQR):")
-    for e0, e1, k, m_, a_, b_ in zip(edges[:-1], edges[1:], n, med, q1, q3):
-        log.append(f"  {e0:.1f}-{e1:.1f}  n {k:5,}  median {m_:+.3f}  IQR {a_:+.3f} to {b_:+.3f}")
-    for dm in doms:
-        v = f.loc[f["domain"] == dm, "abund_r2"]
-        log.append(f"  {dm:12s} n {len(v):5,}  median {v.median():+.3f}  IQR {v.quantile(.25):+.3f} to {v.quantile(.75):+.3f}  "
-                   f"R2 > 0.1: {(v > 0.1).mean():.0%}")  # fmt: skip
+    log.append("\nabundance R2 by eukaryotic read share bin (n, median, IQR):")
+    for nm, src, cc, dy in (("core", core, CORE_C, 0.012), ("patchy", f.rename(columns={"abund_r2": "r2"}), PATCHY_C, -0.012)):
+        g = src.groupby(pd.cut(src["euk_read_share"], edges, include_lowest=True), observed=False)["r2"]
+        med, q1, q3, n = g.median().to_numpy(), g.quantile(.25).to_numpy(), g.quantile(.75).to_numpy(), g.size().to_numpy()
+        d.fill_between(mid, q1, q3, color=cc, alpha=0.15, lw=0)
+        d.plot(mid, med, color=cc, lw=1.2, marker="D" if nm == "core" else "o", ms=2.8,
+               label="Core KOs (main model)" if nm == "core" else "Patchy KOs, where present")  # fmt: skip
+        for e0, e1, k_, m_, a_, b_ in zip(edges[:-1], edges[1:], n, med, q1, q3):
+            log.append(f"  {nm:6s} {e0:.1f}-{e1:.1f}  n {k_:5,}  median {m_:+.3f}  IQR {a_:+.3f} to {b_:+.3f}")
+        log.append(f"  {nm:6s} Spearman(R2, euk read share) {spearmanr(src['r2'], src['euk_read_share'], nan_policy='omit')[0]:.3f}")
+    d.axhline(0, color="#cccccc", lw=0.6, zorder=0)
+    d.set_xlim(0, 1)
+    d.set_xlabel("Eukaryotic share of the KO's reads")
+    d.set_ylabel("Abundance R², Granite, cruise held out")
+    d.legend(frameon=False, fontsize=5.8, loc="upper left", handletextpad=0.3)
 
-    # d: relative detection vs within-cruise depth quintile, by gene length, prokaryotic vs eukaryotic
+    # e: patchy KOs, detection by within-cruise depth fifth, per domain, by gene length
     dd, cuts, r_dc = depth_detection()
     dd.round(4).to_csv(OUT / "depth_detection.csv", index=False)
-    shade = {"short": 0.45, "medium": 0.72, "long": 1.0}
-    for dm, cc in (("prokaryotic", PROK), ("eukaryotic", EUK)):
+    for ax, dm in zip(e, doms):
         for tt in ("short", "medium", "long"):
             s_ = dd[(dd["domain"] == dm) & (dd["length"] == tt)]
-            rgb = np.array(matplotlib.colors.to_rgb(cc))
-            col = 1 - shade[tt] * (1 - rgb)
-            d.plot(s_["quintile"], s_["rel_median"], color=col, lw=1.3 if tt == "long" else 1.0, marker="o", ms=2.6,
-                   label=f"{dm.capitalize()}, {tt}")  # fmt: skip
-    d.axhline(1, color="#cccccc", lw=0.6, zorder=0)
-    d.set_xticks(range(1, 6))
-    d.set_xticklabels(["1\nshallowest", "2", "3", "4", "5\ndeepest"])
-    d.set_xlabel("Sequencing depth, fifth of the tiles within each cruise")
-    d.set_ylabel("Detection rate relative to the KO's average")
-    d.legend(frameon=False, fontsize=5.8, ncol=2, loc="upper left", handletextpad=0.3, columnspacing=0.8)
-    d.set_ylim(0.75, 1.32)
-    log.append(f"\ndepth detection: length tercile cuts (nt) {cuts}; within-cruise r(log10 depth, observed C) {r_dc:+.3f}")
-    for (dm, tt), s_ in dd.groupby(["domain", "length"], sort=False):
-        log.append(f"  {dm:12s} {tt:6s} n {s_['n'].iloc[0]:4d}  relative detection Q1..Q5 "
-                   + " ".join(f"{v:.2f}" for v in s_["rel_median"]) + "  | absolute rate " + " ".join(f"{v:.2f}" for v in s_["rate_median"]))  # fmt: skip
+            ax.plot(s_["quintile"], 100 * (s_["rel_median"] - 1), color=tint(dcol[dm], SHADE[tt]), lw=1.3 if tt == "long" else 1.0,
+                    marker="o", ms=2.3, label=f"{tt.capitalize()} genes")  # fmt: skip
+        ax.axhline(0, color="#cccccc", lw=0.6, zorder=0)
+        ax.set_ylim(-22, 22)
+        ax.set_xticks(range(1, 6))
+        ax.text(0.5, 1.0, dm.capitalize(), transform=ax.transAxes, ha="center", va="bottom", fontsize=6.8, color=dcol[dm])
+        if ax is not e[0]:
+            ax.set_yticklabels([])
+    from matplotlib.lines import Line2D
 
-    for ax, letter, dx in ((a, "a", -0.17), (b, "b", -0.22), (c, "c", -0.17), (d, "d", -0.17)):
-        ax.text(dx, 1.02, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
+    LEN_HANDLES = [Line2D([], [], color=tint("#444444", SHADE[tt]), marker="o", ms=2.3, lw=1.3 if tt == "long" else 1.0,
+                          label=f"{tt.capitalize()} genes") for tt in ("short", "medium", "long")]  # fmt: skip
+    e[0].legend(handles=LEN_HANDLES, frameon=False, fontsize=5.4, loc="upper left", handlelength=1.4, handletextpad=0.3,
+                borderaxespad=0.1)  # fmt: skip
+    e[0].set_ylabel("Detection vs the KO's average (%)\n(patchy KOs)")
+    e[1].set_xlabel("Sequencing depth within cruise\n(fifths of the tiles; 1 = fewest reads, 5 = most)")
+
+    # f: core KOs, within-cruise correlation of abundance with depth, by gene length
+    for j, tt in enumerate(("short", "medium", "long")):
+        for i, dm in enumerate(doms):
+            v = core.loc[(core["domain"] == dm) & (core["length_tercile"] == tt), "r_depth_within"]
+            dotrange(g6, i + (j - 1) * 0.22, v, tint(dcol[dm], SHADE[tt]), "o", None)
+    g6.axhline(0, color="#cccccc", lw=0.6, zorder=0)
+    g6.set_xticks(range(3))
+    g6.set_xticklabels([f"{dm.capitalize()}\n({(core['domain'] == dm).sum():,})" for dm in doms])
+    g6.set_xlim(-0.5, 2.5)
+    g6.set_ylabel("Within-cruise r, abundance vs\nsequencing depth (core KOs)")
+    g6.legend(handles=[Line2D([], [], color=tint("#444444", SHADE[tt]), marker="o", ms=3, lw=1.2, label=f"{tt.capitalize()} genes")
+                       for tt in ("short", "medium", "long")], frameon=False, fontsize=5.8, loc="upper right", handlelength=1.2)
+    log.append(f"\npatchy depth detection: length tercile cuts (nt) {cuts}; within-cruise r(log10 depth, observed C) {r_dc:+.3f}")
+    for (dm, tt), s_ in dd.groupby(["domain", "length"], sort=False):
+        log.append(f"  {dm:12s} {tt:6s} n {s_['n'].iloc[0]:4d}  % vs KO average Q1..Q5 "
+                   + " ".join(f"{100 * (v - 1):+.0f}" for v in s_["rel_median"]))  # fmt: skip
+    log.append("\ncore KOs: within-cruise r(CLR abundance, log10 KO reads), median (IQR) by domain x length tercile:")
+    for dm in doms:
+        g = core[core["domain"] == dm]
+        cut = [round(x) for x in g["length_mean"].quantile([1 / 3, 2 / 3])]
+        parts = [f"{tt} {g.loc[g['length_tercile'] == tt, 'r_depth_within'].median():+.3f} "
+                 f"({g.loc[g['length_tercile'] == tt, 'r_depth_within'].quantile(.25):+.3f} to "
+                 f"{g.loc[g['length_tercile'] == tt, 'r_depth_within'].quantile(.75):+.3f})" for tt in ("short", "medium", "long")]  # fmt: skip
+        log.append(f"  {dm:12s} n {len(g):5,} cuts {cut}: " + "; ".join(parts)
+                   + f"; Spearman(r, length) {spearmanr(g['r_depth_within'], g['length_mean'])[0]:.3f}")  # fmt: skip
+
+    for ax, letter, dx in ((a, "a", -0.2), (b, "b", -0.2), (c, "c", -0.25), (d, "d", -0.2), (e[0], "e", -0.6), (g6, "f", -0.2)):
+        ax.text(dx, 1.04, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
     for suf in ("png", "pdf"):
         fig.savefig(FIG / f"hurdle_base.{suf}", dpi=300)
     plt.close(fig)
     with open(OUT / "base_summary.txt", "a") as fh:
         fh.write("\nfigure numbers:\n" + "\n".join(log) + "\n")
     print("\n".join(log))
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

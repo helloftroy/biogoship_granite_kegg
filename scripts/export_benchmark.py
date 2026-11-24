@@ -75,7 +75,8 @@ def main():
     t["sample_lon"] = g["sample_lon"].mean().reindex(tk).to_numpy()
     for c in ("granule_id", "tile_date", "tile_lat", "tile_lon"):
         t[f"granite_{c}"] = unit[c].to_numpy()
-    t["log10_ko_reads"] = d["logtot"]
+    t["log10_read_pairs"] = d["logtot"]  # technical depth covariate since R70: read pairs sequenced
+    t["log10_ko_reads"] = rows["sample_id"].map(np.log10(ks["total"])).groupby(rows["tile_key"]).mean().reindex(tk).to_numpy()
     t["temperature_c"] = d["temp"][:, 0]
     dB = mm.setup("B", fs, ks)
     # tile_key is renumbered per target set by the loader (B / De have 1,169 tiles); map every set to the

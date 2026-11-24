@@ -7,11 +7,11 @@ Same tiles, presence and cruise-held-out scheme as scripts/hurdle_kos.py (1,111 
 presence at 1e6 KO reads). Models per KO, each cruise held out, L2 logistic with the penalty (and, for Granite, the
 number of PCs: 4 / 8 / 16 / 32) chosen by leave-cruise-out inside the training cruises:
 
-  base_temp   Granite PCs + technical (platform + depth spline) + in-situ temperature spline        [new]
-  c_tech      Granite-predicted C + technical                                                      [new]
-  temp_tech   in-situ temperature spline + technical                                               [new]
-  (R65, reused from hurdle_all.csv: tech = technical only; granite = Granite PCs; base = auc_*_both = Granite +
+  c_tech      Granite-predicted C + technical
+  (from hurdle_kos.py, hurdle_all.csv: tech = technical only; granite = Granite PCs; base = auc_*_both = Granite +
    technical. Identical folds, tiles and presence.)
+Technical = platform group + spline of log10 read pairs sequenced (R70; before R70: log10 KO-assigned reads).
+R69 also fitted base_temp (base + temperature spline) and temp_tech; temperature added nothing (+0.001) and was dropped.
 
 Predicted C is nested, so no information from the held-out cruise enters: for held-out cruise c, a training tile in
 cruise t gets C predicted by a ridge on 32 Granite PCs fitted on the cruises other than c and t; the tiles of c get C
@@ -45,14 +45,14 @@ import hurdle_kos as h  # noqa: E402
 from benchmark_eval import ridge_loco_alpha  # noqa: E402
 
 OUT, BX = h.OUT, h.BX
-MODELS = ("base_temp", "c_tech", "temp_tech")
-COLS = ["ko", "tiles", "prevalence"] + [f"{s}_{m}" for m in MODELS for s in ("auc", "devexp", "auc_within")] + ["pcs_median_base_temp"]
+MODELS = ("c_tech",)  # R70: temperature dropped (base_temp - base +0.001 in R69); base / tech / granite come from hurdle_kos
+COLS = ["ko", "tiles", "prevalence"] + [f"{s}_{m}" for m in MODELS for s in ("auc", "devexp", "auc_within")]
 
 
 def data():
     tiles = pd.read_csv(BX / "tiles.csv", index_col="tile_key")
     tp = pd.read_csv(OUT / "presence_tile.csv.gz", index_col=0)
-    depth = pd.read_csv(OUT / "tile_depth.csv", index_col=0)["log10_total_genes"]
+    depth = pd.read_csv(OUT / "tile_depth.csv", index_col=0)[h.DEPTH_COL]  # read pairs since R70
     idx = tp.index
     t = tiles.loc[idx]
     cr, plat = t["cruise"].to_numpy(), (t["platform_group"] == "NovaSeq 6000 group").to_numpy()
@@ -111,15 +111,11 @@ def fit(shard):
     folds = []
     for c in np.unique(cr):
         te, tr = np.where(cr == c)[0], np.where(cr != c)[0]
-        a, b = h.pcs(X, tr, te)
         st = StandardScaler().fit(tech[tr])
         sa, sb = st.transform(tech[tr]), st.transform(tech[te])
-        ta, tb = spline_fold(temp, tr, te)
         ca, cb = zc[f"train_{c}"][:, None], zc[f"test_{c}"][:, None]
         cs = StandardScaler().fit(ca)
-        folds.append(dict(te=te, tr=tr, a=a, b=b, ext=(np.hstack([sa, ta]), np.hstack([sb, tb])),
-                          c=(np.hstack([cs.transform(ca), sa]), np.hstack([cs.transform(cb), sb])),
-                          t=(np.hstack([ta, sa]), np.hstack([tb, sb]))))  # fmt: skip
+        folds.append(dict(te=te, tr=tr, c=(np.hstack([cs.transform(ca), sa]), np.hstack([cs.transform(cb), sb]))))
     kos = list(tp.columns)[shard[0]::shard[1]] if shard else list(tp.columns)
     part = OUT / (f"base_shard{shard[0]}.csv.partial" if shard else "base.csv.partial")
     done = set(pd.read_csv(part)["ko"]) if part.exists() and part.stat().st_size else set()
@@ -131,22 +127,15 @@ def fit(shard):
             continue
         y = tp[k].to_numpy()
         P = {m: np.empty(len(y)) for m in MODELS}
-        kch = []
         for f in folds:
             g, ytr = cr[f["tr"]], y[f["tr"]]
-            pb = h.logit_loco_k(f["a"], ytr, f["b"], g, extra=f["ext"])
-            P["base_temp"][f["te"]] = pb[0] if isinstance(pb, tuple) else pb
-            if isinstance(pb, tuple):
-                kch.append(pb[1])
             P["c_tech"][f["te"]] = h.logit_loco(f["c"][0], ytr, f["c"][1], g)
-            P["temp_tech"][f["te"]] = h.logit_loco(f["t"][0], ytr, f["t"][1], g)
-        r = {"ko": k, "tiles": len(y), "prevalence": y.mean(), "pcs_median_base_temp": float(np.median(kch)) if kch else np.nan}
+        r = {"ko": k, "tiles": len(y), "prevalence": y.mean()}
         for m, p in P.items():
             r[f"auc_{m}"], r[f"devexp_{m}"], r[f"auc_within_{m}"] = h.scores(y, p, cr)
         pd.DataFrame([r], columns=COLS).round(5).to_csv(part, mode="a", header=not part.exists() or part.stat().st_size == 0, index=False)
         if n % 25 == 0 or k in h.FOCUS:
-            print(f"  {n:5d}/{len(kos)} {k} {h.FOCUS.get(k, ''):8s} within-cruise AUC base+temp {r['auc_within_base_temp']:.3f} "
-                  f"C+tech {r['auc_within_c_tech']:.3f} temp+tech {r['auc_within_temp_tech']:.3f}  "
+            print(f"  {n:5d}/{len(kos)} {k} {h.FOCUS.get(k, ''):8s} within-cruise AUC C+tech {r['auc_within_c_tech']:.3f}  "
                   f"({(time.time() - t0) / (n + 1 - len(done & set(kos[:n + 1]))):.1f} s/KO)", flush=True)  # fmt: skip
     pd.read_csv(part).round(5).to_csv(OUT / part.name.replace(".partial", ""), index=False)
 
@@ -163,7 +152,7 @@ def summary():
     f["domain"] = np.select([f["euk_read_share"] > 0.9, f["euk_read_share"] <= 0.1], ["eukaryotic", "prokaryotic"], "mixed")
     f.round(5).to_csv(OUT / "base_all.csv")
     log = [f"KOs {len(f):,} of {len(r65):,}"]
-    show = ["tech", "temp_tech", "c_tech", "granite", "base", "base_temp"]
+    show = ["tech", "c_tech", "granite", "base"]
     for sc in ("auc_within", "auc"):
         log.append(f"\nmedian {sc} (10-90%) by read domain:")
         rows = []
@@ -171,7 +160,7 @@ def summary():
             rows.append({"domain": d, "n": len(g), **{m: f"{g[f'{sc}_{m}'].median():.3f} ({g[f'{sc}_{m}'].quantile(.1):.2f}-"
                                                          f"{g[f'{sc}_{m}'].quantile(.9):.2f})" for m in show}})  # fmt: skip
         log.append(pd.DataFrame(rows).to_string(index=False))
-    for a, b in (("base", "tech"), ("base_temp", "base"), ("base", "c_tech"), ("base", "temp_tech"), ("c_tech", "tech")):
+    for a, b in (("base", "tech"), ("base", "c_tech"), ("c_tech", "tech"), ("base", "granite")):
         log.append(f"\nwithin-cruise AUC {a} - {b}:")
         for d, g in [("all", f)] + list(f.groupby("domain")):
             x = g[f"auc_within_{a}"] - g[f"auc_within_{b}"]

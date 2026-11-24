@@ -74,6 +74,16 @@ def say(s=""):
     LOG.append(s)
 
 
+EFFORT = REPO / "data" / "results" / "sequencing_effort" / "sample_effort.csv"  # scripts/sequencing_effort.py (R70)
+
+
+def sample_log10_depth(ks):
+    """Technical depth covariate per sample: log10 read pairs sequenced (FAIRe input_read_count), R70.
+    Before R70 this was log10 KO-assigned reads (ks["total"]), which falls with the eukaryote fraction."""
+    e = pd.read_csv(EFFORT, index_col="sample_key")["log10_read_pairs"].reindex(ks.index)
+    return e
+
+
 def setup(tname, fs, ks):
     path = TARGETS[tname]
     kos = pd.read_csv(path, nrows=0).columns.drop("sample_key").tolist()
@@ -81,7 +91,8 @@ def setup(tname, fs, ks):
     tile = lambda s: s.reindex(rows["sample_id"]).set_axis(rows.index).groupby(rows["tile_key"]).mean().reindex(unit.index)  # noqa: E731
     mld = tile(fs["mld_mean30"])
     mld = mld.fillna(mld.median()).to_numpy()[:, None]
-    logtot = tile(np.log10(ks["total"])).to_numpy()
+    logtot = tile(sample_log10_depth(ks)).to_numpy()  # log10 read pairs (R70)
+    assert not np.isnan(logtot).any(), "tile without read pairs"
     plat = np.isin(cr, NOVASEQ_6000)
     X = np.hstack([np.ones((len(y), 1)), plat[:, None].astype(float), SplineTransformer(n_knots=8, degree=3).fit_transform(logtot[:, None])])
     beta, *_ = np.linalg.lstsq(X, y, rcond=None)

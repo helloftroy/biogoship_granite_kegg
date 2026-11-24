@@ -86,6 +86,29 @@ def read_partial(path):
     return f.astype({c: float for c in FIT_COLS if c != "ko"})
 
 
+DEPTH_COL = "log10_read_pairs"  # technical depth covariate since R70 (was log10_total_genes = KO reads)
+
+
+def tile_read_pairs(members):
+    """Mean log10 read pairs sequenced over a tile's kept samples (members: tile_key -> sample_key)."""
+    e = pd.read_csv(REPO / "data/results/sequencing_effort/sample_effort.csv", index_col="sample_key")["log10_read_pairs"]
+    return e.reindex(members.values).groupby(members.index.values).mean()
+
+
+def add_read_pairs():
+    """Add log10_read_pairs to an existing tile_depth.csv (same kept samples as the build; G = 1e6)."""
+    S = pd.read_pickle(OUT / "sample_counts.pkl")
+    kept = S.index[S.sum(1) >= 1e6]
+    tiles = pd.read_csv(BX / "tiles.csv", index_col="tile_key")
+    members = tiles["sample_keys"].str.split(";").explode()
+    members = members[members.isin(kept)]
+    d = pd.read_csv(OUT / "tile_depth.csv", index_col=0)[["log10_total_genes"]]
+    d["log10_read_pairs"] = tile_read_pairs(members).reindex(d.index)
+    assert d["log10_read_pairs"].notna().all()
+    d.to_csv(OUT / "tile_depth.csv")
+    print(f"tile_depth.csv: {len(d):,} tiles; r(KO reads, read pairs) {d.corr().iloc[0, 1]:.3f}")
+
+
 def build(G, lo, hi):
     S = pd.read_pickle(OUT / "sample_counts.pkl").astype(float)
     T = S.sum(1)
@@ -111,7 +134,9 @@ def build(G, lo, hi):
     tp.astype(np.int8).to_csv(OUT / "presence_tile.csv.gz")
     tr.loc[:, tr.columns.isin(list(FOCUS))].astype(np.int8).to_csv(OUT / "presence_unrarefied_focus.csv.gz")
     ta.astype(np.float32).to_csv(OUT / "abundance_tile.csv.gz", float_format="%.5g")
-    tlog.rename("log10_total_genes").to_csv(OUT / "tile_depth.csv")
+    tlog = tlog.rename("log10_total_genes").to_frame()
+    tlog["log10_read_pairs"] = tile_read_pairs(members)
+    tlog.to_csv(OUT / "tile_depth.csv")
     print(f"G {G:,}: samples kept {int(keep.sum()):,} of {len(T):,} (dropped {int((~keep).sum())}); benchmark tiles with a kept "
           f"sample {len(tp):,} of {len(tiles):,}; hurdle KOs {len(sel):,} (tile prevalence {lo:.0%}-{hi:.0%}, plus focus); "
           f"of them in the core 3,933: {int(sel.isin(core).sum())}")  # fmt: skip
@@ -196,7 +221,7 @@ def fit(shard, only=None, name=None):
     tp = pd.read_csv(OUT / "presence_tile.csv.gz", index_col=0)
     tr_un = pd.read_csv(OUT / "presence_unrarefied_focus.csv.gz", index_col=0)
     ta = pd.read_csv(OUT / "abundance_tile.csv.gz", index_col=0)
-    depth = pd.read_csv(OUT / "tile_depth.csv", index_col=0)["log10_total_genes"]
+    depth = pd.read_csv(OUT / "tile_depth.csv", index_col=0)[DEPTH_COL]
     idx = tp.index
     t = tiles.loc[idx]
     cr, plat = t["cruise"].to_numpy(), (t["platform_group"] == "NovaSeq 6000 group").to_numpy()
@@ -280,7 +305,7 @@ def focus_models():
     temperature (spline) and raw satellite (OLCI band means + SST, splines); saved for the figure."""
     tiles = pd.read_csv(BX / "tiles.csv", index_col="tile_key")
     tp = pd.read_csv(OUT / "presence_tile.csv.gz", index_col=0)
-    depth = pd.read_csv(OUT / "tile_depth.csv", index_col=0)["log10_total_genes"]
+    depth = pd.read_csv(OUT / "tile_depth.csv", index_col=0)[DEPTH_COL]
     idx = tp.index
     t = tiles.loc[idx]
     cr, plat = t["cruise"].to_numpy(), (t["platform_group"] == "NovaSeq 6000 group").to_numpy()
@@ -437,7 +462,7 @@ LOG: list = []
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parts", nargs="+", default=["build"], choices=["build", "fit", "focus", "summary", "figure"])
+    ap.add_argument("--parts", nargs="+", default=["build"], choices=["build", "add_read_pairs", "fit", "focus", "summary", "figure"])
     ap.add_argument("--depth", type=float, default=1e6)
     ap.add_argument("--min-prev", type=float, default=0.2)
     ap.add_argument("--max-prev", type=float, default=0.9)
@@ -449,6 +474,8 @@ if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     if "build" in a.parts:
         build(a.depth, a.min_prev, a.max_prev)
+    if "add_read_pairs" in a.parts:
+        add_read_pairs()
     if a.fixed_c:
         FIXED_C.update(dict(zip(["tech", "granite", "both"], a.fixed_c)))
     if "fit" in a.parts:

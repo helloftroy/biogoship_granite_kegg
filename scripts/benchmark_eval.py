@@ -86,7 +86,7 @@ def run(bundle, feats, name, targets, pcs, tiles_keep):
         x = feats.loc[Y.index].to_numpy(float)
         y = Y.to_numpy(float)
         cr, plat = tt["cruise"].to_numpy(), (tt["platform_group"] == "NovaSeq 6000 group").to_numpy()
-        ya, tech = technical(y, plat, tt["log10_ko_reads"].to_numpy())
+        ya, tech = technical(y, plat, tt["log10_read_pairs"].to_numpy())  # R70: sequencing effort, not KO reads
         pred = np.full_like(ya, np.nan)
         for c in np.unique(cr):
             te, tr = np.where(cr == c)[0], np.where(cr != c)[0]

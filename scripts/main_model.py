@@ -307,6 +307,7 @@ def figure_part():
     for suf in ("png", "pdf"):
         fig.savefig(FIG / f"variance_partition.{suf}", dpi=300)
     plt.close(fig)
+    c_figure_r2(plt)
     c_figure(plt)
 
 
@@ -342,6 +343,70 @@ def cruise_part():
         say(f"\n{tg}:")
         say(t[t["target"] == tg].drop(columns=["target", "columns", "check"]).sort_values("sd_obs_median").round(3).to_string(index=False))
     say(f"\nmax |check - 1| = {np.abs(t['check'] - 1).max():.2e}")
+
+
+def c_figure_r2(plt):
+    """Eukaryote : prokaryote reads (C): a observed vs held-out predicted (Granite PCs), b per-cruise skill of Granite PCs,
+    OLCI + SST and time & place, c observed and predicted against latitude."""
+    m, p = MAIN["C"]
+    z = {k: np.load(OUT / f"predictions_C_{k}_{p}.npz", allow_pickle=True) for k in ("granite", "sat", "place")}
+    obs = z[m]["observed"][:, 0].astype(float)
+    cr = z[m]["cruise"]
+    pr = {k: v["predicted"][:, 0].astype(float) for k, v in z.items()}
+    unit = pd.read_csv(OUT / "c_tiles.csv")
+    lat = unit["lat"].to_numpy()
+    plat = np.isin(cr, NOVASEQ_6000)
+    BLUE, ORANGE, GREY = "#0072B2", "#E69F00", "#999999"
+    fig = plt.figure(figsize=(7.2, 2.6))
+    a = fig.add_axes([0.095, 0.17, 0.225, 0.75])
+    b = fig.add_axes([0.40, 0.17, 0.25, 0.75])
+    c = fig.add_axes([0.73, 0.17, 0.25, 0.75])
+    lo, hi = np.r_[obs, pr[m]].min() - 0.1, np.r_[obs, pr[m]].max() + 0.1
+    for msk, col, lab in ((plat, ORANGE, "NovaSeq 6000 cruises"), (~plat, BLUE, "NovaSeq X cruises")):
+        a.scatter(pr[m][msk], obs[msk], s=4, lw=0, alpha=0.6, color=col, label=lab)
+    a.plot([lo, hi], [lo, hi], color="#555555", lw=0.6, ls=(0, (3, 2)))
+    a.set_xlim(lo, hi)
+    a.set_ylim(lo, hi)
+    a.set_xlabel("Predicted, cruise held out")
+    a.set_ylabel("Observed log(eukaryote / prokaryote reads)")
+    a.legend(frameon=False, fontsize=6, loc="upper left", markerscale=2, handletextpad=0.2)
+    e = 1 - ((obs - pr[m]) ** 2).sum() / ((obs - obs.mean()) ** 2).sum()
+    a.text(0.97, 0.04, f"R² = {e:.2f}\n{len(obs):,} tiles", transform=a.transAxes, ha="right", va="bottom", fontsize=6.5)
+    cruises = pd.Series(obs).groupby(cr).size().index
+    rows = []
+    for k in cruises:
+        te = cr == k
+        sst = ((obs[te] - obs[~te].mean()) ** 2).sum()
+        rows.append({kk: 1 - ((obs[te] - pr[kk][te]) ** 2).sum() / sst for kk in pr} | {"cruise": k, "plat": bool(plat[te][0])})
+    pc = pd.DataFrame(rows).sort_values("granite")
+    yy = np.arange(len(pc))
+    for kk, col, mk, lab in (("place", GREY, "s", "Time & place"), ("sat", "#56B4E9", "^", "OLCI + SST"),
+                             ("granite", BLUE, "o", "Granite PCs")):  # fmt: skip
+        b.scatter(pc[kk].clip(lower=-1), yy, s=16 if kk == "granite" else 10, marker=mk, color=col, lw=0, label=lab, zorder=3)
+    for i, (_, r) in enumerate(pc.iterrows()):
+        v = [max(r[kk], -1) for kk in ("place", "sat", "granite")]
+        b.plot([min(v), max(v)], [i, i], color="#dddddd", lw=0.6, zorder=1)
+    b.axvline(0, color="#cccccc", lw=0.6)
+    b.set_yticks(yy)
+    b.set_yticklabels([("* " if r else "") + k for k, r in zip(pc["cruise"], pc["plat"])], fontsize=5.5)
+    b.set_xlabel("R² within the held-out cruise")
+    b.set_xlim(-1.05, 1)
+    b.legend(frameon=False, fontsize=5.5, loc="center left", handletextpad=0.1)
+    pc.round(4).to_csv(OUT / "c_per_cruise_r2.csv", index=False)
+    o = np.argsort(lat)
+    c.scatter(lat, obs, s=3, lw=0, color="#bbbbbb", label="Observed")
+    sm = pd.Series(pr[m][o]).rolling(41, center=True, min_periods=10).mean()
+    so = pd.Series(obs[o]).rolling(41, center=True, min_periods=10).mean()
+    c.plot(lat[o], so, color="#333333", lw=1.0, label="Observed, running mean")
+    c.plot(lat[o], sm, color=BLUE, lw=1.0, label="Predicted, running mean")
+    c.set_xlabel("Latitude (°)")
+    c.set_ylabel("log(eukaryote / prokaryote reads)")
+    c.legend(frameon=False, fontsize=5.5, loc="upper left", markerscale=2, handletextpad=0.2)
+    for ax, letter in zip((a, b, c), "abc"):
+        ax.text(-0.3 if letter != "b" else -0.2, 1.02, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
+    for suf in ("png", "pdf"):
+        fig.savefig(FIG / f"c_prediction.{suf}", dpi=300)
+    plt.close(fig)
 
 
 def c_figure(plt):
@@ -419,7 +484,7 @@ def c_figure(plt):
     for ax, letter, x in ((a, "a", -0.2), (b, "b", -0.17), (c, "c", -0.62), (d, "d", -0.08), (e, "e", -0.08)):
         ax.text(x, 1.02, letter, transform=ax.transAxes, fontsize=9, fontweight="bold", va="bottom")
     for suf in ("png", "pdf"):
-        fig.savefig(FIG / f"c_prediction.{suf}", dpi=300)
+        fig.savefig(FIG / f"c_prediction_split.{suf}", dpi=300)
     plt.close(fig)
 
 if __name__ == "__main__":

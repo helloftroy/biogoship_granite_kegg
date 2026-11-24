@@ -5983,3 +5983,105 @@ c and d also show OLCI + SST and time & place as open markers.
   capacity"). Signature modules are marker sets, not pathways. Most are defined by other modules (e.g. M00611
   oxygenic photosynthesis), so they have no direct KO links. Only M00615 nitrate assimilation links to KOs here (4 KOs:
   fraction 0.253, R² 0.016, ceiling 0.462). Its row is now labelled "Signature module: nitrate assimilation".
+
+## R63. Variance budget on the main model; C figure with per-cruise R² restored; figure titles and legends (2026-11-23)
+
+**Variance budget** (`scripts/variance_budget_main.py`; `data/results/main_model/variance_budget.csv`;
+`figures/output/variance_budget.png`). The R43 waterfall redone on the main model: all KOs, Granite PCs, leave-cruise-out
+penalty, technical variance removed in-sample. 1,215 tiles × 3,933 KOs; parts sum to 100.00%.
+
+| Component | Raw CLR | KOs standardised | R43 (raw) |
+|---|---:|---:|---:|
+| Explained by Granite PCs (cruise held out) | 16.00 | 12.41 | 16.2 |
+| Sequencing platform (NovaSeq 6000 vs X; upper bound) | 4.54 | 5.38 | 3.8 |
+| Sequencing depth | 4.55 | 5.90 | 2.3 |
+| Other cruise offsets (unknown) | 12.29 | 13.41 | 13.1 |
+| Axis 1 within cruise (eukaryotes vs prokaryotes) | 6.77 | 9.68 | 7.4 |
+| Axis 2 within cruise (phototrophs; driver unknown) | 3.73 | 6.03 | 3.6 |
+| Within-tile variability (unpredictable floor) | 27.04 | 26.01 | 27.0 |
+| Remaining within cruise (unknown) | 25.08 | 21.17 | 26.6 |
+
+- Platform and depth are now the in-sample technical fit, which is removed before modelling:
+  - Platform = OLS on the platform group.
+  - Depth = the rest of the joint platform + depth-spline fit.
+  - The two sum to the 9.09% technical share of R59 / R60.
+  - In R43 they were taken from the residual after the model instead.
+- The axes are the two leading principal components of the new within-cruise residual (KOs standardised), fitted
+  in-sample.
+  - Axis 1: r 0.941 with R36 W1 (0.042 with W2); r −0.655 with the within-cruise log(eukaryote / prokaryote reads).
+    Its loadings run from bacterial cell-wall and replication genes (bacA, murB, murC, holB, ubiE) to eukaryotic
+    nucleolar and RNA-processing genes (NOG1, DKC1, UPF1, STT3, TSR3).
+  - Axis 2: r −0.914 with R36 W2 (0.037 with W1); r 0.165 with eukaryote : prokaryote reads. Its negative end
+    includes petB (cytochrome b6), desC and SulP.
+- Cruise offsets include the overall mean of the held-out residual (0.09% of total). With that, the parts sum exactly.
+
+**C figure.** `figures/output/c_prediction.png` is again the per-cruise R² version (a scatter, b per-cruise R² for
+three inputs, c latitude), now with Granite PCs. The level / pattern / SD version (R62) is
+`figures/output/c_prediction_split.png`, for the supplement. Per-cruise R² values are in `c_per_cruise_r2.csv` and the
+split in `c_per_cruise.csv`.
+
+### Figure titles and legends (drafts)
+
+**Figure — Variance budget.** *Where the variance in gene content goes.*
+Variance across 1,215 satellite tiles of the centred log-ratio abundances of 3,933 KEGG orthologues (KOs), summed over
+KOs and partitioned sequentially (bars run left to right and sum to 100%). Explained: held-out skill of a ridge regression on 32
+principal components of the Granite embedding, with each cruise held out in turn (13 cruises) and the ridge penalty chosen
+by leave-one-cruise-out within the training cruises; fitted after removing technical variance. Sequencing platform:
+NovaSeq 6000 vs NovaSeq X cruise groups. This is an upper bound, because the platform groups also differ in year and
+region. Sequencing depth: cubic spline of log10 KO-assigned reads per tile. Platform and depth are fitted in-sample.
+Other cruise offsets: per-cruise means of the held-out residual. Axes 1 and 2: the two leading principal components of
+the within-cruise residual. Axis 1 separates eukaryote- from prokaryote-dominated samples; axis 2 loads on phototroph
+genes and has no identified driver. Within-tile variability: variance between samples sharing a tile, estimated from
+305 same-tile sample pairs and scaled by the number of samples averaged per tile. It cannot be predicted from a
+tile-level input. Remaining: within-cruise variation not accounted for above.
+
+**Figure — The eukaryote : prokaryote balance is predictable from space.**
+**a**, Observed vs predicted log ratio of eukaryote- to prokaryote-specific KO reads for 1,215 tiles. Predictions come
+from 32 Granite principal components (ridge), with each cruise held out in turn. Technical variance (sequencing
+platform, depth) has been removed from the observations. Colour shows sequencing platform; the dashed line is 1:1.
+R² = 0.54 pooled over all held-out predictions (53.8% of the non-technical variance). **b**, R² within each held-out
+cruise for Granite PCs (circles), OLCI band means + SST (triangles) and time & place (squares: latitude, |latitude|,
+longitude, day of year). Per-cruise R² is relative to the mean of the training cruises, so flat cruises near the
+global mean score low even when placed correctly (Supplementary Fig. X). Values below −1 are drawn at −1 (I07N:
+Granite −1.07, time & place −1.56). * NovaSeq 6000 cruises. **c**, Observed (grey points; black line) and predicted
+(blue line) log ratio against latitude; lines are 41-tile running means.
+
+**Supplementary Figure X — Per-cruise error as level and pattern.**
+Each held-out cruise's mean squared error splits exactly into bias², a spread mismatch (SD_pred − SD_obs)², and a
+pattern term 2·SD_pred·SD_obs·(1 − r). **a**, **b**, As in the main figure (a: observed vs predicted; b: against
+latitude). **c**, Level: mean of observed − predicted per cruise. **d**, Pattern: within-cruise correlation between
+observed and predicted. **e**, Within-cruise SD of the observed (grey) and predicted (blue) values. Cruises are
+sorted by observed within-cruise SD. Filled circles: Granite PCs; open triangles: OLCI + SST; open squares: time &
+place. The model places 12 of 13 cruises within ±0.33 (overall SD 1.05). It follows the gradient where there is one:
+r 0.45–0.91 for cruises with SD ≥ 0.8, and 0.75–0.91 for seven of those eight. It misses the within-line pattern on
+flat, warm cruises (I09N 2016, I07N, GOMECC4, I09N-2025, P02-2022). GOMECC4 is the one cruise placed wrong (−0.67).
+HLY2202-2022 is under-dispersed (predicted SD 0.37 vs 1.35). * NovaSeq 6000 cruises.
+
+**Figure — What the satellite predicts, gene by gene.**
+Pooled held-out R² per KO (rows) from four inputs (columns): 32 Granite principal components (ridge); in-situ
+temperature (cubic spline); time & place (latitude, |latitude|, longitude, day of year; linear); and raw satellite
+values (16 OLCI band means + SST, rank-normalised splines). Each cruise is held out in turn (13 cruises, 1,215 tiles),
+the ridge penalty is chosen by leave-one-cruise-out within the training cruises, and technical variance (platform,
+depth) is removed from every KO. Right-hand numbers: R² of Granite PCs + temperature. Blocks:
+- *Granite clearly better*: Granite R² > 0.3, at least 0.15 above temperature, and ahead in ≥ 10 of 13 cruises
+  (28 shown of 54, highest Granite R²).
+- *Both high, about equal*: both R² ≥ 0.6 and differing by < 0.05 (14 of 40).
+- *Temperature clearly better*: temperature R² > 0.3, at least 0.1 above Granite, and ahead in ≥ 9 cruises
+  (all 11).
+- *Improved by adding an ocean-model field*: adding one Copernicus GLORYS / PISCES field for the sampling day (spline)
+  to the Granite PCs gains ≥ 0.05, reaches R² ≥ 0.3 and lowers error in ≥ 10 of 13 cruises. The 16 largest gains of
+  144 KOs are shown (not repeated from the blocks above). The second column is then Granite PCs + the field, and the
+  right-hand text gives the change. Random-noise and shuffled-field controls produce no such KOs.
+
+Within blocks, rows are grouped by KEGG BRITE functional category. Colour: R² from ≤ 0 (pale) to 1 (dark).
+
+**Figure — Which kinds of function are visible from space.**
+Skill as a share of what is predictable: for each KO, held-out R² (Granite PCs, as above) divided by its ceiling, the
+share of its non-technical variance that is not within-tile variability. Median ceiling 0.74; 25 KOs with ceilings
+below 0.1 are set to 0.1. **a**, KEGG modules with ≥ 4 modelled KOs (172 modules). Each dot is a module's median
+over its KOs; dot size is the number of KOs. Rows are KEGG module classes, ordered by the median over their modules
+(black tick); the class's best module is named at the right. **b**, KEGG BRITE level-B categories with ≥ 15 KOs,
+covering functions outside modules (transport, genetic information processing, signalling). Median (filled) and
+interquartile range over KOs for Granite PCs, and median for in-situ temperature (open). The median module scores 0.19 with
+Granite PCs and −0.01 with temperature. Categories at the top of b consist largely of eukaryote-specific genes, whose
+abundance follows the eukaryote : prokaryote balance.

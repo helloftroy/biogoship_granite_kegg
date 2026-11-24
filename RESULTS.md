@@ -7381,3 +7381,47 @@ reproduces the main model: all KOs 16.86, C 51.87, D 13.18, A 13.01, Dp 15.57, B
 B and De differ by ≤ 0.14 pp as before, from tile composition; 76 s, 4 threads). New `benchmark_export.zip` (189 MB);
 the old one is in the archive folder. `~/multimodal_seusmbol/instructions_agent_biogoship.md` (outside git) updated
 with the new reference numbers.
+
+## R72. C: Granite + mixed layer vs OLCI + SST + mixed layer (2026-11-24)
+
+**Question (user).** After R71, OLCI + SST + 30-day MLD (53.21%) scored above Granite (51.87%) for C. Does Granite +
+MLD beat it?
+
+**Method.** `scripts/c_granite_mld.py`. Exactly the main-model setup for C (`main_model.setup`, read-pair depth,
+technical variance removed in-sample, 13 cruises held out, ridge with leave-cruise-out penalty `cv`). MLD = spline of the
+30-day mean mixed-layer depth along the back-trajectory, built as in `sat_mld`. One ridge penalty per model (shared by
+all its columns). Outputs: `data/results/main_model/c_granite_mld.csv`, `c_granite_mld_per_cruise.csv`.
+
+| Model | % of non-technical variance, pooled |
+|---|---|
+| Granite PCs | 51.87 |
+| Granite PCs + MLD | **54.28** |
+| OLCI + SST | 50.87 |
+| OLCI + SST + MLD | 53.21 |
+| Granite PCs + OLCI + SST | 51.86 |
+| Granite PCs + OLCI + SST + MLD | 51.87 |
+
+(granite, sat, sat_mld reproduce the R71 main-model scores.)
+
+Per-cruise R² (vs training-cruise mean) / within-cruise r, Granite → Granite + MLD:
+A13.5-2024 0.68 → 0.69 / 0.86 → 0.85; A16N-2023 0.43 → 0.47 / 0.70 → 0.69; AMT28 0.46 → 0.46 / 0.82 → 0.82;
+C13.5/A13.5 −0.08 → 0.06 / 0.47 → 0.48; GOMECC4 0.44 → 0.46 / −0.21 → −0.20; HLY2202-2022 0.80 → 0.80 / 0.44 → 0.45;
+I05-2023 0.55 → 0.58 / 0.50 → 0.49; I07N −0.56 → −0.49 / 0.01 → −0.02; I08S-2024 0.84 → 0.81 / 0.90 → 0.88; I09N
+0.54 → 0.59 / 0.00 → −0.01; I09N-2025 0.38 → 0.39 / 0.30 → 0.29; P02-2022 0.25 → 0.26 / 0.28 → 0.28; P18 0.73 → 0.71 /
+0.84 → 0.83.
+
+OLCI + SST + MLD per cruise (R² / r): A13.5-2024 0.65 / 0.85; A16N-2023 0.54 / 0.81; AMT28 0.50 / 0.83; C13.5/A13.5
+−0.04 / 0.37; GOMECC4 0.37 / −0.13; HLY2202-2022 0.74 / 0.08; I05-2023 0.65 / 0.47; I07N −0.59 / 0.02; I08S-2024 0.86 /
+0.91; I09N 0.25 / 0.02; I09N-2025 0.24 / 0.31; P02-2022 0.01 / 0.05; P18 0.72 / 0.84.
+
+**Reading.**
+- Granite + MLD (54.28) beats OLCI + SST + MLD (53.21) by 1.07 pp. MLD adds about the same to either (+2.41 to Granite,
+  +2.34 to OLCI + SST), so Granite stays ahead of the raw bands with or without MLD (+1.00 without).
+- The MLD gain is in the cruise level (R² up, r unchanged in 13 of 13 cruises within ±0.03): MLD shifts cruise means,
+  it does not help follow the gradient along a line. R54/R55 (section "Is the 30-day MLD gain on C a platform
+  proxy?") found the MLD gain mostly vanishes when training within platform groups (+0.53 pp), so part of it may be
+  between-cruise structure rather than mixing. Treat it as a cruise-level effect.
+- Putting Granite, the bands and MLD in one ridge does not add (51.87): with one shared penalty the extra columns are
+  shrunk together; this says nothing about the separate inputs.
+- Where Granite's pattern is better than the bands' it stays so with MLD: HLY2202-2022 r 0.45 vs 0.08, P02-2022 0.28 vs
+  0.05, C13.5/A13.5 0.48 vs 0.37. The bands follow A16N-2023 better (0.81 vs 0.69).

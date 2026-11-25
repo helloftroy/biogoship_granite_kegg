@@ -198,7 +198,7 @@ def fit(target, shard):
             inner[j, i], held[j, i] = sse_in, ((y[te] - p) ** 2).sum(0)
         if j % 200 == 0 or j == len(mine) - 1:
             print(f"  {j + 1:6,}/{len(mine):,} subsets  ({(time.time() - t0) / (j + 1):.2f} s/subset)", flush=True)
-    np.savez_compressed(part, subsets=np.array(mine), inner=inner, held=held, cruises=cruises)
+    np.savez_compressed(part, subsets=np.array(mine), inner=inner, held=held, cruises=cruises.astype(str))
     print(f"wrote {part.name} ({time.time() - t0:.0f} s)")
 
 
@@ -213,7 +213,8 @@ def summary(target):
     idx = np.concatenate([np.load(p)["subsets"] for p in parts])
     inner = np.concatenate([np.load(p)["inner"] for p in parts]).astype(np.float64)
     held = np.concatenate([np.load(p)["held"] for p in parts]).astype(np.float64)
-    cruises = np.load(parts[0])["cruises"]
+    cruises = np.unique(cr)  # the fold order used in fit (shards store it too; read it from inputs.npz to avoid
+    # unpickling object arrays written by a different numpy version on the cluster)
     order = np.argsort(idx)
     idx, inner, held = idx[order], inner[order], held[order]
     log = [f"{target}: subsets {len(idx):,} of {len(subs):,}; shards {len(parts)}; columns {y.shape[1]:,}"]
@@ -284,6 +285,29 @@ def summary(target):
         log.append(f"nested - Granite per KO: median {g.median():+.4f} (10-90% {g.quantile(.1):+.4f} to {g.quantile(.9):+.4f}); "
                    f">= +0.05: {(g >= .05).sum():,}; >= +0.05 and better in >= 10 of 13 cruises: "
                    f"{((g >= .05) & (better >= 10)).sum():,}; <= -0.05: {(g <= -.05).sum():,}")  # fmt: skip
+        # one subset shared by all KOs: chosen per outer fold by inner SSE summed over KOs (127 options per fold)
+        shared = inner.sum(2).argmin(0)  # per outer fold
+        sh_sse = np.stack([held[shared[i], i] for i in range(len(cruises))])
+        log.append(f"\none subset for all KOs, chosen in the training cruises (nested): {pooled(sh_sse.sum(0)):.2f}; "
+                   f"chosen per fold: " + "; ".join(f"{c}: {lab(idx[shared[i]])}" for i, c in enumerate(cruises)))  # fmt: skip
+        tab = pd.DataFrame({"subset": [lab(s) for s in idx], "explained_heldout": [pooled(fixed[j]) for j in range(len(idx))],
+                            "explained_inner_rank": pd.Series(inner.sum((1, 2))).rank().to_numpy()})  # fmt: skip
+        tab["groups"] = [len(subs[s]) for s in idx]
+        tab = tab.sort_values("explained_heldout", ascending=False)
+        tab.round(3).to_csv(OUT / "combo_ko_subsets.csv", index=False)
+        log.append("\nall-KO pooled explained per subset, held out (top 15; one model for every KO; optimistic ranking over 127):")
+        log.append(tab.head(15).round(2).to_string(index=False))
+        for nm in ("Granite PCs", "Granite PCs + MLD30", "Granite PCs + OLCI", "Granite PCs + SST + MLD30",
+                   "Granite PCs + nutrients + biology", "Granite PCs + SST + MLD30 + nutrients + biology",
+                   "OLCI + SST", "OLCI + SST + MLD30", "SST + MLD30 + nutrients + biology"):
+            if nm in set(tab["subset"]):
+                log.append(f"  {nm:50s} {tab.loc[tab['subset'] == nm, 'explained_heldout'].iloc[0]:6.2f}")
+        names_ko = pd.read_csv(REPO / "data/reference/kegg_ko_list.tsv", sep="\t", header=None, names=["ko", "name"]).set_index("ko")["name"]
+        win = per[(per["gain_nested"] >= .05) & (per["cruises_nested_better"] >= 10)].sort_values("gain_nested", ascending=False)
+        log.append(f"\nKOs gaining >= 0.05 with >= 10 of 13 cruises better (nested; {len(win)}), top 25:")
+        for _, r in win.head(25).iterrows():
+            log.append(f"  {r['ko']}  {r['r2_granite']:+.3f} -> {r['r2_nested']:+.3f} ({r['gain_nested']:+.3f}, {int(r['cruises_nested_better'])} cruises)  "
+                       f"{str(names_ko.get(r['ko'], ''))[:60]}")  # fmt: skip
         use = np.zeros(len(names))
         for s in choice.ravel():
             for gg in subs[idx[s]]:

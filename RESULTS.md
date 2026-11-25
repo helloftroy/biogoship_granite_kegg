@@ -7457,3 +7457,92 @@ OLCI and other inputs also help for the KOs?
   54.28, OLCI + SST + MLD 53.21, all 15 groups in one ridge 51.54; all KOs: Granite 16.86).
 - Timing (Mac): C 0.1–4.5 s per subset (≈ 14 core-hours in all); KOs 39 s for Granite alone (4 threads), more for
   larger subsets (≈ 3–5 hours in all). Inputs: `data/results/combo/inputs.npz` (19 MB, built with `--parts bundle`).
+
+### R73 results (2026-11-24)
+
+All 64 C shards and 32 KO shards ran on Morrill except C shard 33, which was missing from the copy-back and was run
+locally (512 subsets, 761 s; deterministic, same code). The shards came back to the repo root and were moved to
+`data/results/combo/`. `summary` now takes the fold order from `inputs.npz` (the cluster's numpy 2 pickled the cruise
+array, which numpy 1 on the Mac cannot read); `fit` now stores it as strings. Outputs: `combo_C_summary.txt`,
+`combo_C_per_cruise.csv`, `combo_ko_summary.txt`, `combo_ko_per_ko.csv`, `combo_ko_subsets.csv`.
+
+**C (15 groups, 32,767 subsets), % of non-technical variance, pooled:**
+
+| Scheme | Explained |
+|---|---|
+| Granite PCs (main model) | 51.87 |
+| Nested: subset chosen per held-out cruise from the training cruises (32,767 options) | 49.76 |
+| Nested, choice restricted to subsets with all 32 PCs (2,048 options) | 49.81 |
+| Nested, menu of 4 (Granite; + SST; + MLD30; + SST + MLD30) | 54.10 (chose + SST + MLD30 in 12 of 13 folds, + SST in 1) |
+| Oracle: best subset per held-out cruise (optimistic) | 71.00 |
+| Best single subset over all cruises, chosen on held-out error (optimistic) | 59.38 (PC5–32 + SST + MLD30) |
+
+Fixed models (held-out, no selection; except the PC5–32 rows, which come from the search):
+
+| Model | Explained |
+|---|---|
+| Granite (32 PCs) | 51.87 |
+| Granite + SST | 52.20 |
+| Granite + MLD30 | 54.28 |
+| Granite + SST + MLD30 | 54.96 |
+| Granite + SST + MLD30 + PISCES biology | 54.56 |
+| Granite + OLCI + SST + MLD30 (one ridge) | 51.87 |
+| PC1–4 only | 47.93 |
+| PC5–32 only | −5.15 (predicts the training mean in every cruise) |
+| PC9–16 only | −5.21 (same) |
+| PC5–32 + SST + MLD30 | 59.38 |
+| SST only | 48.21 |
+| SST + MLD30 | 55.14 |
+| OLCI + SST | 50.87 |
+| OLCI + SST + MLD30 | 53.21 |
+
+Per-cruise R² (vs training-cruise mean) for Granite / Granite + SST + MLD30 / PC5–32 + SST + MLD30 / SST + MLD30:
+A13.5-2024 0.68 / 0.68 / 0.72 / 0.73; A16N-2023 0.43 / 0.54 / 0.59 / 0.56; AMT28 0.46 / 0.55 / 0.58 / 0.57;
+C13.5/A13.5 −0.08 / −0.06 / 0.03 / 0.14; GOMECC4 0.44 / 0.53 / 0.61 / 0.49; HLY2202-2022 0.80 / 0.75 / 0.76 / 0.76;
+I05-2023 0.55 / 0.58 / 0.67 / 0.57; I07N −0.56 / −0.38 / −0.39 / −0.73; I08S-2024 0.84 / 0.86 / 0.85 / 0.87; I09N
+0.54 / 0.57 / 0.57 / 0.52; I09N-2025 0.38 / 0.40 / 0.37 / 0.35; P02-2022 0.25 / 0.23 / 0.19 / 0.24; P18 0.73 / 0.74 /
+0.74 / 0.68.
+
+Share of the 100 best subsets by training-cruise error (per outer fold) containing each group: SST 0.94, PC9–16 0.83,
+MLD30 0.78, PISCES biology 0.63, PC5–8 0.59, OLCI green-red 0.45, PC17–32 0.39, OLCI red-edge 0.39, OLCI NIR 0.34,
+history 0.30, PC1–4 0.24, nutrients 0.15, time & place 0.15, OLCI blue 0.11, physics 0.00.
+
+**KOs (7 groups, 127 subsets), all-KO pooled, % of non-technical variance:**
+
+| Scheme | Explained |
+|---|---|
+| Granite PCs (main model) | 16.86 |
+| Nested, subset per KO and held-out cruise (127 options each) | 14.60 |
+| Nested, one subset for all KOs per held-out cruise | **17.78** |
+| Best subset per KO, chosen on held-out error (optimistic) | 25.21 |
+| Oracle per KO and cruise (optimistic) | 34.14 |
+
+The shared nested choice was Granite + SST + MLD30 + nutrients/biology + physics/history in 11 of 13 folds (+ time &
+place for P02-2022 and P18; without physics/history for I07N). Fixed models for all KOs (held out): Granite 16.86;
+Granite + OLCI 16.88; Granite + MLD30 16.41; Granite + SST + MLD30 16.75; Granite + nutrients/biology 17.66; Granite +
+SST + MLD30 + nutrients/biology 18.19; Granite + SST + MLD30 + nutrients/biology + physics/history 19.27 (best of 127,
+optimistic ranking); OLCI + SST 13.61; OLCI + SST + MLD30 14.42.
+
+Per KO (nested, per-KO choice): median R² 0.1054 → 0.1142; gain median −0.014 (10–90% −0.111 to +0.110); 924 KOs gain
+≥ 0.05, 221 of them better in ≥ 10 of 13 cruises; 1,216 lose ≥ 0.05. The robust gainers are nutrient-response genes:
+ureB 0.207 → 0.655, ureC 0.227 → 0.623, ureA, ureE, ureF, urtA–D (urea transport), phoB 0.149 → 0.491, phoU, adeR,
+vicR, plus methylotrophy / C1 genes (mgsC, DMGDH, meh). Groups in the per-KO choices: nutrients + biology 0.60, SST
+0.57, MLD30 0.48, time & place 0.42, Granite PCs 0.35, OLCI 0.33, physics + history 0.30.
+
+**Reading.**
+- Free per-cruise or per-KO choice among many combinations overfits: with 12 training cruises the chosen subset
+  changes from fold to fold and loses on the held-out cruise (C 49.76, KOs 14.60, both below Granite). The large
+  oracle numbers (C 71.00, KOs 34.14) are what a choice made on the held-out cruise would give; they are not
+  achievable estimates.
+- What holds up is small and structured: one shared choice, or a short pre-specified menu. For C, Granite + SST +
+  MLD30 (54.10 nested from a menu of 4; 54.96 fixed). For all KOs, Granite + SST + MLD30 + ocean-model nutrients and
+  physics (17.78 nested; 18.19–19.27 fixed).
+- OLCI bands add nothing on top of Granite (C 51.87 with everything in one ridge; KOs 16.88), consistent with Granite
+  already encoding them. SST and MLD add, probably because they enter as splines (nonlinear) while the PCs are linear.
+- The best C combination drops Granite PC1–4 and keeps PC5–32 + SST + MLD30 (59.38). PC1–4 alone gives 47.93 and PC5–32
+  alone gives nothing, so PC1–4 look to carry the temperature / latitude gradient that SST + MLD splines carry better,
+  while PC5–32 add information only once that gradient is in the model. This is the best of 32,767 on held-out error,
+  so it is a hypothesis, not a result: it needs data not used in the search (the extended / pre-2016 cruises, or a
+  pre-registered rerun).
+- PISCES nutrients and GLORYS physics are ocean-model (reanalysis / forecast) fields, not satellite inputs. They help
+  the KOs (nutrient genes above), not C.

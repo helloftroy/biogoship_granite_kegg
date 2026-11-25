@@ -7546,3 +7546,64 @@ vicR, plus methylotrophy / C1 genes (mgsC, DMGDH, meh). Groups in the per-KO cho
   pre-registered rerun).
 - PISCES nutrients and GLORYS physics are ocean-model (reanalysis / forecast) fields, not satellite inputs. They help
   the KOs (nutrient genes above), not C.
+
+## R74. Follow-ups to R73: the C winner on all KOs; what Granite PC1–4 encode (2026-11-24)
+
+**Questions (user).** Was PC5–32 + SST + MLD30 (the best C combination in R73) tested on all KOs? What do the PCs
+hold? Script `scripts/combo_followup.py` (same inputs and setup as R73; fixed models, no selection). Outputs in
+`data/results/combo/`: `followup_ko_models.csv`, `followup_ko_per_ko.csv`, `followup_pc_correlations.csv`,
+`followup.txt`.
+
+**All KOs (3,933), % of non-technical variance, cruise held out:**
+
+| Model | All KOs | Per-KO median R² |
+|---|---|---|
+| Granite (PC1–32) | 16.86 | 0.1054 |
+| PC1–4 | 11.65 | 0.0473 |
+| PC5–32 | −1.22 | −0.0227 |
+| SST + MLD30 | 13.05 | 0.0516 |
+| Granite + SST + MLD30 | 16.75 | 0.1132 |
+| PC5–32 + SST + MLD30 | 13.58 | 0.0691 |
+| PC5–32 + SST + MLD30 + nutrients/biology + physics/history | 15.45 | 0.1073 |
+| Granite + SST + MLD30 + nutrients/biology + physics/history | 19.27 | 0.1446 |
+
+By read domain (pooled over the domain's KOs; Granite / Granite + SST + MLD30 / PC5–32 + SST + MLD30; per-KO gain of
+the last over Granite):
+- prokaryotic (3,179): 14.01 / 13.27 / 9.30; median gain −0.029; ≥ +0.05: 277 (33 also better in ≥ 10 cruises);
+  ≤ −0.05: 1,157.
+- mixed (489): 15.57 / 16.39 / 12.27; median −0.025; ≥ +0.05: 29 (5); ≤ −0.05: 171.
+- eukaryotic (265): 30.38 / 31.76 / 33.08; median +0.033; ≥ +0.05: 64 (26); ≤ −0.05: 10.
+
+So the C winner is specific to the eukaryote side: it helps C and eukaryotic KOs, and loses clearly for prokaryotic
+KOs, which need PC1–4.
+
+**What the first PCs encode** (PCA 64 on the standardised embedding of all 1,215 tiles; descriptive). PC1–4 hold 76.7% of
+the embedding variance (0.351, 0.187, 0.137, 0.091); PC5–32 21.2%. Strongest correlations (pooled / within cruise):
+- PC1: OLCI Oa02 +0.63 / +0.59, Oa01 +0.62 / +0.58, Oa03 +0.56 / +0.53; PISCES chlorophyll −0.52 / −0.48, nitrate
+  −0.51 / −0.45, primary production −0.51 / −0.49. Blue reflectance vs productivity: ocean colour.
+- PC2: Oa01 −0.54 / −0.64, Oa02 −0.51 / −0.61; oxygen −0.53 / −0.45; GLORYS temperature +0.50 / +0.42; SST +0.50 /
+  +0.42; |latitude| −0.46 / −0.36.
+- PC3: SST +0.74 / +0.58; GLORYS temperature +0.74 / +0.58; |latitude| −0.69 / −0.61; oxygen −0.63 / −0.49; phosphate
+  −0.58 / −0.25. The temperature / latitude gradient.
+- PC4: weak; same-day mixed layer −0.29 / −0.25, 14-day wind −0.24 / −0.18, MLD30 −0.24 / −0.19.
+- PC5: all red / NIR bands about −0.73 / −0.78 (Oa08, Oa12, Oa16–18, Oa21). PC6: blue-green bands Oa04–Oa07 about −0.4 /
+  −0.5. PC7: red / NIR +0.35. PC8: primary production +0.27, red / NIR +0.2. PC5–7 look like brightness in the red
+  and near-infrared (where the ocean is dark: glint, haze, cloud edges, or bright water), not water-column biology.
+In-sample linear R² from PC blocks (PC1–4 / PC5–32 / PC1–32): SST 0.897 / 0.074 / 0.971; GLORYS temperature 0.894 /
+0.077 / 0.971; |latitude| 0.712 / 0.163 / 0.875; nitrate 0.567 / 0.111 / 0.678; C 0.538 / 0.113 / 0.651; MLD30
+0.256 / 0.293 / 0.549; platform group 0.061 / 0.222 / 0.284. (Within-cruise correlations are undefined for the
+platform group, which is constant within a cruise; numpy warned about it.)
+
+**Reading.**
+- Granite's first four PCs are mostly ocean colour (PC1, PC2) and temperature / latitude (PC3): they reproduce SST
+  almost exactly (R² 0.90). For C, SST + MLD splines carry that gradient better than linear PCs, and PC5–32 then add
+  something (R73: 59.38 vs 55.14 for SST + MLD30 alone). PC5–32 alone predict nothing, so their information is
+  conditional on the temperature gradient. They also carry more of the platform / cruise grouping (R² 0.22 vs 0.06),
+  which is a caution: part of what PC5–32 add could be cruise-level structure.
+- For prokaryotic KOs PC1–4 are needed (ocean colour and productivity), and the C winner loses.
+- Taken together: one best model for every target does not exist. Granite + SST + MLD30 + ocean-model fields is the
+  best single fixed model for all KOs (19.27, optimistic ranking; 17.78 nested), and the eukaryote side gains from
+  replacing PC1–4 by SST + MLD splines.
+
+**Hurdle rerun (R71) returned.** `fit_shard0–23.csv` and `base_shard0–23.csv` (5,808 KOs each, complete) came back to
+the repo root and were moved to `data/results/hurdle/`. Summary and figure: next session.

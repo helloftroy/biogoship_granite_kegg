@@ -29,7 +29,7 @@ matplotlib).
 | Cruise line: temperature vs best model per gene (P18) | `figures/make_cruise_line.py --compare perko` | `figures/output/cruise_line_perko.png`, `.pdf` | RESULTS.md R18 |
 | Presence of patchy genes (hurdle models; superseded by hurdle_base) | `scripts/hurdle_kos.py --parts summary figure` | `figures/output/hurdle_kos.png`, `.pdf` | RESULTS.md R65 |
 | Why patchy genes are satellite or technical (superseded by hurdle_base) | `scripts/hurdle_mechanism.py` | `figures/output/hurdle_mechanism.png`, `.pdf` | RESULTS.md R66 |
-| Patchy genes, base model (Granite + depth + platform) | `scripts/hurdle_base.py --parts summary figure` | `figures/output/hurdle_base.png`, `.pdf` | RESULTS.md R69 |
+| Patchy genes, base model (Granite + depth + platform) | `scripts/hurdle_base.py --parts summary figure` | `figures/output/hurdle_base.png`, `.pdf` | RESULTS.md R69, R70, R75 |
 
 Colours shared by the prediction figures: Granite embedding blue `#2a78d6`, raw
 band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
@@ -276,12 +276,13 @@ band averages orange `#eb6834`, position + season aqua `#1baf7a`, chance grey
 ## Patchy genes, base model (supersedes the two hurdle figures above)
 
 - **Shows:** KOs grouped by read-based domain (R67). a, patchy KOs (5,808): within-cruise presence AUC (median, IQR) for
-  depth + platform, predicted eukaryote : prokaryote + technical, Granite + technical. b, abundance R2 by domain, core
+  depth (read pairs) + platform, predicted eukaryote : prokaryote + technical, Granite + technical. b, abundance R2 by domain, core
   KOs (main model, 3,933) and patchy KOs where present, side by side. c, per-KO presence AUC, Granite + technical vs
   predicted C + technical, coloured by eukaryotic read share; focus genes labelled. d, abundance R2 by eukaryotic read
   share, core and patchy. e, patchy KOs: detection (% vs the KO's average) by within-cruise depth fifth, per domain, by
   gene-length tercile. f, core KOs: within-cruise r of abundance with depth, by domain x length. Legend draft in
-  RESULTS.md R69 addendum.
-- **Regenerate:** fits: `cluster/run_hurdle_base_local.sh` (next time on Morrill), then
+  RESULTS.md R75.
+- **Regenerate:** fits on Morrill (`cluster/hurdle_read_pairs.sbatch`, 24 shards, both hurdle fits), then
+  `python scripts/hurdle_kos.py --parts summary` and
   `python scripts/hurdle_base.py --parts summary figure` (figure needs main_model/ko_ceiling.csv and
   targets/clr_all.csv.gz).

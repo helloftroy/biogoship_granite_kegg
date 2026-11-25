@@ -7607,3 +7607,82 @@ platform group, which is constant within a cruise; numpy warned about it.)
 
 **Hurdle rerun (R71) returned.** `fit_shard0–23.csv` and `base_shard0–23.csv` (5,808 KOs each, complete) came back to
 the repo root and were moved to `data/results/hurdle/`. Summary and figure: next session.
+
+## R75. Patchy KOs rerun with read-pair depth (hurdle fits back from Morrill): numbers and figure (2026-11-24)
+
+The Morrill array (`cluster/hurdle_read_pairs.sbatch`, 24 shards) returned complete: `fit_shard*.csv` and
+`base_shard*.csv`, 5,808 KOs each, no duplicates (they landed in the repo root and were moved to
+`data/results/hurdle/`). `hurdle_kos.py --parts summary` → `hurdle_all.csv`, `summary.txt`; `hurdle_base.py --parts
+summary figure` → `base_all.csv`, `base_summary.txt`, `figures/output/hurdle_base.png`. Technical term = platform +
+spline of log10 read pairs (R71); old values (KO-read depth, R69) in brackets. Granite alone has no technical term and
+is unchanged, as it should be (within-cruise median 0.626).
+
+**Within-cruise presence AUC, median (10–90%), by read domain**
+
+| Domain | n | Depth + platform | Predicted C + tech | Granite | Granite + tech (base) |
+|---|---|---|---|---|---|
+| all | 5,808 | 0.553 (0.49–0.64) [0.550] | 0.619 (0.55–0.68) [0.612] | 0.626 (0.54–0.70) [0.626] | 0.648 (0.58–0.72) [0.639] |
+| eukaryotic | 2,756 | 0.534 (0.49–0.58) [0.534] | 0.623 (0.57–0.67) [0.617] | 0.635 (0.57–0.70) [0.635] | 0.642 (0.59–0.70) [0.630] |
+| mixed | 1,055 | 0.562 (0.50–0.63) [0.527] | 0.616 (0.55–0.67) [0.594] | 0.618 (0.54–0.70) [0.618] | 0.643 (0.58–0.71) [0.626] |
+| prokaryotic | 1,997 | 0.596 (0.51–0.68) [0.607] | 0.611 (0.52–0.71) [0.615] | 0.610 (0.52–0.72) [0.610] | 0.664 (0.57–0.75) [0.670] |
+
+Pooled AUC, median: tech 0.547, C + tech 0.692, Granite 0.660, base 0.724 (eukaryotic 0.748, mixed 0.705, prokaryotic
+0.679).
+
+**Paired differences, within-cruise AUC** (median, 10–90%; share ≥ +0.02 / ≥ +0.05 / ≤ −0.02):
+
+| Comparison | all | eukaryotic | mixed | prokaryotic |
+|---|---|---|---|---|
+| base − tech | +0.085 (+0.004 to +0.179); 84 / 69 / 4% [+0.081] | +0.106 (+0.039 to +0.185); 95 / 85 / 1% [+0.097] | +0.072 (−0.001 to +0.166); 81 / 64 / 4% [+0.088] | +0.051 (−0.016 to +0.167); 71 / 51 / 8% [+0.043] |
+| base − C + tech | +0.021 (−0.017 to +0.095); 52 / 23 / 8% [+0.016] | +0.018 (−0.012 to +0.053); 46 / 12 / 6% [+0.010] | +0.021 (−0.018 to +0.095); 52 / 24 / 8% [+0.023] | +0.032 (−0.024 to +0.148); 59 / 39 / 12% [+0.030] |
+| C + tech − tech | +0.049 (−0.009 to +0.136); 68 / 49 / 5% [+0.051] | +0.084 (+0.025 to +0.155); 92 / 76 / 0% [+0.085] | +0.039 (−0.007 to +0.115); 65 / 40 / 2% [+0.056] | +0.007 (−0.023 to +0.073); 36 / 17 / 12% [+0.002] |
+| base − Granite | +0.014 (−0.014 to +0.080); 42 / 20 / 6% | +0.005 (−0.018 to +0.036); 24 / 5 / 9% [−0.004] | +0.017 (−0.013 to +0.081); 47 / 22 / 4% | +0.036 (−0.006 to +0.122); 64 / 39 / 3% [+0.039] |
+
+**Abundance where present** (Granite ridge, technical removed, cruise held out; median, IQR, share > 0.1): prokaryotic
+−0.018 (−0.050 to +0.044), 15% [−0.017]; mixed +0.089 (−0.014 to +0.243), 48% [+0.083]; eukaryotic +0.251 (+0.086 to
++0.378), 73% [+0.253]. All patchy KOs: median 0.090; R² > 0.1 for 2,823 of 5,808. Spearman (R², eukaryotic read share)
+0.507. Core KOs (main model, R71): prokaryotic +0.088 (47% > 0.1), mixed +0.123 (57%), eukaryotic +0.310 (93%);
+Spearman 0.124. By eukaryotic read share (tenths, n, median): core 0.0–0.1 3,179 +0.088 … 0.9–1.0 265 +0.310; patchy
+0.0–0.1 1,997 −0.018 … 0.9–1.0 2,756 +0.251 (full table in `base_summary.txt`).
+
+**Focus genes** (within-cruise AUC: tech / C + tech / base; [R69]):
+nifH 0.515 / 0.540 / 0.624 [0.534 / 0.548 / 0.619]; nifD 0.588 / 0.611 / 0.696 [0.588 / 0.595 / 0.694]; nifK 0.536 /
+0.548 / 0.530 [0.565 / 0.568 / 0.545]; amoB 0.579 / 0.667 / 0.719 [0.548 / 0.629 / 0.723]; nasA 0.655 / 0.646 / 0.685
+[0.576 / 0.560 / 0.632]; phnJ 0.665 / 0.740 / 0.701 [0.759 / 0.792 / 0.785].
+
+Panels e, f (depth vs detection / abundance) already used read pairs (R70) and are unchanged.
+
+**Reading.** The conclusions of R69 hold with the corrected depth term:
+- Granite + depth + platform beats depth + platform for 84% of patchy KOs by ≥ 0.02 (median +0.085).
+- Eukaryotic patchy KOs follow the eukaryote : prokaryote balance: predicted C + technical is within 0.018 of the base
+  model (Granite ahead by ≥ 0.05 for 12%); their abundance where present is predictable (median R² 0.251).
+- Prokaryotic patchy KOs: predicted C adds little over depth + platform (+0.007); Granite adds +0.051 and is ahead of
+  C + tech by ≥ 0.05 for 39%; their abundance where present is not predictable (median −0.018).
+- What changed: depth + platform alone now scores less for prokaryotic (0.596) and more for mixed KOs (0.562); the
+  base model gained for eukaryotic and mixed KOs (+0.012, +0.017) and lost slightly for prokaryotic (−0.006). With
+  KO-read depth, part of the eukaryote signal had been absorbed by the technical term. Among focus genes, phnJ falls
+  (base 0.785 → 0.701) and nasA rises (0.632 → 0.685).
+- The old presence-class labels (satellite / technical / weak) are still written by `hurdle_kos.py` summary (3,114 /
+  1,776 / 918) but are not used (R69).
+
+**Legend draft (replaces the R69 addendum draft; e, f as in R70)**
+
+**Patchy and core genes: what Granite predicts depends on whether the gene is carried by eukaryotes or prokaryotes.**
+KOs are grouped by the share of their reads mapped to eukaryotic reference genes (eukaryotic > 0.9, prokaryotic ≤ 0.1,
+otherwise mixed). Patchy KOs: 5,808 KOs present in 20–90% of 1,111 tiles (≥ 1 read per 10^6 KO reads after
+rarefaction). Core KOs: the 3,933 KOs of the main model. Every model holds out each cruise in turn; depth is the number
+of read pairs sequenced. **a**, Presence of patchy KOs: AUC within the held-out cruise (median, interquartile range)
+for logistic models on sequencing depth + platform, the Granite-predicted eukaryote : prokaryote read ratio + depth +
+platform, and Granite PCs + depth + platform. **b**, Abundance R² (Granite ridge, depth and platform removed) for core
+KOs (main model) and for patchy KOs where present, scored separately; numbers, KOs. **c**, Per-KO presence AUC of
+patchy KOs, Granite + depth + platform against predicted ratio + depth + platform, coloured by eukaryotic read share;
+dashed line, equal AUC; labelled, nitrogen-fixation (nifH, nifD, nifK), ammonia-oxidation (amoB), nitrate-assimilation
+(nasA) and phosphonate (phnJ) genes. Eukaryotic KOs lie near the line (median gain 0.018); prokaryotic KOs lie above it
+(median gain 0.032; ≥ 0.05 for 39%). **d**, Abundance R² against eukaryotic read share (tenths; line, median; band,
+interquartile range). **e**, Patchy KOs: how often a KO is detected in each fifth of the tiles ranked by read pairs
+sequenced within their cruise, as % above or below its average over all tiles, for short, medium and long genes
+(thirds by mean reference gene length within each domain; median over KOs). **f**, Core KOs: within-cruise correlation
+between abundance (before depth and platform are removed) and read pairs sequenced, by gene length (median,
+interquartile range). All genes are detected more often with more sequencing; for prokaryotic genes the effect grows
+with gene length, and in core prokaryotic KOs long genes gain share and short genes lose it, as expected from the 50%
+coverage filter on mapped reads.

@@ -299,7 +299,7 @@ def figure():
     sc = c.scatter(o["auc_within_c_tech"], o["auc_within_base"], c=o["euk_read_share"], cmap=cmap, vmin=0, vmax=1, s=2,
                    lw=0, alpha=0.75, rasterized=True)  # fmt: skip
     c.plot([0.25, 1], [0.25, 1], color="#555555", lw=0.6, ls=(0, (3, 2)))
-    LABEL_AT = {"amoB": (0.30, 0.97), "nifD": (0.30, 0.91), "nasA": (0.28, 0.66), "nifH": (0.28, 0.60),
+    LABEL_AT = {"amoB": (0.50, 0.97), "nifD": (0.30, 0.91), "nasA": (0.28, 0.66), "nifH": (0.28, 0.60),
                 "nifK": (0.78, 0.42), "phnJ": (0.88, 0.62)}  # fmt: skip
     for k, gname in h.FOCUS.items():
         gn = gname.split(" /")[0]
